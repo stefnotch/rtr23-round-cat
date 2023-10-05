@@ -11,6 +11,7 @@ struct CatDemo {
     instance: ash::Instance,
     _physical_device: vk::PhysicalDevice,
     device: ash::Device,
+    queue: vk::Queue,
 }
 
 impl CatDemo {
@@ -52,11 +53,14 @@ impl CatDemo {
                 .expect("Could not create logical device")
         };
 
+        let queue = unsafe { device.get_device_queue(0, 0) };
+
         Self {
             _entry: entry,
             instance,
             _physical_device: physical_device,
             device,
+            queue,
         }
     }
 
