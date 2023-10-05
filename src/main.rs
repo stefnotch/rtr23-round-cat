@@ -54,31 +54,61 @@ impl CatDemo {
 
         let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
-        let physical_device = {
+        let (physical_device, queue_family_index) = {
             let physical_devices = unsafe { instance.enumerate_physical_devices() }
                 .expect("Could not enumerate physical devices");
 
-            // TODO: implement better physical device selection
-            // For now: select first device
             physical_devices
                 .into_iter()
-                .next()
-                .expect("Could not find a physical device")
+                .filter_map(|pd| {
+                    unsafe { instance.get_physical_device_queue_family_properties(pd) }
+                        .iter()
+                        .enumerate()
+                        .position(|(index, info)| {
+                            let supports_graphics =
+                                info.queue_flags.contains(vk::QueueFlags::GRAPHICS);
+                            let supports_surface = unsafe {
+                                surface_loader.get_physical_device_surface_support(
+                                    pd,
+                                    index as u32,
+                                    surface,
+                                )
+                            }
+                            .unwrap();
+
+                            supports_graphics && supports_surface
+                        })
+                        .map(|i| (pd, i as u32))
+                })
+                .min_by_key(|(pd, _)| {
+                    let device_type =
+                        unsafe { instance.get_physical_device_properties(*pd) }.device_type;
+
+                    match device_type {
+                        vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                        vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+                        vk::PhysicalDeviceType::CPU => 3,
+                        vk::PhysicalDeviceType::OTHER => 4,
+                        _ => 5,
+                    }
+                })
+                .expect("Couldn't find suitable device.")
         };
 
         let device = {
-            // TODO: remove hardcoded queue family index 0
             let queue_priorities = [1.0];
             let queue_create_info = DeviceQueueCreateInfo::builder()
                 .queue_family_index(0)
                 .queue_priorities(&queue_priorities);
             let create_info = DeviceCreateInfo::builder()
                 .queue_create_infos(std::slice::from_ref(&queue_create_info));
+
             unsafe { instance.create_device(physical_device, &create_info, None) }
                 .expect("Could not create logical device")
         };
 
-        let queue = unsafe { device.get_device_queue(0, 0) };
+        let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
         Self {
             _entry: entry,
