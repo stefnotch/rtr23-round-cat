@@ -1,4 +1,4 @@
-use ash::vk::{ApplicationInfo, InstanceCreateInfo};
+use ash::vk::{ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
 use ash::{self, vk};
 use raw_window_handle::HasRawDisplayHandle;
 use winit::dpi::LogicalSize;
@@ -10,6 +10,7 @@ struct CatDemo {
     _entry: ash::Entry,
     instance: ash::Instance,
     _physical_device: vk::PhysicalDevice,
+    device: ash::Device,
 }
 
 impl CatDemo {
@@ -39,10 +40,23 @@ impl CatDemo {
                 .expect("Could not find a physical device")
         };
 
+        let device = {
+            // TODO: remove hardcoded queue family index 0
+            let queue_priorities = [1.0];
+            let queue_create_info = DeviceQueueCreateInfo::builder()
+                .queue_family_index(0)
+                .queue_priorities(&queue_priorities);
+            let create_info = DeviceCreateInfo::builder()
+                .queue_create_infos(std::slice::from_ref(&queue_create_info));
+            unsafe { instance.create_device(physical_device, &create_info, None) }
+                .expect("Could not create logical device")
+        };
+
         Self {
             _entry: entry,
             instance,
             _physical_device: physical_device,
+            device,
         }
     }
 
@@ -87,6 +101,7 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
     }
 }
