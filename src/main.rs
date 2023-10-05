@@ -1,6 +1,6 @@
 use ash::vk::{ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
 use ash::{self, vk};
-use raw_window_handle::HasRawDisplayHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -9,9 +9,12 @@ use winit::window::{Window, WindowBuilder};
 struct CatDemo {
     _entry: ash::Entry,
     instance: ash::Instance,
-    _physical_device: vk::PhysicalDevice,
     device: ash::Device,
-    queue: vk::Queue,
+    surface_loader: ash::extensions::khr::Surface,
+
+    _queue: vk::Queue,
+    window: Window,
+    surface: vk::SurfaceKHR,
 }
 
 impl CatDemo {
@@ -28,6 +31,28 @@ impl CatDemo {
                 .enabled_extension_names(surface_extension);
             unsafe { entry.create_instance(&create_info, None) }.expect("Could not create instance")
         };
+
+        let window = WindowBuilder::new()
+            .with_title("Round Cat")
+            .with_inner_size(LogicalSize {
+                width: 800,
+                height: 600,
+            })
+            .build(&event_loop)
+            .expect("Could not create window");
+
+        let surface = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None,
+            )
+        }
+        .expect("Could not create surface");
+
+        let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
         let physical_device = {
             let physical_devices = unsafe { instance.enumerate_physical_devices() }
@@ -58,13 +83,15 @@ impl CatDemo {
         Self {
             _entry: entry,
             instance,
-            _physical_device: physical_device,
+            surface_loader,
             device,
-            queue,
+            _queue: queue,
+            window,
+            surface,
         }
     }
 
-    pub fn main_loop(mut self, event_loop: EventLoop<()>, window: Window) {
+    pub fn main_loop(mut self, event_loop: EventLoop<()>) {
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
 
@@ -90,7 +117,7 @@ impl CatDemo {
                     _ => {}
                 },
                 Event::MainEventsCleared => {
-                    window.request_redraw();
+                    self.window.request_redraw();
                 }
                 Event::RedrawRequested(_window_id) => {
                     self.draw_frame();
@@ -105,6 +132,7 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
         unsafe { self.device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
     }
@@ -113,15 +141,6 @@ impl Drop for CatDemo {
 fn main() {
     let event_loop = EventLoop::new();
 
-    let window = WindowBuilder::new()
-        .with_title("Round Cat")
-        .with_inner_size(LogicalSize {
-            width: 800,
-            height: 600,
-        })
-        .build(&event_loop)
-        .expect("Could not create window");
-
     let demo = CatDemo::new(&event_loop);
-    demo.main_loop(event_loop, window);
+    demo.main_loop(event_loop);
 }
