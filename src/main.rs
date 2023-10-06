@@ -1,5 +1,7 @@
 use std::ffi::CStr;
+use std::io::Cursor;
 
+use ash::util::read_spv;
 use ash::vk::{
     ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo,
     SwapchainCreateInfoKHR,
@@ -245,6 +247,48 @@ impl CatDemo {
                     .expect("Could not create image view")
             })
             .collect::<Vec<_>>();
+
+        let _pipeline = {
+            let mut vert_spv_file =
+                Cursor::new(&include_bytes!("../assets/shaders/base.vert.spv")[..]);
+            let mut frag_spv_file =
+                Cursor::new(&include_bytes!("../assets/shaders/base.frag.spv")[..]);
+
+            let vert_shader_code =
+                read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
+            let frag_shader_code =
+                read_spv(&mut frag_spv_file).expect("Could not read frag shader spv file");
+
+            let vertex_shader_shader_module = {
+                let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_shader_code);
+                unsafe { device.create_shader_module(&create_info, None) }
+                    .expect("Could not create vertex shader module")
+            };
+
+            let fragment_shader_shader_module = {
+                let create_info = vk::ShaderModuleCreateInfo::builder().code(&frag_shader_code);
+                unsafe { device.create_shader_module(&create_info, None) }
+                    .expect("Could not create fragment shader module")
+            };
+
+            let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
+
+            let _shader_stages = [
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .module(vertex_shader_shader_module)
+                    .name(shader_entry_name)
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .build(),
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .module(fragment_shader_shader_module)
+                    .name(shader_entry_name)
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
+            ];
+
+            unsafe { device.destroy_shader_module(vertex_shader_shader_module, None) };
+            unsafe { device.destroy_shader_module(fragment_shader_shader_module, None) };
+        };
 
         Self {
             _entry: entry,
