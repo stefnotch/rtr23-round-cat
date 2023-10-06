@@ -26,6 +26,7 @@ struct CatDemo {
     _swapchain_images: Vec<vk::Image>,
     _swapchain_format: vk::Format,
     _swapchain_extent: vk::Extent2D,
+    swapchain_imageviews: Vec<vk::ImageView>,
 }
 
 impl CatDemo {
@@ -219,6 +220,32 @@ impl CatDemo {
             )
         };
 
+        let swapchain_imageviews = swapchain_images
+            .iter()
+            .map(|&image| {
+                let create_info = vk::ImageViewCreateInfo::builder()
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(swapchain_format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .image(image);
+
+                unsafe { device.create_image_view(&create_info, None) }
+                    .expect("Could not create image view")
+            })
+            .collect::<Vec<_>>();
+
         Self {
             _entry: entry,
             instance,
@@ -233,6 +260,7 @@ impl CatDemo {
             _swapchain_images: swapchain_images,
             _swapchain_format: swapchain_format,
             _swapchain_extent: swapchain_extent,
+            swapchain_imageviews,
         }
     }
 
@@ -277,6 +305,9 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        for &imageview in self.swapchain_imageviews.iter() {
+            unsafe { self.device.destroy_image_view(imageview, None) }
+        }
         unsafe {
             self.swapchain_loader
                 .destroy_swapchain(self.swapchain, None)
