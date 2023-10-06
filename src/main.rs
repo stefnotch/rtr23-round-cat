@@ -1,6 +1,9 @@
 use std::ffi::CStr;
 
-use ash::vk::{ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
+use ash::vk::{
+    ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo,
+    SwapchainCreateInfoKHR,
+};
 use ash::{self, vk};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::dpi::LogicalSize;
@@ -14,9 +17,15 @@ struct CatDemo {
     device: ash::Device,
     surface_loader: ash::extensions::khr::Surface,
 
-    queue: vk::Queue,
+    _queue: vk::Queue,
     window: Window,
     surface: vk::SurfaceKHR,
+
+    swapchain_loader: ash::extensions::khr::Swapchain,
+    swapchain: vk::SwapchainKHR,
+    _swapchain_images: Vec<vk::Image>,
+    _swapchain_format: vk::Format,
+    _swapchain_extent: vk::Extent2D,
 }
 
 impl CatDemo {
@@ -34,11 +43,13 @@ impl CatDemo {
             unsafe { entry.create_instance(&create_info, None) }.expect("Could not create instance")
         };
 
+        let (window_width, window_height) = (800, 600);
+
         let window = WindowBuilder::new()
             .with_title("Round Cat")
             .with_inner_size(LogicalSize {
-                width: 800,
-                height: 600,
+                width: window_width,
+                height: window_height,
             })
             .build(&event_loop)
             .expect("Could not create window");
@@ -56,6 +67,8 @@ impl CatDemo {
 
         let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
+        let swapchain_extension = ash::extensions::khr::Swapchain::name();
+
         let (physical_device, queue_family_index) = {
             let physical_devices = unsafe { instance.enumerate_physical_devices() }
                 .expect("Could not enumerate physical devices");
@@ -71,7 +84,7 @@ impl CatDemo {
                             CStr::from_ptr(property.extension_name.as_ptr())
                         });
 
-                    supported_extensions.any(|ext| ash::extensions::khr::Swapchain::name() == ext)
+                    supported_extensions.any(|ext| swapchain_extension == ext)
                 })
                 .filter_map(|pd| {
                     unsafe { instance.get_physical_device_queue_family_properties(pd) }
@@ -110,12 +123,15 @@ impl CatDemo {
         };
 
         let device = {
+            let device_extensions = [swapchain_extension.as_ptr()];
+
             let queue_priorities = [1.0];
             let queue_create_info = DeviceQueueCreateInfo::builder()
                 .queue_family_index(0)
                 .queue_priorities(&queue_priorities);
             let create_info = DeviceCreateInfo::builder()
-                .queue_create_infos(std::slice::from_ref(&queue_create_info));
+                .queue_create_infos(std::slice::from_ref(&queue_create_info))
+                .enabled_extension_names(&device_extensions);
 
             unsafe { instance.create_device(physical_device, &create_info, None) }
                 .expect("Could not create logical device")
@@ -123,14 +139,100 @@ impl CatDemo {
 
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
+        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = {
+            let capabilities = unsafe {
+                surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
+            }
+            .expect("Could not get surface capabilities from physical device");
+
+            let formats = unsafe {
+                surface_loader.get_physical_device_surface_formats(physical_device, surface)
+            }
+            .expect("Could not get surface formats from physical device");
+
+            let present_modes = unsafe {
+                surface_loader.get_physical_device_surface_present_modes(physical_device, surface)
+            }
+            .expect("Could not get present modes from physical device");
+
+            let image_format = formats
+                .into_iter()
+                .min_by_key(|fmt| match (fmt.format, fmt.color_space) {
+                    (vk::Format::B8G8R8A8_SRGB, _) => 1,
+                    (vk::Format::R8G8B8A8_SRGB, vk::ColorSpaceKHR::SRGB_NONLINEAR) => 2,
+                    (_, _) => 3,
+                })
+                .expect("Could not fetch image format");
+
+            let present_mode = present_modes
+                .into_iter()
+                .find(|&pm| pm == vk::PresentModeKHR::MAILBOX)
+                .unwrap_or(vk::PresentModeKHR::FIFO);
+
+            let swapchain_extent = {
+                if capabilities.current_extent.width != u32::MAX {
+                    capabilities.current_extent
+                } else {
+                    vk::Extent2D {
+                        width: window_width.clamp(
+                            capabilities.min_image_extent.width,
+                            capabilities.max_image_extent.width,
+                        ),
+                        height: window_height.clamp(
+                            capabilities.min_image_extent.height,
+                            capabilities.max_image_extent.height,
+                        ),
+                    }
+                }
+            };
+
+            let num_images = capabilities.max_image_count.max(2);
+
+            let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
+
+            let create_info = SwapchainCreateInfoKHR::builder()
+                .surface(surface)
+                .min_image_count(num_images)
+                .image_color_space(image_format.color_space)
+                .image_format(image_format.format)
+                .image_extent(swapchain_extent)
+                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+                .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .pre_transform(capabilities.current_transform)
+                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                .present_mode(present_mode)
+                .clipped(true)
+                .image_array_layers(1);
+
+            let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }
+                .expect("Could not create swapchain");
+
+            let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
+                .expect("Could not get swapchain images");
+
+            (
+                swapchain_loader,
+                swapchain,
+                swapchain_images,
+                image_format.format,
+                swapchain_extent,
+            )
+        };
+
         Self {
             _entry: entry,
             instance,
             surface_loader,
             device,
-            queue,
+            _queue: queue,
             window,
             surface,
+
+            swapchain_loader,
+            swapchain,
+            _swapchain_images: swapchain_images,
+            _swapchain_format: swapchain_format,
+            _swapchain_extent: swapchain_extent,
         }
     }
 
@@ -175,8 +277,12 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
-        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
         unsafe { self.device.destroy_device(None) };
+        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
         unsafe { self.instance.destroy_instance(None) };
     }
 }
