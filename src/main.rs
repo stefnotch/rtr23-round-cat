@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 use ash::vk::{ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
 use ash::{self, vk};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -12,7 +14,7 @@ struct CatDemo {
     device: ash::Device,
     surface_loader: ash::extensions::khr::Surface,
 
-    _queue: vk::Queue,
+    queue: vk::Queue,
     window: Window,
     surface: vk::SurfaceKHR,
 }
@@ -60,6 +62,17 @@ impl CatDemo {
 
             physical_devices
                 .into_iter()
+                .filter(|pd| {
+                    let extension_properties =
+                        unsafe { instance.enumerate_device_extension_properties(*pd) }
+                            .expect("Could not enumerate device extension properties");
+                    let mut supported_extensions =
+                        extension_properties.iter().map(|property| unsafe {
+                            CStr::from_ptr(property.extension_name.as_ptr())
+                        });
+
+                    supported_extensions.any(|ext| ash::extensions::khr::Swapchain::name() == ext)
+                })
                 .filter_map(|pd| {
                     unsafe { instance.get_physical_device_queue_family_properties(pd) }
                         .iter()
@@ -115,7 +128,7 @@ impl CatDemo {
             instance,
             surface_loader,
             device,
-            _queue: queue,
+            queue,
             window,
             surface,
         }
