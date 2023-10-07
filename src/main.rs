@@ -31,6 +31,7 @@ struct CatDemo {
     swapchain_imageviews: Vec<vk::ImageView>,
 
     pipeline_layout: vk::PipelineLayout,
+    render_pass: vk::RenderPass,
 }
 
 impl CatDemo {
@@ -372,6 +373,41 @@ impl CatDemo {
             layout
         };
 
+        let render_pass = {
+            let color_attachment = vk::AttachmentDescription {
+                flags: vk::AttachmentDescriptionFlags::empty(),
+                format: swapchain_format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            };
+
+            let color_attachment_ref = vk::AttachmentReference {
+                attachment: 0,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            };
+
+            let subpass = vk::SubpassDescription::builder()
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                //.input_attachments(input_attachments) // TODO: setup Input Attachments
+                .color_attachments(std::slice::from_ref(&color_attachment_ref))
+                // .depth_stencil_attachment(depth_stencil_attachment) // TODO: setup depth attachment for depth testing
+                ;
+
+            let attachments = [color_attachment];
+
+            let create_info = vk::RenderPassCreateInfo::builder()
+                .attachments(&attachments)
+                .subpasses(std::slice::from_ref(&subpass));
+
+            unsafe { device.create_render_pass(&create_info, None) }
+                .expect("Could not create render pass")
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -388,6 +424,7 @@ impl CatDemo {
             _swapchain_extent: swapchain_extent,
             swapchain_imageviews,
             pipeline_layout,
+            render_pass,
         }
     }
 
@@ -432,6 +469,8 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.device.destroy_render_pass(self.render_pass, None) };
+
         unsafe {
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None)
