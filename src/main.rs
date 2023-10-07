@@ -29,6 +29,8 @@ struct CatDemo {
     _swapchain_format: vk::Format,
     _swapchain_extent: vk::Extent2D,
     swapchain_imageviews: Vec<vk::ImageView>,
+
+    pipeline_layout: vk::PipelineLayout,
 }
 
 impl CatDemo {
@@ -248,7 +250,7 @@ impl CatDemo {
             })
             .collect::<Vec<_>>();
 
-        let _pipeline = {
+        let pipeline_layout = {
             let mut vert_spv_file =
                 Cursor::new(&include_bytes!("../assets/shaders/base.vert.spv")[..]);
             let mut frag_spv_file =
@@ -286,8 +288,88 @@ impl CatDemo {
                     .build(),
             ];
 
+            // TODO: Config vertex attributes and bindings
+            let _vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
+
+            let _input_assembly_state_create_info =
+                vk::PipelineInputAssemblyStateCreateInfo::builder()
+                    .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
+
+            let viewports = [vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: swapchain_extent.width as f32,
+                height: swapchain_extent.height as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }];
+
+            let scissors = [vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: swapchain_extent,
+            }];
+
+            let _viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
+                .viewports(&viewports)
+                .scissors(&scissors);
+
+            let _rasterization_state_create_info =
+                vk::PipelineRasterizationStateCreateInfo::builder()
+                    .cull_mode(vk::CullModeFlags::BACK)
+                    .front_face(vk::FrontFace::CLOCKWISE)
+                    .line_width(1.0)
+                    .polygon_mode(vk::PolygonMode::FILL);
+
+            let _multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+                .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+            let stencil_state = vk::StencilOpState {
+                fail_op: vk::StencilOp::KEEP,
+                pass_op: vk::StencilOp::KEEP,
+                depth_fail_op: vk::StencilOp::KEEP,
+                compare_op: vk::CompareOp::ALWAYS,
+                compare_mask: 0,
+                write_mask: 0,
+                reference: 0,
+            };
+
+            let _depth_stencil_state_create_info =
+                vk::PipelineDepthStencilStateCreateInfo::builder()
+                    .depth_test_enable(false)
+                    .depth_write_enable(false)
+                    .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
+                    .depth_bounds_test_enable(false)
+                    .stencil_test_enable(false)
+                    .front(stencil_state)
+                    .back(stencil_state)
+                    .max_depth_bounds(1.0)
+                    .min_depth_bounds(0.0);
+
+            let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+                blend_enable: 0,
+                src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
+                dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+                color_blend_op: vk::BlendOp::ADD,
+                src_alpha_blend_factor: vk::BlendFactor::ZERO,
+                dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+                alpha_blend_op: vk::BlendOp::ADD,
+                color_write_mask: vk::ColorComponentFlags::RGBA,
+            }];
+
+            let _color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+                .logic_op(vk::LogicOp::CLEAR)
+                .attachments(&color_blend_attachment_states);
+
+            // TODO: configure descriptor set layouts
+            let layout_create_info = vk::PipelineLayoutCreateInfo::builder().build();
+
+            let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
+                .expect("Could not create pipeline layout");
+
             unsafe { device.destroy_shader_module(vertex_shader_shader_module, None) };
             unsafe { device.destroy_shader_module(fragment_shader_shader_module, None) };
+
+            layout
         };
 
         Self {
@@ -305,6 +387,7 @@ impl CatDemo {
             _swapchain_format: swapchain_format,
             _swapchain_extent: swapchain_extent,
             swapchain_imageviews,
+            pipeline_layout,
         }
     }
 
@@ -349,6 +432,10 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe {
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None)
+        };
         for &imageview in self.swapchain_imageviews.iter() {
             unsafe { self.device.destroy_image_view(imageview, None) }
         }
