@@ -78,6 +78,8 @@ struct CatDemo {
 
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
+
+    command_buffers: Vec<vk::CommandBuffer>,
 }
 
 impl CatDemo {
@@ -574,6 +576,72 @@ impl CatDemo {
             (buffer, buffer_memory)
         };
 
+        let clear_values = [vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [1.0, 0.0, 0.0, 1.0],
+            },
+        }];
+
+        let command_buffers = {
+            let allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .command_buffer_count(framebuffers.len() as u32)
+                .command_pool(command_pool)
+                .level(vk::CommandBufferLevel::PRIMARY);
+
+            let command_buffers = unsafe { device.allocate_command_buffers(&allocate_info) }
+                .expect("Could not allocate command buffers");
+
+            for (i, &command_buffer) in command_buffers.iter().enumerate() {
+                let begin_info = vk::CommandBufferBeginInfo::builder();
+
+                unsafe { device.begin_command_buffer(command_buffer, &begin_info) }
+                    .expect("Could not begin command buffer");
+
+                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                    .render_pass(render_pass)
+                    .framebuffer(framebuffers[i])
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: swapchain_extent,
+                    })
+                    .clear_values(&clear_values);
+
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        command_buffer,
+                        &render_pass_begin_info,
+                        vk::SubpassContents::INLINE,
+                    )
+                };
+
+                unsafe {
+                    device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    )
+                };
+
+                unsafe {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        std::slice::from_ref(&vertex_buffer),
+                        &[0],
+                    )
+                }
+
+                unsafe { device.cmd_draw(command_buffer, 3, 1, 0, 0) };
+
+                unsafe { device.cmd_end_render_pass(command_buffer) };
+
+                unsafe { device.end_command_buffer(command_buffer) }
+                    .expect("Could not end command buffer");
+            }
+
+            command_buffers
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -597,6 +665,8 @@ impl CatDemo {
 
             vertex_buffer,
             vertex_buffer_memory,
+
+            command_buffers,
         }
     }
 
