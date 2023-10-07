@@ -1,7 +1,8 @@
 use std::ffi::CStr;
 use std::io::Cursor;
+use std::mem::align_of;
 
-use ash::util::read_spv;
+use ash::util::{read_spv, Align};
 use ash::vk::{
     ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo,
     SwapchainCreateInfoKHR,
@@ -74,6 +75,9 @@ struct CatDemo {
     framebuffers: Vec<vk::Framebuffer>,
 
     command_pool: vk::CommandPool,
+
+    vertex_buffer: vk::Buffer,
+    vertex_buffer_memory: vk::DeviceMemory,
 }
 
 impl CatDemo {
@@ -313,7 +317,6 @@ impl CatDemo {
 
             let subpass = vk::SubpassDescription::builder()
                     .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                    //.input_attachments(input_attachments) // TODO: setup Input Attachments
                     .color_attachments(std::slice::from_ref(&color_attachment_ref))
                     // .depth_stencil_attachment(depth_stencil_attachment) // TODO: setup depth attachment for depth testing
                     ;
@@ -502,6 +505,75 @@ impl CatDemo {
                 .expect("Could not create command pool")
         };
 
+        let vertices = [
+            Vertex {
+                position: [0.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, 1.0],
+            },
+            Vertex {
+                position: [-1.0, 1.0],
+            },
+        ];
+
+        let device_memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+        let (vertex_buffer, vertex_buffer_memory) = {
+            let create_info = vk::BufferCreateInfo::builder()
+                .size(std::mem::size_of_val(&vertices) as u64)
+                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let buffer = unsafe { device.create_buffer(&create_info, None) }
+                .expect("Could not create vertex buffer");
+
+            let buffer_memory_requirements =
+                unsafe { device.get_buffer_memory_requirements(buffer) };
+
+            let buffer_memorytype_index = find_memorytype_index(
+                &buffer_memory_requirements,
+                &device_memory_properties,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )
+            .expect("Could not find memorytype for vertex buffer");
+
+            let allocate_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(buffer_memory_requirements.size)
+                .memory_type_index(buffer_memorytype_index);
+
+            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
+                .expect("Could not allocate memory for vertex buffer");
+
+            let buffer_ptr = unsafe {
+                device.map_memory(
+                    buffer_memory,
+                    0,
+                    buffer_memory_requirements.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+            }
+            .expect("Could not map memory for vertex buffer");
+
+            let mut buffer_align = unsafe {
+                Align::new(
+                    buffer_ptr,
+                    align_of::<Vertex>() as u64,
+                    buffer_memory_requirements.size,
+                )
+            };
+
+            buffer_align.copy_from_slice(&vertices);
+
+            unsafe { device.unmap_memory(buffer_memory) };
+
+            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
+                .expect("Could not bind buffer memory for vertex buffer");
+
+            (buffer, buffer_memory)
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -522,6 +594,9 @@ impl CatDemo {
             pipeline,
             framebuffers,
             command_pool,
+
+            vertex_buffer,
+            vertex_buffer_memory,
         }
     }
 
@@ -566,6 +641,9 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.device.destroy_buffer(self.vertex_buffer, None) };
+        unsafe { self.device.free_memory(self.vertex_buffer_memory, None) };
+
         unsafe { self.device.destroy_command_pool(self.command_pool, None) };
 
         for &framebuffer in self.framebuffers.iter() {
@@ -597,4 +675,19 @@ fn main() {
 
     let demo = CatDemo::new(&event_loop);
     demo.main_loop(event_loop);
+}
+
+pub fn find_memorytype_index(
+    memory_req: &vk::MemoryRequirements,
+    memory_prop: &vk::PhysicalDeviceMemoryProperties,
+    flags: vk::MemoryPropertyFlags,
+) -> Option<u32> {
+    memory_prop.memory_types[..memory_prop.memory_type_count as usize]
+        .iter()
+        .enumerate()
+        .find(|(index, memory_type)| {
+            (memory_req.memory_type_bits & (1 << index)) != 0
+                && memory_type.property_flags & flags == flags
+        })
+        .map(|(index, _memory_type)| index as u32)
 }
