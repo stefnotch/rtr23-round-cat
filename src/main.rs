@@ -19,8 +19,21 @@ struct Vertex {
     position: [f32; 2],
 }
 
+// See: https://github.com/ash-rs/ash/blob/master/examples/src/lib.rs#L30C1-L40C2
+// Simple offset_of macro akin to C++ offsetof
+#[macro_export]
+macro_rules! offset_of {
+    ($base:path, $field:ident) => {{
+        #[allow(unused_unsafe)]
+        unsafe {
+            let b: $base = std::mem::zeroed();
+            std::ptr::addr_of!(b.$field) as isize - std::ptr::addr_of!(b) as isize
+        }
+    }};
+}
+
 impl Vertex {
-    const fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+    fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
         [vk::VertexInputBindingDescription {
             binding: 0,
             stride: std::mem::size_of::<Self>() as u32,
@@ -28,12 +41,12 @@ impl Vertex {
         }]
     }
 
-    const fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 1] {
+    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 1] {
         [vk::VertexInputAttributeDescription {
             location: 0,
             binding: 0,
             format: vk::Format::R32G32_SFLOAT,
-            offset: 0, // Note: i would love to use std::mem::offset_of but it's unstable according to https://github.com/rust-lang/rust/issues/106655
+            offset: offset_of!(Self, position) as u32,
         }]
     }
 }
