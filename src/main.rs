@@ -59,6 +59,8 @@ struct CatDemo {
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
+
+    command_pool: vk::CommandPool,
 }
 
 impl CatDemo {
@@ -479,6 +481,14 @@ impl CatDemo {
                 .collect::<Vec<_>>()
         };
 
+        let command_pool = {
+            let create_info =
+                vk::CommandPoolCreateInfo::builder().queue_family_index(queue_family_index);
+
+            unsafe { device.create_command_pool(&create_info, None) }
+                .expect("Could not create command pool")
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -498,6 +508,7 @@ impl CatDemo {
             render_pass,
             pipeline,
             framebuffers,
+            command_pool,
         }
     }
 
@@ -542,6 +553,8 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.device.destroy_command_pool(self.command_pool, None) };
+
         for &framebuffer in self.framebuffers.iter() {
             unsafe { self.device.destroy_framebuffer(framebuffer, None) };
         }
