@@ -58,6 +58,7 @@ struct CatDemo {
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
+    framebuffers: Vec<vk::Framebuffer>,
 }
 
 impl CatDemo {
@@ -461,6 +462,23 @@ impl CatDemo {
             (pipeline[0], layout)
         };
 
+        let framebuffers = {
+            swapchain_imageviews
+                .iter()
+                .map(|image_view| {
+                    let create_info = vk::FramebufferCreateInfo::builder()
+                        .render_pass(render_pass)
+                        .attachments(std::slice::from_ref(image_view))
+                        .width(swapchain_extent.width)
+                        .height(swapchain_extent.height)
+                        .layers(1);
+
+                    unsafe { device.create_framebuffer(&create_info, None) }
+                        .expect("Could not create framebuffer")
+                })
+                .collect::<Vec<_>>()
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -479,6 +497,7 @@ impl CatDemo {
             pipeline_layout,
             render_pass,
             pipeline,
+            framebuffers,
         }
     }
 
@@ -523,6 +542,9 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        for &framebuffer in self.framebuffers.iter() {
+            unsafe { self.device.destroy_framebuffer(framebuffer, None) };
+        }
         unsafe { self.device.destroy_pipeline(self.pipeline, None) };
         unsafe {
             self.device
