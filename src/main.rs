@@ -13,6 +13,31 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct Vertex {
+    position: [f32; 2],
+}
+
+impl Vertex {
+    const fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+        [vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }]
+    }
+
+    const fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 1] {
+        [vk::VertexInputAttributeDescription {
+            location: 0,
+            binding: 0,
+            format: vk::Format::R32G32_SFLOAT,
+            offset: 0, // Note: i would love to use std::mem::offset_of but it's unstable according to https://github.com/rust-lang/rust/issues/106655
+        }]
+    }
+}
+
 struct CatDemo {
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -32,6 +57,7 @@ struct CatDemo {
 
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
+    pipeline: vk::Pipeline,
 }
 
 impl CatDemo {
@@ -251,7 +277,42 @@ impl CatDemo {
             })
             .collect::<Vec<_>>();
 
-        let pipeline_layout = {
+        let render_pass = {
+            let color_attachment = vk::AttachmentDescription {
+                flags: vk::AttachmentDescriptionFlags::empty(),
+                format: swapchain_format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            };
+
+            let color_attachment_ref = vk::AttachmentReference {
+                attachment: 0,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            };
+
+            let subpass = vk::SubpassDescription::builder()
+                    .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                    //.input_attachments(input_attachments) // TODO: setup Input Attachments
+                    .color_attachments(std::slice::from_ref(&color_attachment_ref))
+                    // .depth_stencil_attachment(depth_stencil_attachment) // TODO: setup depth attachment for depth testing
+                    ;
+
+            let attachments = [color_attachment];
+
+            let create_info = vk::RenderPassCreateInfo::builder()
+                .attachments(&attachments)
+                .subpasses(std::slice::from_ref(&subpass));
+
+            unsafe { device.create_render_pass(&create_info, None) }
+                .expect("Could not create render pass")
+        };
+
+        let (pipeline, pipeline_layout) = {
             let mut vert_spv_file =
                 Cursor::new(&include_bytes!("../assets/shaders/base.vert.spv")[..]);
             let mut frag_spv_file =
@@ -276,7 +337,7 @@ impl CatDemo {
 
             let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
-            let _shader_stages = [
+            let shader_stages = [
                 vk::PipelineShaderStageCreateInfo::builder()
                     .module(vertex_shader_shader_module)
                     .name(shader_entry_name)
@@ -289,10 +350,16 @@ impl CatDemo {
                     .build(),
             ];
 
-            // TODO: Config vertex attributes and bindings
-            let _vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
+            let (vertex_input_binding_descriptions, vertex_input_attribute_descriptions) = (
+                Vertex::binding_descriptions(),
+                Vertex::attribute_descriptions(),
+            );
 
-            let _input_assembly_state_create_info =
+            let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
+                .vertex_binding_descriptions(&vertex_input_binding_descriptions)
+                .vertex_attribute_descriptions(&vertex_input_attribute_descriptions);
+
+            let input_assembly_state_create_info =
                 vk::PipelineInputAssemblyStateCreateInfo::builder()
                     .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
 
@@ -310,18 +377,18 @@ impl CatDemo {
                 extent: swapchain_extent,
             }];
 
-            let _viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
+            let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
                 .viewports(&viewports)
                 .scissors(&scissors);
 
-            let _rasterization_state_create_info =
+            let rasterization_state_create_info =
                 vk::PipelineRasterizationStateCreateInfo::builder()
                     .cull_mode(vk::CullModeFlags::BACK)
                     .front_face(vk::FrontFace::CLOCKWISE)
                     .line_width(1.0)
                     .polygon_mode(vk::PolygonMode::FILL);
 
-            let _multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+            let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
                 .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
             let stencil_state = vk::StencilOpState {
@@ -334,7 +401,7 @@ impl CatDemo {
                 reference: 0,
             };
 
-            let _depth_stencil_state_create_info =
+            let depth_stencil_state_create_info =
                 vk::PipelineDepthStencilStateCreateInfo::builder()
                     .depth_test_enable(false)
                     .depth_write_enable(false)
@@ -357,7 +424,7 @@ impl CatDemo {
                 color_write_mask: vk::ColorComponentFlags::RGBA,
             }];
 
-            let _color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+            let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&color_blend_attachment_states);
 
@@ -367,45 +434,31 @@ impl CatDemo {
             let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
                 .expect("Could not create pipeline layout");
 
+            let create_info = vk::GraphicsPipelineCreateInfo::builder()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_state_create_info)
+                .input_assembly_state(&input_assembly_state_create_info)
+                .viewport_state(&viewport_state_create_info)
+                .rasterization_state(&rasterization_state_create_info)
+                .multisample_state(&multisample_state_create_info)
+                .depth_stencil_state(&depth_stencil_state_create_info)
+                .color_blend_state(&color_blend_state)
+                .layout(layout)
+                .render_pass(render_pass);
+
+            let pipeline = unsafe {
+                device.create_graphics_pipelines(
+                    vk::PipelineCache::null(),
+                    std::slice::from_ref(&create_info),
+                    None,
+                )
+            }
+            .expect("Could not create graphics pipeline");
+
             unsafe { device.destroy_shader_module(vertex_shader_shader_module, None) };
             unsafe { device.destroy_shader_module(fragment_shader_shader_module, None) };
 
-            layout
-        };
-
-        let render_pass = {
-            let color_attachment = vk::AttachmentDescription {
-                flags: vk::AttachmentDescriptionFlags::empty(),
-                format: swapchain_format,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                store_op: vk::AttachmentStoreOp::STORE,
-                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-            };
-
-            let color_attachment_ref = vk::AttachmentReference {
-                attachment: 0,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            };
-
-            let subpass = vk::SubpassDescription::builder()
-                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                //.input_attachments(input_attachments) // TODO: setup Input Attachments
-                .color_attachments(std::slice::from_ref(&color_attachment_ref))
-                // .depth_stencil_attachment(depth_stencil_attachment) // TODO: setup depth attachment for depth testing
-                ;
-
-            let attachments = [color_attachment];
-
-            let create_info = vk::RenderPassCreateInfo::builder()
-                .attachments(&attachments)
-                .subpasses(std::slice::from_ref(&subpass));
-
-            unsafe { device.create_render_pass(&create_info, None) }
-                .expect("Could not create render pass")
+            (pipeline[0], layout)
         };
 
         Self {
@@ -425,6 +478,7 @@ impl CatDemo {
             swapchain_imageviews,
             pipeline_layout,
             render_pass,
+            pipeline,
         }
     }
 
@@ -469,14 +523,16 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
-        unsafe { self.device.destroy_render_pass(self.render_pass, None) };
-
+        unsafe { self.device.destroy_pipeline(self.pipeline, None) };
         unsafe {
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None)
         };
+
+        unsafe { self.device.destroy_render_pass(self.render_pass, None) };
+
         for &imageview in self.swapchain_imageviews.iter() {
-            unsafe { self.device.destroy_image_view(imageview, None) }
+            unsafe { self.device.destroy_image_view(imageview, None) };
         }
         unsafe {
             self.swapchain_loader
