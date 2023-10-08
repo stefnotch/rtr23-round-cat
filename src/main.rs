@@ -1,5 +1,8 @@
+mod camera;
 mod context;
+mod input_map;
 mod swapchain;
+mod time;
 
 use gpu_allocator::vulkan::*;
 use std::ffi::CStr;
@@ -9,12 +12,19 @@ use std::sync::{Arc, Mutex};
 
 use ash::util::{read_spv, Align};
 use ash::{self, vk};
+use camera::freecam_controller::FreecamController;
+use camera::Camera;
 use context::Context;
+use input_map::InputMap;
 use swapchain::SwapchainContainer;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use time::Time;
+use ultraviolet::{Rotor3, Vec2, Vec3};
+use winit::dpi::{self, LogicalSize};
+use winit::event::{
+    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
+};
 use winit::event_loop::EventLoop;
-use winit::window::{Window, WindowBuilder};
+use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -79,6 +89,11 @@ struct CatDemo {
     swapchain: SwapchainContainer,
     context: Context,
 
+    input_map: InputMap,
+    time: Time,
+    freecam_controller: FreecamController,
+    camera: Camera,
+
     allocator: ManuallyDrop<Arc<Mutex<Allocator>>>,
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 }
@@ -96,6 +111,11 @@ impl CatDemo {
             .with_resizable(false)
             .build(&event_loop)
             .expect("Could not create window");
+
+        let freecam_controller = FreecamController::new(5.0, 0.1);
+        let camera = Camera::new(Default::default());
+        let input_map = InputMap::new();
+        let time = Time::new();
 
         let context = Context::new(event_loop, &window);
 
@@ -177,9 +197,9 @@ impl CatDemo {
 
         let (pipeline, pipeline_layout) = {
             let mut vert_spv_file =
-                Cursor::new(&include_bytes!("../assets/shaders/base.vert.spv")[..]);
+                Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
             let mut frag_spv_file =
-                Cursor::new(&include_bytes!("../assets/shaders/base.frag.spv")[..]);
+                Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.frag.spv"))[..]);
 
             let vert_shader_code =
                 read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
@@ -504,12 +524,18 @@ impl CatDemo {
             present_complete_semaphore,
             rendering_complete_semaphore,
 
+            input_map,
+            freecam_controller,
+            camera,
+            time,
+
             egui_integration,
             allocator,
         }
     }
 
     pub fn main_loop(mut self, event_loop: EventLoop<()>) {
+        let mut mouse_position = Vec2::zero();
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
 
@@ -528,24 +554,87 @@ impl CatDemo {
                                     ..
                                 },
                             ..
-                        } => match (virtual_keycode, state) {
-                            (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
-                                control_flow.set_exit();
-                            }
-                            _ => (),
-                        },
+                        } => {
+                            match (virtual_keycode, state) {
+                                (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                    control_flow.set_exit();
+                                }
+                                _ => (),
+                            };
+                            match (virtual_keycode, state) {
+                                (Some(virtual_keycode), ElementState::Pressed) => {
+                                    self.input_map.update_key_press(virtual_keycode)
+                                }
+                                (Some(virtual_keycode), ElementState::Released) => {
+                                    self.input_map.update_key_release(virtual_keycode)
+                                }
+                                (None, _) => (),
+                            };
+                        }
+                        WindowEvent::MouseInput { button, state, .. } => {
+                            match state {
+                                ElementState::Pressed => self.input_map.update_mouse_press(button),
+                                ElementState::Released => {
+                                    self.input_map.update_mouse_release(button)
+                                }
+                            };
+
+                            match (button, state) {
+                                (MouseButton::Right, ElementState::Pressed) => {
+                                    self.input_map.start_capturing_mouse(mouse_position);
+                                    self.window
+                                        .set_cursor_grab(CursorGrabMode::Confined)
+                                        .or_else(|_e| {
+                                            self.window.set_cursor_grab(CursorGrabMode::Locked)
+                                        })
+                                        .unwrap();
+                                    self.window.set_cursor_visible(false);
+                                }
+                                (MouseButton::Right, ElementState::Released) => {
+                                    self.input_map.stop_capturing_mouse().map(|position| {
+                                        self.window.set_cursor_position(dpi::PhysicalPosition::new(
+                                            position.x, position.y,
+                                        ))
+                                    });
+                                    self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
+                                    self.window.set_cursor_visible(true);
+                                    //self.window.set_cursor_position(position)
+                                }
+                                _ => {}
+                            };
+                        }
+                        WindowEvent::CursorMoved { position, .. } => {
+                            mouse_position = Vec2::new(position.x as f32, position.y as f32);
+                        }
                         _ => {}
                     }
                 }
+                Event::DeviceEvent { event, .. } => match event {
+                    DeviceEvent::MouseMotion { delta: (dx, dy) } => {
+                        self.input_map
+                            .accumulate_mouse_delta(Vec2::new(dx as f32, dy as f32));
+                    }
+                    _ => (),
+                },
                 Event::MainEventsCleared => {
                     self.window.request_redraw();
                 }
                 Event::RedrawRequested(_window_id) => {
+                    self.time.update();
+                    self.update_camera();
+
+                    self.input_map.clear_mouse_delta();
                     self.draw_frame();
                 }
                 _ => (),
             }
         });
+    }
+
+    fn update_camera(&mut self) {
+        self.freecam_controller
+            .update(&self.input_map, self.time.delta_seconds());
+        self.camera.update_camera(&self.freecam_controller);
     }
 
     fn draw_frame(&mut self) {
