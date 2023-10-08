@@ -8,12 +8,21 @@ pub struct SwapchainContainer {
 
     pub images: Vec<vk::Image>,
     pub format: vk::Format,
+    pub surface_format: vk::SurfaceFormatKHR,
+
     pub extent: vk::Extent2D,
 }
 
 impl SwapchainContainer {
     pub fn new(context: &Context, window_size: (u32, u32)) -> Self {
-        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = {
+        let (
+            swapchain_loader,
+            swapchain,
+            swapchain_images,
+            swapchain_format,
+            swapchain_surface_format,
+            swapchain_extent,
+        ) = {
             let capabilities = unsafe {
                 context
                     .surface_loader
@@ -102,6 +111,7 @@ impl SwapchainContainer {
                 swapchain,
                 swapchain_images,
                 image_format.format,
+                image_format,
                 swapchain_extent,
             )
         };
@@ -112,6 +122,7 @@ impl SwapchainContainer {
             images: swapchain_images,
             format: swapchain_format,
             extent: swapchain_extent,
+            surface_format: swapchain_surface_format,
         }
     }
 }

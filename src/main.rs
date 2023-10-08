@@ -1,9 +1,11 @@
 mod context;
 mod swapchain;
 
+use gpu_allocator::vulkan::*;
 use std::ffi::CStr;
 use std::io::Cursor;
-use std::mem::align_of;
+use std::mem::{align_of, ManuallyDrop};
+use std::sync::{Arc, Mutex};
 
 use ash::util::{read_spv, Align};
 use ash::{self, vk};
@@ -76,6 +78,9 @@ struct CatDemo {
 
     swapchain: SwapchainContainer,
     context: Context,
+
+    allocator: ManuallyDrop<Arc<Mutex<Allocator>>>,
+    egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 }
 
 impl CatDemo {
@@ -88,6 +93,7 @@ impl CatDemo {
                 width: window_width,
                 height: window_height,
             })
+            .with_resizable(false)
             .build(&event_loop)
             .expect("Could not create window");
 
@@ -135,7 +141,7 @@ impl CatDemo {
                 stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
                 stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
                 initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             };
 
             let color_attachment_ref = vk::AttachmentReference {
@@ -336,8 +342,12 @@ impl CatDemo {
         };
 
         let command_pool = {
-            let create_info =
-                vk::CommandPoolCreateInfo::builder().queue_family_index(context.queue_family_index);
+            let create_info = vk::CommandPoolCreateInfo::builder()
+                .queue_family_index(context.queue_family_index)
+                .flags(
+                    vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER
+                        | vk::CommandPoolCreateFlags::TRANSIENT,
+                );
 
             unsafe { device.create_command_pool(&create_info, None) }
                 .expect("Could not create command pool")
@@ -412,12 +422,6 @@ impl CatDemo {
             (buffer, buffer_memory)
         };
 
-        let clear_values = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 1.0, 1.0],
-            },
-        }];
-
         let command_buffers = {
             let allocate_info = vk::CommandBufferAllocateInfo::builder()
                 .command_buffer_count(framebuffers.len() as u32)
@@ -426,54 +430,6 @@ impl CatDemo {
 
             let command_buffers = unsafe { device.allocate_command_buffers(&allocate_info) }
                 .expect("Could not allocate command buffers");
-
-            for (i, &command_buffer) in command_buffers.iter().enumerate() {
-                let begin_info = vk::CommandBufferBeginInfo::builder();
-
-                unsafe { device.begin_command_buffer(command_buffer, &begin_info) }
-                    .expect("Could not begin command buffer");
-
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffers[i])
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain.extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
-
-                unsafe {
-                    device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline,
-                    )
-                };
-
-                unsafe {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        std::slice::from_ref(&vertex_buffer),
-                        &[0],
-                    )
-                }
-
-                unsafe { device.cmd_draw(command_buffer, 3, 1, 0, 0) };
-
-                unsafe { device.cmd_end_render_pass(command_buffer) };
-
-                unsafe { device.end_command_buffer(command_buffer) }
-                    .expect("Could not end command buffer");
-            }
 
             command_buffers
         };
@@ -497,6 +453,36 @@ impl CatDemo {
             (present_complete_semaphore, rendering_complete_semaphore)
         };
 
+        let allocator = Allocator::new(&AllocatorCreateDesc {
+            instance: instance.clone(),
+            device: device.clone(),
+            physical_device: context.physical_device,
+            debug_settings: Default::default(),
+            buffer_device_address: false,
+            allocation_sizes: Default::default(),
+        })
+        .expect("Could not create allocator");
+
+        let allocator = Arc::new(Mutex::new(allocator));
+
+        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
+            event_loop,
+            window_width,
+            window_height,
+            window.scale_factor(),
+            egui::FontDefinitions::default(),
+            egui::Style::default(),
+            device.clone(),
+            allocator.clone(),
+            context.queue_family_index,
+            context.queue,
+            swapchain.swapchain_loader.clone(),
+            swapchain.swapchain.clone(),
+            swapchain.surface_format.clone(),
+        ));
+
+        let allocator = ManuallyDrop::new(allocator);
+
         Self {
             window,
             context,
@@ -517,6 +503,9 @@ impl CatDemo {
             fence,
             present_complete_semaphore,
             rendering_complete_semaphore,
+
+            egui_integration,
+            allocator,
         }
     }
 
@@ -525,26 +514,29 @@ impl CatDemo {
             control_flow.set_poll();
 
             match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::CloseRequested => {
-                        control_flow.set_exit();
-                    }
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode,
-                                state,
-                                ..
-                            },
-                        ..
-                    } => match (virtual_keycode, state) {
-                        (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                Event::WindowEvent { event, .. } => {
+                    let _response = self.egui_integration.handle_event(&event);
+                    match event {
+                        WindowEvent::CloseRequested => {
                             control_flow.set_exit();
                         }
-                        _ => (),
-                    },
-                    _ => {}
-                },
+                        WindowEvent::KeyboardInput {
+                            input:
+                                KeyboardInput {
+                                    virtual_keycode,
+                                    state,
+                                    ..
+                                },
+                            ..
+                        } => match (virtual_keycode, state) {
+                            (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                control_flow.set_exit();
+                            }
+                            _ => (),
+                        },
+                        _ => {}
+                    }
+                }
                 Event::MainEventsCleared => {
                     self.window.request_redraw();
                 }
@@ -580,6 +572,65 @@ impl CatDemo {
 
         let command_buffer = self.command_buffers[present_index as usize];
 
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe {
+            self.context
+                .device
+                .begin_command_buffer(command_buffer, &begin_info)
+        }
+        .expect("Could not begin command buffer");
+
+        let clear_values = [vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 1.0, 1.0],
+            },
+        }];
+
+        let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(self.render_pass)
+            .framebuffer(self.framebuffers[present_index as usize])
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.swapchain.extent,
+            })
+            .clear_values(&clear_values);
+
+        unsafe {
+            self.context.device.cmd_begin_render_pass(
+                command_buffer,
+                &render_pass_begin_info,
+                vk::SubpassContents::INLINE,
+            )
+        };
+
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline,
+            )
+        };
+
+        unsafe {
+            self.context.device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                std::slice::from_ref(&self.vertex_buffer),
+                &[0],
+            )
+        }
+
+        unsafe { self.context.device.cmd_draw(command_buffer, 3, 1, 0, 0) };
+
+        unsafe { self.context.device.cmd_end_render_pass(command_buffer) };
+
+        self.draw_ui(&command_buffer, present_index as usize);
+
+        unsafe { self.context.device.end_command_buffer(command_buffer) }
+            .expect("Could not end command buffer");
+
         // submit
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(&[self.present_complete_semaphore])
@@ -607,6 +658,28 @@ impl CatDemo {
         }
         .expect("Could not queue present");
     }
+
+    fn draw_ui(&mut self, command_buffer: &vk::CommandBuffer, swapchain_image_index: usize) {
+        self.egui_integration
+            .context()
+            .set_visuals(egui::style::Visuals::dark());
+
+        self.egui_integration.begin_frame(&self.window);
+        egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
+            ui.heading("Hello");
+            ui.label("Hello egui!");
+            ui.separator();
+        });
+
+        let output = self.egui_integration.end_frame(&mut self.window);
+        let clipped_meshes = self.egui_integration.context().tessellate(output.shapes);
+        self.egui_integration.paint(
+            *command_buffer,
+            swapchain_image_index,
+            clipped_meshes,
+            output.textures_delta,
+        );
+    }
 }
 
 impl Drop for CatDemo {
@@ -614,6 +687,9 @@ impl Drop for CatDemo {
         let device = &self.context.device;
 
         unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
+
+        unsafe { self.egui_integration.destroy() };
+        unsafe { ManuallyDrop::drop(&mut self.egui_integration) };
 
         unsafe { device.destroy_semaphore(self.present_complete_semaphore, None) };
 
@@ -637,6 +713,8 @@ impl Drop for CatDemo {
         for &imageview in self.swapchain_imageviews.iter() {
             unsafe { self.context.device.destroy_image_view(imageview, None) };
         }
+
+        unsafe { ManuallyDrop::drop(&mut self.allocator) };
     }
 }
 
