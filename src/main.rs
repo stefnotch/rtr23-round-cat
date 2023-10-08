@@ -1,14 +1,14 @@
+mod context;
+mod swapchain;
+
 use std::ffi::CStr;
 use std::io::Cursor;
 use std::mem::align_of;
 
 use ash::util::{read_spv, Align};
-use ash::vk::{
-    ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo,
-    SwapchainCreateInfoKHR,
-};
 use ash::{self, vk};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use context::Context;
+use swapchain::SwapchainContainer;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -54,21 +54,7 @@ impl Vertex {
 }
 
 struct CatDemo {
-    _entry: ash::Entry,
-    instance: ash::Instance,
-    device: ash::Device,
-    surface_loader: ash::extensions::khr::Surface,
-
-    queue: vk::Queue,
     window: Window,
-    surface: vk::SurfaceKHR,
-
-    swapchain_loader: ash::extensions::khr::Swapchain,
-    swapchain: vk::SwapchainKHR,
-    _swapchain_images: Vec<vk::Image>,
-    _swapchain_format: vk::Format,
-    _swapchain_extent: vk::Extent2D,
-    swapchain_imageviews: Vec<vk::ImageView>,
 
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
@@ -86,23 +72,14 @@ struct CatDemo {
     rendering_complete_semaphore: vk::Semaphore,
 
     fence: vk::Fence,
+    swapchain_imageviews: Vec<vk::ImageView>,
+
+    swapchain: SwapchainContainer,
+    context: Context,
 }
 
 impl CatDemo {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
-        let entry = unsafe { ash::Entry::load() }.expect("Could not load vulkan library");
-
-        let instance = {
-            let surface_extension =
-                ash_window::enumerate_required_extensions(event_loop.raw_display_handle()).unwrap();
-
-            let app_info = ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
-            let create_info = InstanceCreateInfo::builder()
-                .application_info(&app_info)
-                .enabled_extension_names(surface_extension);
-            unsafe { entry.create_instance(&create_info, None) }.expect("Could not create instance")
-        };
-
         let (window_width, window_height) = (800, 600);
 
         let window = WindowBuilder::new()
@@ -114,177 +91,20 @@ impl CatDemo {
             .build(&event_loop)
             .expect("Could not create window");
 
-        let surface = unsafe {
-            ash_window::create_surface(
-                &entry,
-                &instance,
-                window.raw_display_handle(),
-                window.raw_window_handle(),
-                None,
-            )
-        }
-        .expect("Could not create surface");
+        let context = Context::new(event_loop, &window);
 
-        let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+        let swapchain = SwapchainContainer::new(&context, (window_width, window_height));
 
-        let swapchain_extension = ash::extensions::khr::Swapchain::name();
+        let instance = &context.instance;
+        let device = &context.device;
 
-        let (physical_device, queue_family_index) = {
-            let physical_devices = unsafe { instance.enumerate_physical_devices() }
-                .expect("Could not enumerate physical devices");
-
-            physical_devices
-                .into_iter()
-                .filter(|pd| {
-                    let extension_properties =
-                        unsafe { instance.enumerate_device_extension_properties(*pd) }
-                            .expect("Could not enumerate device extension properties");
-                    let mut supported_extensions =
-                        extension_properties.iter().map(|property| unsafe {
-                            CStr::from_ptr(property.extension_name.as_ptr())
-                        });
-
-                    supported_extensions.any(|ext| swapchain_extension == ext)
-                })
-                .filter_map(|pd| {
-                    unsafe { instance.get_physical_device_queue_family_properties(pd) }
-                        .iter()
-                        .enumerate()
-                        .position(|(index, info)| {
-                            let supports_graphics =
-                                info.queue_flags.contains(vk::QueueFlags::GRAPHICS);
-                            let supports_surface = unsafe {
-                                surface_loader.get_physical_device_surface_support(
-                                    pd,
-                                    index as u32,
-                                    surface,
-                                )
-                            }
-                            .unwrap();
-
-                            supports_graphics && supports_surface
-                        })
-                        .map(|i| (pd, i as u32))
-                })
-                .min_by_key(|(pd, _)| {
-                    let device_type =
-                        unsafe { instance.get_physical_device_properties(*pd) }.device_type;
-
-                    match device_type {
-                        vk::PhysicalDeviceType::DISCRETE_GPU => 0,
-                        vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-                        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
-                        vk::PhysicalDeviceType::CPU => 3,
-                        vk::PhysicalDeviceType::OTHER => 4,
-                        _ => 5,
-                    }
-                })
-                .expect("Couldn't find suitable device.")
-        };
-
-        let device = {
-            let device_extensions = [swapchain_extension.as_ptr()];
-
-            let queue_priorities = [1.0];
-            let queue_create_info = DeviceQueueCreateInfo::builder()
-                .queue_family_index(0)
-                .queue_priorities(&queue_priorities);
-            let create_info = DeviceCreateInfo::builder()
-                .queue_create_infos(std::slice::from_ref(&queue_create_info))
-                .enabled_extension_names(&device_extensions);
-
-            unsafe { instance.create_device(physical_device, &create_info, None) }
-                .expect("Could not create logical device")
-        };
-
-        let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
-
-        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = {
-            let capabilities = unsafe {
-                surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
-            }
-            .expect("Could not get surface capabilities from physical device");
-
-            let formats = unsafe {
-                surface_loader.get_physical_device_surface_formats(physical_device, surface)
-            }
-            .expect("Could not get surface formats from physical device");
-
-            let present_modes = unsafe {
-                surface_loader.get_physical_device_surface_present_modes(physical_device, surface)
-            }
-            .expect("Could not get present modes from physical device");
-
-            let image_format = formats
-                .into_iter()
-                .min_by_key(|fmt| match (fmt.format, fmt.color_space) {
-                    (vk::Format::B8G8R8A8_SRGB, _) => 1,
-                    (vk::Format::R8G8B8A8_SRGB, vk::ColorSpaceKHR::SRGB_NONLINEAR) => 2,
-                    (_, _) => 3,
-                })
-                .expect("Could not fetch image format");
-
-            let present_mode = present_modes
-                .into_iter()
-                .find(|&pm| pm == vk::PresentModeKHR::MAILBOX)
-                .unwrap_or(vk::PresentModeKHR::FIFO);
-
-            let swapchain_extent = {
-                if capabilities.current_extent.width != u32::MAX {
-                    capabilities.current_extent
-                } else {
-                    vk::Extent2D {
-                        width: window_width.clamp(
-                            capabilities.min_image_extent.width,
-                            capabilities.max_image_extent.width,
-                        ),
-                        height: window_height.clamp(
-                            capabilities.min_image_extent.height,
-                            capabilities.max_image_extent.height,
-                        ),
-                    }
-                }
-            };
-
-            let num_images = capabilities.max_image_count.max(2);
-
-            let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
-
-            let create_info = SwapchainCreateInfoKHR::builder()
-                .surface(surface)
-                .min_image_count(num_images)
-                .image_color_space(image_format.color_space)
-                .image_format(image_format.format)
-                .image_extent(swapchain_extent)
-                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-                .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .pre_transform(capabilities.current_transform)
-                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                .present_mode(present_mode)
-                .clipped(true)
-                .image_array_layers(1);
-
-            let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }
-                .expect("Could not create swapchain");
-
-            let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
-                .expect("Could not get swapchain images");
-
-            (
-                swapchain_loader,
-                swapchain,
-                swapchain_images,
-                image_format.format,
-                swapchain_extent,
-            )
-        };
-
-        let swapchain_imageviews = swapchain_images
+        let swapchain_imageviews = swapchain
+            .images
             .iter()
             .map(|&image| {
                 let create_info = vk::ImageViewCreateInfo::builder()
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(swapchain_format)
+                    .format(swapchain.format)
                     .components(vk::ComponentMapping {
                         r: vk::ComponentSwizzle::IDENTITY,
                         g: vk::ComponentSwizzle::IDENTITY,
@@ -300,7 +120,7 @@ impl CatDemo {
                     })
                     .image(image);
 
-                unsafe { device.create_image_view(&create_info, None) }
+                unsafe { context.device.create_image_view(&create_info, None) }
                     .expect("Could not create image view")
             })
             .collect::<Vec<_>>();
@@ -308,7 +128,7 @@ impl CatDemo {
         let render_pass = {
             let color_attachment = vk::AttachmentDescription {
                 flags: vk::AttachmentDescriptionFlags::empty(),
-                format: swapchain_format,
+                format: swapchain.format,
                 samples: vk::SampleCountFlags::TYPE_1,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,
@@ -403,15 +223,15 @@ impl CatDemo {
             let viewports = [vk::Viewport {
                 x: 0.0,
                 y: 0.0,
-                width: swapchain_extent.width as f32,
-                height: swapchain_extent.height as f32,
+                width: swapchain.extent.width as f32,
+                height: swapchain.extent.height as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
             }];
 
             let scissors = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
-                extent: swapchain_extent,
+                extent: swapchain.extent,
             }];
 
             let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
@@ -505,8 +325,8 @@ impl CatDemo {
                     let create_info = vk::FramebufferCreateInfo::builder()
                         .render_pass(render_pass)
                         .attachments(std::slice::from_ref(image_view))
-                        .width(swapchain_extent.width)
-                        .height(swapchain_extent.height)
+                        .width(swapchain.extent.width)
+                        .height(swapchain.extent.height)
                         .layers(1);
 
                     unsafe { device.create_framebuffer(&create_info, None) }
@@ -517,7 +337,7 @@ impl CatDemo {
 
         let command_pool = {
             let create_info =
-                vk::CommandPoolCreateInfo::builder().queue_family_index(queue_family_index);
+                vk::CommandPoolCreateInfo::builder().queue_family_index(context.queue_family_index);
 
             unsafe { device.create_command_pool(&create_info, None) }
                 .expect("Could not create command pool")
@@ -536,7 +356,7 @@ impl CatDemo {
         ];
 
         let device_memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+            unsafe { instance.get_physical_device_memory_properties(context.physical_device) };
 
         let (vertex_buffer, vertex_buffer_memory) = {
             let create_info = vk::BufferCreateInfo::builder()
@@ -618,7 +438,7 @@ impl CatDemo {
                     .framebuffer(framebuffers[i])
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_extent,
+                        extent: swapchain.extent,
                     })
                     .clear_values(&clear_values);
 
@@ -678,20 +498,11 @@ impl CatDemo {
         };
 
         Self {
-            _entry: entry,
-            instance,
-            surface_loader,
-            device,
-            queue,
             window,
-            surface,
-
-            swapchain_loader,
+            context,
             swapchain,
-            _swapchain_images: swapchain_images,
-            _swapchain_format: swapchain_format,
-            _swapchain_extent: swapchain_extent,
             swapchain_imageviews,
+
             pipeline_layout,
             render_pass,
             pipeline,
@@ -748,17 +559,18 @@ impl CatDemo {
     fn draw_frame(&mut self) {
         // wait for fence
         unsafe {
-            self.device
+            self.context
+                .device
                 .wait_for_fences(&[self.fence], true, std::u64::MAX)
         }
         .expect("Could not wait for fences");
 
         // reset fence
-        unsafe { self.device.reset_fences(&[self.fence]) }.expect("Could not reset fences");
+        unsafe { self.context.device.reset_fences(&[self.fence]) }.expect("Could not reset fences");
 
         let (present_index, _) = unsafe {
-            self.swapchain_loader.acquire_next_image(
-                self.swapchain,
+            self.swapchain.swapchain_loader.acquire_next_image(
+                self.swapchain.swapchain,
                 std::u64::MAX,
                 self.present_complete_semaphore,
                 vk::Fence::null(),
@@ -777,19 +589,21 @@ impl CatDemo {
             .build();
 
         unsafe {
-            self.device
-                .queue_submit(self.queue, &[submit_info], self.fence)
+            self.context
+                .device
+                .queue_submit(self.context.queue, &[submit_info], self.fence)
         }
         .expect("Could not submit to queue");
 
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
-            .swapchains(std::slice::from_ref(&self.swapchain))
+            .swapchains(std::slice::from_ref(&self.swapchain.swapchain))
             .image_indices(std::slice::from_ref(&present_index));
 
         unsafe {
-            self.swapchain_loader
-                .queue_present(self.queue, &present_info)
+            self.swapchain
+                .swapchain_loader
+                .queue_present(self.context.queue, &present_info)
         }
         .expect("Could not queue present");
     }
@@ -797,46 +611,32 @@ impl CatDemo {
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
-        unsafe { self.device.device_wait_idle() }.expect("Could not wait for device idle");
+        let device = &self.context.device;
 
-        unsafe {
-            self.device
-                .destroy_semaphore(self.present_complete_semaphore, None)
-        };
+        unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
 
-        unsafe {
-            self.device
-                .destroy_semaphore(self.rendering_complete_semaphore, None)
-        };
+        unsafe { device.destroy_semaphore(self.present_complete_semaphore, None) };
 
-        unsafe { self.device.destroy_fence(self.fence, None) };
+        unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };
 
-        unsafe { self.device.destroy_buffer(self.vertex_buffer, None) };
-        unsafe { self.device.free_memory(self.vertex_buffer_memory, None) };
+        unsafe { device.destroy_fence(self.fence, None) };
 
-        unsafe { self.device.destroy_command_pool(self.command_pool, None) };
+        unsafe { device.destroy_buffer(self.vertex_buffer, None) };
+        unsafe { device.free_memory(self.vertex_buffer_memory, None) };
+
+        unsafe { device.destroy_command_pool(self.command_pool, None) };
 
         for &framebuffer in self.framebuffers.iter() {
-            unsafe { self.device.destroy_framebuffer(framebuffer, None) };
+            unsafe { device.destroy_framebuffer(framebuffer, None) };
         }
-        unsafe { self.device.destroy_pipeline(self.pipeline, None) };
-        unsafe {
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None)
-        };
+        unsafe { device.destroy_pipeline(self.pipeline, None) };
+        unsafe { device.destroy_pipeline_layout(self.pipeline_layout, None) };
 
-        unsafe { self.device.destroy_render_pass(self.render_pass, None) };
+        unsafe { device.destroy_render_pass(self.render_pass, None) };
 
         for &imageview in self.swapchain_imageviews.iter() {
-            unsafe { self.device.destroy_image_view(imageview, None) };
+            unsafe { self.context.device.destroy_image_view(imageview, None) };
         }
-        unsafe {
-            self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None)
-        };
-        unsafe { self.device.destroy_device(None) };
-        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
-        unsafe { self.instance.destroy_instance(None) };
     }
 }
 
