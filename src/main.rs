@@ -171,9 +171,9 @@ impl CatDemo {
 
         let (pipeline, pipeline_layout) = {
             let mut vert_spv_file =
-                Cursor::new(&include_bytes!("../assets/shaders/base.vert.spv")[..]);
+                Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
             let mut frag_spv_file =
-                Cursor::new(&include_bytes!("../assets/shaders/base.frag.spv")[..]);
+                Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.frag.spv"))[..]);
 
             let vert_shader_code =
                 read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
