@@ -17,10 +17,12 @@ use input_map::InputMap;
 use swapchain::SwapchainContainer;
 use time::Time;
 use ultraviolet::{Rotor3, Vec2, Vec3};
-use winit::dpi::LogicalSize;
-use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::dpi::{self, LogicalSize};
+use winit::event::{
+    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
+};
 use winit::event_loop::EventLoop;
-use winit::window::{Window, WindowBuilder};
+use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -544,6 +546,7 @@ impl CatDemo {
     }
 
     pub fn main_loop(mut self, event_loop: EventLoop<()>) {
+        let mut mouse_position = Vec2::zero();
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
 
@@ -582,6 +585,33 @@ impl CatDemo {
                             ElementState::Pressed => self.input_map.update_mouse_press(button),
                             ElementState::Released => self.input_map.update_mouse_release(button),
                         };
+
+                        match (button, state) {
+                            (MouseButton::Right, ElementState::Pressed) => {
+                                self.input_map.start_capturing_mouse(mouse_position);
+                                self.window
+                                    .set_cursor_grab(CursorGrabMode::Confined)
+                                    .or_else(|_e| {
+                                        self.window.set_cursor_grab(CursorGrabMode::Locked)
+                                    })
+                                    .unwrap();
+                                self.window.set_cursor_visible(false);
+                            }
+                            (MouseButton::Right, ElementState::Released) => {
+                                self.input_map.stop_capturing_mouse().map(|position| {
+                                    self.window.set_cursor_position(dpi::PhysicalPosition::new(
+                                        position.x, position.y,
+                                    ))
+                                });
+                                self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
+                                self.window.set_cursor_visible(true);
+                                //self.window.set_cursor_position(position)
+                            }
+                            _ => {}
+                        };
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        mouse_position = Vec2::new(position.x as f32, position.y as f32);
                     }
                     _ => {}
                 },
@@ -611,8 +641,6 @@ impl CatDemo {
         self.freecam_controller
             .update(&self.input_map, self.time.delta_seconds());
         self.camera.update_camera(&self.freecam_controller);
-
-        println!("Camera: {:?}", self.camera);
     }
 
     fn draw_frame(&mut self) {

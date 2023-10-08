@@ -1,4 +1,4 @@
-use ultraviolet::{Rotor3, Vec3};
+use ultraviolet::{Rotor3, Vec2, Vec3};
 use winit::event::VirtualKeyCode;
 
 use crate::input_map::InputMap;
@@ -25,15 +25,21 @@ impl FreecamController {
         }
     }
     pub fn update(&mut self, input_map: &InputMap, delta_time: f32) {
-        // Update orientation
-        let mouse_delta = input_map.mouse_delta();
+        if input_map.is_capturing_mouse() {
+            self.update_orientation(input_map.mouse_delta(), delta_time);
+        }
+
+        self.update_position(input_to_direction(input_map), delta_time);
+    }
+
+    fn update_orientation(&mut self, mouse_delta: Vec2, delta_time: f32) {
         let max_pitch = 88f32.to_radians();
         self.yaw -= mouse_delta.x * self.sensitivity * delta_time;
         self.pitch = (self.pitch + mouse_delta.y * self.sensitivity * delta_time)
             .clamp(-max_pitch, max_pitch);
+    }
 
-        // Update position
-        let direction = input_to_direction(input_map);
+    fn update_position(&mut self, direction: Vec3, delta_time: f32) {
         let horizontal_movement = normalize_if_not_zero(direction * Vec3::new(1.0, 0.0, 1.0));
         let vertical_movement = Camera::up() * direction.y;
         let horizontal_movement = Rotor3::from_rotation_xz(self.yaw) * horizontal_movement;

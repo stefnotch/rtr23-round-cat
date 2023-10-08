@@ -8,6 +8,8 @@ pub struct InputMap {
     state: [bool; NUM_KEYS],
     mouse_state: [bool; NUM_MOUSE_BUTTONS],
     mouse_delta: Vec2,
+    /// Where the mouse was when we started capturing it
+    captured_mouse_position: Option<Vec2>,
 }
 
 impl InputMap {
@@ -16,6 +18,7 @@ impl InputMap {
             state: [false; NUM_KEYS],
             mouse_state: [false; NUM_MOUSE_BUTTONS],
             mouse_delta: Vec2::zero(),
+            captured_mouse_position: None,
         }
     }
 
@@ -49,6 +52,18 @@ impl InputMap {
 
     pub(crate) fn accumulate_mouse_delta(&mut self, delta: Vec2) {
         self.mouse_delta += delta;
+    }
+
+    pub(crate) fn start_capturing_mouse(&mut self, position: Vec2) {
+        self.captured_mouse_position = Some(position);
+    }
+
+    pub(crate) fn stop_capturing_mouse(&mut self) -> Option<Vec2> {
+        self.captured_mouse_position.take()
+    }
+
+    pub fn is_capturing_mouse(&self) -> bool {
+        self.captured_mouse_position.is_some()
     }
 
     pub fn mouse_delta(&self) -> Vec2 {
