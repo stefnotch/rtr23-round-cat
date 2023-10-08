@@ -17,7 +17,8 @@ use winit::window::{Window, WindowBuilder};
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct Vertex {
-    position: [f32; 2],
+    // Note: use vec4 to avoid alignment issues
+    position: [f32; 4],
 }
 
 // See: https://github.com/ash-rs/ash/blob/master/examples/src/lib.rs#L30C1-L40C2
@@ -46,7 +47,7 @@ impl Vertex {
         [vk::VertexInputAttributeDescription {
             location: 0,
             binding: 0,
-            format: vk::Format::R32G32_SFLOAT,
+            format: vk::Format::R32G32B32A32_SFLOAT,
             offset: offset_of!(Self, position) as u32,
         }]
     }
@@ -58,7 +59,7 @@ struct CatDemo {
     device: ash::Device,
     surface_loader: ash::extensions::khr::Surface,
 
-    _queue: vk::Queue,
+    queue: vk::Queue,
     window: Window,
     surface: vk::SurfaceKHR,
 
@@ -80,6 +81,11 @@ struct CatDemo {
     vertex_buffer_memory: vk::DeviceMemory,
 
     command_buffers: Vec<vk::CommandBuffer>,
+
+    present_complete_semaphore: vk::Semaphore,
+    rendering_complete_semaphore: vk::Semaphore,
+
+    fence: vk::Fence,
 }
 
 impl CatDemo {
@@ -325,9 +331,19 @@ impl CatDemo {
 
             let attachments = [color_attachment];
 
+            let dependencies = [vk::SubpassDependency {
+                src_subpass: vk::SUBPASS_EXTERNAL,
+                src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
+                    | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ..Default::default()
+            }];
+
             let create_info = vk::RenderPassCreateInfo::builder()
                 .attachments(&attachments)
-                .subpasses(std::slice::from_ref(&subpass));
+                .subpasses(std::slice::from_ref(&subpass))
+                .dependencies(&dependencies);
 
             unsafe { device.create_render_pass(&create_info, None) }
                 .expect("Could not create render pass")
@@ -405,7 +421,7 @@ impl CatDemo {
             let rasterization_state_create_info =
                 vk::PipelineRasterizationStateCreateInfo::builder()
                     .cull_mode(vk::CullModeFlags::BACK)
-                    .front_face(vk::FrontFace::CLOCKWISE)
+                    .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
                     .line_width(1.0)
                     .polygon_mode(vk::PolygonMode::FILL);
 
@@ -509,13 +525,13 @@ impl CatDemo {
 
         let vertices = [
             Vertex {
-                position: [0.0, 1.0],
+                position: [-1.0, 1.0, 0.0, 1.0],
             },
             Vertex {
-                position: [1.0, 1.0],
+                position: [1.0, 1.0, 0.0, 1.0],
             },
             Vertex {
-                position: [-1.0, 1.0],
+                position: [0.0, -1.0, 0.0, 1.0],
             },
         ];
 
@@ -578,7 +594,7 @@ impl CatDemo {
 
         let clear_values = [vk::ClearValue {
             color: vk::ClearColorValue {
-                float32: [1.0, 0.0, 0.0, 1.0],
+                float32: [0.0, 0.0, 1.0, 1.0],
             },
         }];
 
@@ -642,12 +658,31 @@ impl CatDemo {
             command_buffers
         };
 
+        let fence = {
+            let create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+
+            unsafe { device.create_fence(&create_info, None) }.expect("Could not create fence")
+        };
+
+        let (present_complete_semaphore, rendering_complete_semaphore) = {
+            let create_info = vk::SemaphoreCreateInfo::builder();
+
+            let present_complete_semaphore = unsafe { device.create_semaphore(&create_info, None) }
+                .expect("Could not create present semaphore");
+
+            let rendering_complete_semaphore =
+                unsafe { device.create_semaphore(&create_info, None) }
+                    .expect("Could not create rendering complete semaphore");
+
+            (present_complete_semaphore, rendering_complete_semaphore)
+        };
+
         Self {
             _entry: entry,
             instance,
             surface_loader,
             device,
-            _queue: queue,
+            queue,
             window,
             surface,
 
@@ -667,6 +702,10 @@ impl CatDemo {
             vertex_buffer_memory,
 
             command_buffers,
+
+            fence,
+            present_complete_semaphore,
+            rendering_complete_semaphore,
         }
     }
 
@@ -706,11 +745,72 @@ impl CatDemo {
         });
     }
 
-    fn draw_frame(&mut self) {}
+    fn draw_frame(&mut self) {
+        // wait for fence
+        unsafe {
+            self.device
+                .wait_for_fences(&[self.fence], true, std::u64::MAX)
+        }
+        .expect("Could not wait for fences");
+
+        // reset fence
+        unsafe { self.device.reset_fences(&[self.fence]) }.expect("Could not reset fences");
+
+        let (present_index, _) = unsafe {
+            self.swapchain_loader.acquire_next_image(
+                self.swapchain,
+                std::u64::MAX,
+                self.present_complete_semaphore,
+                vk::Fence::null(),
+            )
+        }
+        .expect("Could not accquire next image");
+
+        let command_buffer = self.command_buffers[present_index as usize];
+
+        // submit
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(&[self.present_complete_semaphore])
+            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+            .command_buffers(&[command_buffer])
+            .signal_semaphores(&[self.rendering_complete_semaphore])
+            .build();
+
+        unsafe {
+            self.device
+                .queue_submit(self.queue, &[submit_info], self.fence)
+        }
+        .expect("Could not submit to queue");
+
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
+            .swapchains(std::slice::from_ref(&self.swapchain))
+            .image_indices(std::slice::from_ref(&present_index));
+
+        unsafe {
+            self.swapchain_loader
+                .queue_present(self.queue, &present_info)
+        }
+        .expect("Could not queue present");
+    }
 }
 
 impl Drop for CatDemo {
     fn drop(&mut self) {
+        unsafe { self.device.device_wait_idle() }.expect("Could not wait for device idle");
+
+        unsafe {
+            self.device
+                .destroy_semaphore(self.present_complete_semaphore, None)
+        };
+
+        unsafe {
+            self.device
+                .destroy_semaphore(self.rendering_complete_semaphore, None)
+        };
+
+        unsafe { self.device.destroy_fence(self.fence, None) };
+
         unsafe { self.device.destroy_buffer(self.vertex_buffer, None) };
         unsafe { self.device.free_memory(self.vertex_buffer_memory, None) };
 
