@@ -7,10 +7,21 @@ pub struct Camera {
 }
 
 pub struct CameraSettings {
-    z_near: f32,
-    z_far: f32,
-    fov: f32,
-    aspect_ratio: f32,
+    pub z_near: f32,
+    pub z_far: f32,
+    pub fov: f32,
+    pub aspect_ratio: f32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        Self {
+            z_near: 0.1,
+            z_far: 100.0,
+            fov: 60.0,
+            aspect_ratio: 1.0,
+        }
+    }
 }
 
 impl Camera {

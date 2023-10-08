@@ -8,6 +8,7 @@ use std::mem::align_of;
 
 use ash::util::{read_spv, Align};
 use ash::{self, vk};
+use camera::Camera;
 use context::Context;
 use swapchain::SwapchainContainer;
 use winit::dpi::LogicalSize;
@@ -77,6 +78,8 @@ struct CatDemo {
 
     swapchain: SwapchainContainer,
     context: Context,
+
+    camera: Camera,
 }
 
 impl CatDemo {
@@ -91,6 +94,8 @@ impl CatDemo {
             })
             .build(&event_loop)
             .expect("Could not create window");
+
+        let camera = Camera::new(Default::default());
 
         let context = Context::new(event_loop, &window);
 
@@ -518,6 +523,8 @@ impl CatDemo {
             fence,
             present_complete_semaphore,
             rendering_complete_semaphore,
+
+            camera,
         }
     }
 
