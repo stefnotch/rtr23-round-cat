@@ -417,7 +417,7 @@ dependencies = [
 [[package]]
 name = "egui-winit-ash-integration"
 version = "0.3.0"
-source = "git+https://github.com/YouSafe/egui-winit-ash-integration?branch=main#543029c67220253d74e53f6200488edeaea93712"
+source = "git+https://github.com/YouSafe/egui-winit-ash-integration?branch=main#fec3ca4759bb5b2271011c1d863adf32d981e56b"
 dependencies = [
  "anyhow",
  "ash",

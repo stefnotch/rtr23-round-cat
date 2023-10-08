@@ -19,7 +19,7 @@ use input_map::InputMap;
 use swapchain::SwapchainContainer;
 use time::Time;
 use ultraviolet::{Rotor3, Vec2, Vec3};
-use winit::dpi::{self, LogicalSize};
+use winit::dpi::{self};
 use winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
 };
@@ -104,7 +104,7 @@ impl CatDemo {
 
         let window = WindowBuilder::new()
             .with_title("Round Cat")
-            .with_inner_size(LogicalSize {
+            .with_inner_size(dpi::LogicalSize {
                 width: window_width,
                 height: window_height,
             })
@@ -119,7 +119,10 @@ impl CatDemo {
 
         let context = Context::new(event_loop, &window);
 
-        let swapchain = SwapchainContainer::new(&context, (window_width, window_height));
+        let swapchain = SwapchainContainer::new(
+            &context,
+            (window.inner_size().width, window.inner_size().height),
+        );
 
         let instance = &context.instance;
         let device = &context.device;
@@ -487,8 +490,8 @@ impl CatDemo {
 
         let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
             event_loop,
-            window_width,
-            window_height,
+            window.inner_size().width,
+            window.inner_size().height,
             window.scale_factor(),
             egui::FontDefinitions::default(),
             egui::Style::default(),
@@ -541,7 +544,7 @@ impl CatDemo {
 
             match event {
                 Event::WindowEvent { event, .. } => {
-                    let _response = self.egui_integration.handle_event(&event);
+                    let response = self.egui_integration.handle_event(&event);
                     match event {
                         WindowEvent::CloseRequested => {
                             control_flow.set_exit();
@@ -555,6 +558,9 @@ impl CatDemo {
                                 },
                             ..
                         } => {
+                            if response.consumed {
+                                return;
+                            }
                             match (virtual_keycode, state) {
                                 (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
                                     control_flow.set_exit();
@@ -572,6 +578,9 @@ impl CatDemo {
                             };
                         }
                         WindowEvent::MouseInput { button, state, .. } => {
+                            if response.consumed {
+                                return;
+                            }
                             match state {
                                 ElementState::Pressed => self.input_map.update_mouse_press(button),
                                 ElementState::Released => {
