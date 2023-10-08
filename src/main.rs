@@ -1,6 +1,8 @@
 mod camera;
 mod context;
+mod input_map;
 mod swapchain;
+mod time;
 
 use std::ffi::CStr;
 use std::io::Cursor;
@@ -8,11 +10,15 @@ use std::mem::align_of;
 
 use ash::util::{read_spv, Align};
 use ash::{self, vk};
+use camera::freecam_controller::FreecamController;
 use camera::Camera;
 use context::Context;
+use input_map::InputMap;
 use swapchain::SwapchainContainer;
+use time::Time;
+use ultraviolet::{Rotor3, Vec2, Vec3};
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
@@ -79,6 +85,9 @@ struct CatDemo {
     swapchain: SwapchainContainer,
     context: Context,
 
+    input_map: InputMap,
+    time: Time,
+    freecam_controller: FreecamController,
     camera: Camera,
 }
 
@@ -95,7 +104,10 @@ impl CatDemo {
             .build(&event_loop)
             .expect("Could not create window");
 
+        let freecam_controller = FreecamController::new(5.0, 0.1);
         let camera = Camera::new(Default::default());
+        let input_map = InputMap::new();
+        let time = Time::new();
 
         let context = Context::new(event_loop, &window);
 
@@ -524,7 +536,10 @@ impl CatDemo {
             present_complete_semaphore,
             rendering_complete_semaphore,
 
+            input_map,
+            freecam_controller,
             camera,
+            time,
         }
     }
 
@@ -545,23 +560,59 @@ impl CatDemo {
                                 ..
                             },
                         ..
-                    } => match (virtual_keycode, state) {
-                        (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
-                            control_flow.set_exit();
-                        }
-                        _ => (),
-                    },
+                    } => {
+                        match (virtual_keycode, state) {
+                            (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                control_flow.set_exit();
+                            }
+                            _ => (),
+                        };
+                        match (virtual_keycode, state) {
+                            (Some(virtual_keycode), ElementState::Pressed) => {
+                                self.input_map.update_key_press(virtual_keycode)
+                            }
+                            (Some(virtual_keycode), ElementState::Released) => {
+                                self.input_map.update_key_release(virtual_keycode)
+                            }
+                            (None, _) => (),
+                        };
+                    }
+                    WindowEvent::MouseInput { button, state, .. } => {
+                        match state {
+                            ElementState::Pressed => self.input_map.update_mouse_press(button),
+                            ElementState::Released => self.input_map.update_mouse_release(button),
+                        };
+                    }
                     _ => {}
+                },
+                Event::DeviceEvent { event, .. } => match event {
+                    DeviceEvent::MouseMotion { delta: (dx, dy) } => {
+                        self.input_map
+                            .accumulate_mouse_delta(Vec2::new(dx as f32, dy as f32));
+                    }
+                    _ => (),
                 },
                 Event::MainEventsCleared => {
                     self.window.request_redraw();
                 }
                 Event::RedrawRequested(_window_id) => {
+                    self.time.update();
+                    self.update_camera();
+
+                    self.input_map.clear_mouse_delta();
                     self.draw_frame();
                 }
                 _ => (),
             }
         });
+    }
+
+    fn update_camera(&mut self) {
+        self.freecam_controller
+            .update(&self.input_map, self.time.delta_seconds());
+        self.camera.update_camera(&self.freecam_controller);
+
+        println!("Camera: {:?}", self.camera);
     }
 
     fn draw_frame(&mut self) {
