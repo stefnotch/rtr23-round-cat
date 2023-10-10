@@ -26,17 +26,16 @@ impl FreecamController {
     }
     pub fn update(&mut self, input_map: &InputMap, delta_time: f32) {
         if input_map.is_capturing_mouse() {
-            self.update_orientation(input_map.mouse_delta(), delta_time);
+            self.update_orientation(input_map.mouse_delta());
         }
 
         self.update_position(input_to_direction(input_map), delta_time);
     }
 
-    fn update_orientation(&mut self, mouse_delta: Vec2, delta_time: f32) {
+    fn update_orientation(&mut self, mouse_delta: Vec2) {
         let max_pitch = 88f32.to_radians();
-        self.yaw -= mouse_delta.x * self.sensitivity * delta_time;
-        self.pitch = (self.pitch + mouse_delta.y * self.sensitivity * delta_time)
-            .clamp(-max_pitch, max_pitch);
+        self.yaw -= mouse_delta.x * self.sensitivity;
+        self.pitch = (self.pitch + mouse_delta.y * self.sensitivity).clamp(-max_pitch, max_pitch);
     }
 
     fn update_position(&mut self, direction: Vec3, delta_time: f32) {
@@ -55,7 +54,7 @@ impl CameraController for FreecamController {
     }
 
     fn orientation(&self) -> Rotor3 {
-        Rotor3::from_rotation_xz(self.yaw) * Rotor3::from_rotation_xy(self.pitch)
+        Rotor3::from_rotation_xz(self.yaw) * Rotor3::from_rotation_yz(self.pitch)
     }
 }
 

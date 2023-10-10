@@ -66,41 +66,6 @@ mod shader_types {
     }
 }
 
-#[doc = r" Tells how many bytes of padding have to be inserted after"]
-#[doc = r" the field with index #index."]
-#[allow(non_snake_case)]
-const fn _DirectionalLight__Std140Pad0() -> usize {
-    let starting_offset =
-        0usize + ::core::mem::size_of::<<Vec3 as ::crevice::std140::AsStd140>::Output>();
-    let alignment =
-        <<Vec3 as ::crevice::std140::AsStd140>::Output as ::crevice::std140::Std140>::ALIGNMENT;
-    ::crevice::internal::align_offset(starting_offset, alignment)
-}
-#[doc = r" Tells how many bytes of padding have to be inserted after"]
-#[doc = r" the field with index #index."]
-#[allow(non_snake_case)]
-const fn _DirectionalLight__Std140Pad1() -> usize {
-    let starting_offset = 0usize
-        + ::core::mem::size_of::<<Vec3 as ::crevice::std140::AsStd140>::Output>()
-        + _DirectionalLight__Std140Pad0()
-        + ::core::mem::size_of::<<Vec3 as ::crevice::std140::AsStd140>::Output>();
-    let alignment = ::crevice::internal::max_arr([
-        16usize,
-        <<Vec3 as ::crevice::std140::AsStd140>::Output as ::crevice::std140::Std140>::ALIGNMENT,
-        <<Vec3 as ::crevice::std140::AsStd140>::Output as ::crevice::std140::Std140>::ALIGNMENT,
-    ]);
-    ::crevice::internal::align_offset(starting_offset, alignment)
-}
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-#[allow(non_snake_case)]
-pub struct Std140DirectionalLight {
-    direction: <Vec3 as ::crevice::std140::AsStd140>::Output,
-    _pad0: [u8; _DirectionalLight__Std140Pad0()],
-    color: <Vec3 as ::crevice::std140::AsStd140>::Output,
-    _pad1: [u8; _DirectionalLight__Std140Pad1()],
-}
-
 // See: https://github.com/ash-rs/ash/blob/master/examples/src/lib.rs#L30C1-L40C2
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -208,8 +173,11 @@ impl CatDemo {
             .build(&event_loop)
             .expect("Could not create window");
 
-        let freecam_controller = FreecamController::new(5.0, 0.1);
-        let camera = Camera::new(Default::default());
+        let freecam_controller = FreecamController::new(5.0, 0.01);
+        let camera = Camera::new(
+            window_width as f32 / window_height as f32,
+            Default::default(),
+        );
         let input_map = InputMap::new();
         let time = Time::new();
 

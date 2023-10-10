@@ -35,9 +35,9 @@ void main() {
     // in world space
     vec3 l = -normalize(scene.directionalLight.direction);
 
-    float diffuse = max(dot(n, l), 0.00001);
+    float diffuse = max(dot(n, l), 0.1);
 
-    vec3 lightIntensity = scene.directionalLight.color;
+    vec3 lightIntensity = scene.directionalLight.color * diffuse;
 
     fragColor = vec4(lightIntensity, 1.0);
 }
