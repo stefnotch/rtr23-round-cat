@@ -1,7 +1,7 @@
 pub mod camera_controller;
 pub mod freecam_controller;
 
-use ultraviolet::{projection, Rotor3, Vec3};
+use ultraviolet::{projection, Mat4, Rotor3, Vec3};
 
 use self::camera_controller::CameraController;
 
@@ -42,13 +42,14 @@ impl Camera {
 
     /// Positions the camera
     pub fn view_matrix(&self) -> ultraviolet::Mat4 {
-        let translation = ultraviolet::Mat4::from_translation(-self.position);
-        let rotation = self.orientation.into_matrix().into_homogeneous();
-        rotation * translation
+        let cam_direction = self.orientation * Camera::forward();
+        let target = self.position + cam_direction;
+
+        Mat4::look_at(self.position, target, Camera::up())
     }
 
     pub fn projection_matrix(&self) -> ultraviolet::Mat4 {
-        projection::rh_ydown::perspective_vk(
+        projection::rh_yup::perspective_vk(
             self.settings.fov,
             self.settings.aspect_ratio,
             self.settings.z_near,
