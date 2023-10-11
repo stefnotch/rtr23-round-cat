@@ -1357,7 +1357,7 @@ impl Drop for CatDemo {
         unsafe { device.free_memory(self.entity_descriptor_set_buffer_memory, None) };
 
         unsafe { device.destroy_command_pool(self.command_pool, None) };
-        unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) }; 
+        unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
