@@ -148,7 +148,7 @@ struct CatDemo {
     swapchain_imageviews: Vec<vk::ImageView>,
 
     swapchain: SwapchainContainer,
-    context: Context,
+    context: Arc<Context>,
 
     input_map: InputMap,
     time: Time,
@@ -880,10 +880,11 @@ impl CatDemo {
         ));
 
         let allocator = ManuallyDrop::new(allocator);
+        //
 
         Self {
             window,
-            context,
+            context: Arc::new(context),
             swapchain,
             swapchain_imageviews,
 
