@@ -37,8 +37,12 @@ impl Camera {
         let position = Vec3::zero();
         let orientation = Rotor3::identity();
 
-        let proj =
-            calculate_projection(aspect_ratio, settings.fov, settings.z_near, settings.z_far);
+        let proj = calculate_projection(
+            aspect_ratio,
+            settings.fov.to_radians(),
+            settings.z_near,
+            settings.z_far,
+        );
 
         let view = calculate_view(position, orientation);
 
@@ -87,8 +91,9 @@ impl Camera {
     }
 }
 
+/// fov is expected to be in radians
 fn calculate_projection(aspect_ratio: f32, fov: f32, near: f32, far: f32) -> Mat4 {
-    projection::rh_yup::perspective_vk(fov.to_radians(), aspect_ratio, near, far)
+    projection::rh_yup::perspective_vk(fov, aspect_ratio, near, far)
 }
 
 fn calculate_view(position: Vec3, orientation: Rotor3) -> Mat4 {

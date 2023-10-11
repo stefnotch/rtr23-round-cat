@@ -23,7 +23,7 @@ use context::Context;
 use input_map::InputMap;
 use swapchain::SwapchainContainer;
 use time::Time;
-use ultraviolet::{Mat4, Rotor3, Vec2, Vec3};
+use ultraviolet::{Mat4, Vec2, Vec3};
 use winit::dpi::{self};
 use winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
@@ -123,13 +123,13 @@ struct CatDemo {
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
 
+    scene_descriptor_set_buffer: vk::Buffer,
+    camera_descriptor_set_buffer: vk::Buffer,
+    entity_descriptor_set_buffer: vk::Buffer,
+
     scene_descriptor_set_buffer_memory: vk::DeviceMemory,
     camera_descriptor_set_buffer_memory: vk::DeviceMemory,
     entity_descriptor_set_buffer_memory: vk::DeviceMemory,
-
-    scene_descriptor_set_buffer_memory_size: vk::DeviceSize,
-    camera_descriptor_set_buffer_memory_size: vk::DeviceSize,
-    entity_descriptor_set_buffer_memory_size: vk::DeviceSize,
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -625,9 +625,9 @@ impl CatDemo {
         };
 
         let (
-            scene_descriptor_buffer,
-            scene_descriptor_buffer_memory,
-            scene_descriptor_buffer_memory_size,
+            scene_descriptor_set_buffer,
+            scene_descriptor_set_buffer_memory,
+            scene_descriptor_set_buffer_memory_size,
         ) = {
             let create_info = vk::BufferCreateInfo::builder()
                 .size(std::mem::size_of::<shader_types::Std140Scene>() as u64)
@@ -758,7 +758,7 @@ impl CatDemo {
             }[0];
 
             let buffer_info = vk::DescriptorBufferInfo {
-                buffer: scene_descriptor_buffer,
+                buffer: scene_descriptor_set_buffer,
                 offset: 0,
                 range: std::mem::size_of::<shader_types::Scene>() as u64,
             };
@@ -901,7 +901,11 @@ impl CatDemo {
             index_buffer,
             index_buffer_memory,
 
-            scene_descriptor_set_buffer_memory: scene_descriptor_buffer_memory,
+            scene_descriptor_set_buffer,
+            camera_descriptor_set_buffer,
+            entity_descriptor_set_buffer,
+
+            scene_descriptor_set_buffer_memory,
             camera_descriptor_set_buffer_memory,
             entity_descriptor_set_buffer_memory,
 
@@ -926,9 +930,6 @@ impl CatDemo {
 
             egui_integration,
             allocator,
-            scene_descriptor_set_buffer_memory_size: scene_descriptor_buffer_memory_size,
-            camera_descriptor_set_buffer_memory_size: camera_descriptor_buffer_memory_size,
-            entity_descriptor_set_buffer_memory_size: entity_descriptor_buffer_memory_size,
         }
     }
 
@@ -1194,14 +1195,37 @@ impl CatDemo {
             ui.heading("Hello");
             ui.label("Hello egui!");
             ui.separator();
+            ui.label(format!(
+                "Frametime: {:.4}ms",
+                self.time.delta().as_secs_f64() * 1000.0
+            ));
+            ui.separator();
+            ui.label("Camera Settings: ");
+            ui.label("Position: ");
             ui.horizontal(|ui| {
                 ui.label("x:");
-                ui.add(egui::widgets::DragValue::new(&mut self.camera.position.x));
+                ui.add(
+                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.x)
+                        .speed(0.1),
+                );
                 ui.label("y:");
-                ui.add(egui::widgets::DragValue::new(&mut self.camera.position.y));
+                ui.add(
+                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.y)
+                        .speed(0.1),
+                );
                 ui.label("z:");
-                ui.add(egui::widgets::DragValue::new(&mut self.camera.position.z));
-            })
+                ui.add(
+                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.z)
+                        .speed(0.1),
+                );
+            });
+            ui.label("Orientation:");
+            ui.horizontal(|ui| {
+                ui.label("Yaw:");
+                ui.drag_angle(&mut self.freecam_controller.yaw);
+                ui.label("pitch:");
+                ui.drag_angle(&mut self.freecam_controller.pitch);
+            });
         });
 
         let output = self.egui_integration.end_frame(&mut self.window);
@@ -1314,9 +1338,7 @@ impl Drop for CatDemo {
         unsafe { ManuallyDrop::drop(&mut self.egui_integration) };
 
         unsafe { device.destroy_semaphore(self.present_complete_semaphore, None) };
-
         unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };
-
         unsafe { device.destroy_fence(self.fence, None) };
 
         unsafe { device.destroy_buffer(self.index_buffer, None) };
@@ -1325,9 +1347,17 @@ impl Drop for CatDemo {
         unsafe { device.destroy_buffer(self.vertex_buffer, None) };
         unsafe { device.free_memory(self.vertex_buffer_memory, None) };
 
-        unsafe { device.destroy_command_pool(self.command_pool, None) };
+        unsafe { device.destroy_buffer(self.scene_descriptor_set_buffer, None) };
+        unsafe { device.free_memory(self.scene_descriptor_set_buffer_memory, None) };
 
-        unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
+        unsafe { device.destroy_buffer(self.camera_descriptor_set_buffer, None) };
+        unsafe { device.free_memory(self.camera_descriptor_set_buffer_memory, None) };
+
+        unsafe { device.destroy_buffer(self.entity_descriptor_set_buffer, None) };
+        unsafe { device.free_memory(self.entity_descriptor_set_buffer_memory, None) };
+
+        unsafe { device.destroy_command_pool(self.command_pool, None) };
+        unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) }; 
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
