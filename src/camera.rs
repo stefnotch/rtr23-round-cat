@@ -1,7 +1,7 @@
 pub mod camera_controller;
 pub mod freecam_controller;
 
-use ultraviolet::{projection, Rotor3, Vec3};
+use ultraviolet::{projection, Mat4, Rotor3, Vec3};
 
 use self::camera_controller::CameraController;
 
@@ -10,6 +10,9 @@ pub struct Camera {
     pub position: Vec3,
     pub orientation: Rotor3,
     pub settings: CameraSettings,
+
+    pub view: Mat4,
+    pub proj: Mat4,
 }
 
 #[derive(Debug)]
@@ -17,7 +20,6 @@ pub struct CameraSettings {
     pub z_near: f32,
     pub z_far: f32,
     pub fov: f32,
-    pub aspect_ratio: f32,
 }
 
 impl Default for CameraSettings {
@@ -26,39 +28,51 @@ impl Default for CameraSettings {
             z_near: 0.1,
             z_far: 100.0,
             fov: 60.0,
-            aspect_ratio: 1.0,
         }
     }
 }
 
 impl Camera {
-    pub fn new(settings: CameraSettings) -> Self {
+    pub fn new(aspect_ratio: f32, settings: CameraSettings) -> Self {
+        let position = Vec3::zero();
+        let orientation = Rotor3::identity();
+
+        let proj = calculate_projection(
+            aspect_ratio,
+            settings.fov.to_radians(),
+            settings.z_near,
+            settings.z_far,
+        );
+
+        let view = calculate_view(position, orientation);
+
         Self {
-            position: Vec3::zero(),
-            orientation: Rotor3::identity(),
+            position,
+            orientation,
             settings,
+            proj,
+            view,
         }
     }
 
     /// Positions the camera
     pub fn view_matrix(&self) -> ultraviolet::Mat4 {
-        let translation = ultraviolet::Mat4::from_translation(-self.position);
-        let rotation = self.orientation.into_matrix().into_homogeneous();
-        rotation * translation
+        self.view
     }
 
     pub fn projection_matrix(&self) -> ultraviolet::Mat4 {
-        projection::rh_ydown::perspective_vk(
-            self.settings.fov,
-            self.settings.aspect_ratio,
-            self.settings.z_near,
-            self.settings.z_far,
-        )
+        self.proj
     }
 
     pub fn update_camera(&mut self, controller: &impl CameraController) {
         self.position = controller.position();
         self.orientation = controller.orientation();
+
+        self.view = calculate_view(self.position, self.orientation);
+    }
+
+    pub fn update_aspect_ratio(&mut self, aspect_ratio: f32) {
+        self.proj[0][0] = -self.proj[1][1] / aspect_ratio;
     }
 
     /// in world-space
@@ -75,4 +89,16 @@ impl Camera {
     pub const fn up() -> Vec3 {
         Vec3::new(0.0, 1.0, 0.0)
     }
+}
+
+/// fov is expected to be in radians
+fn calculate_projection(aspect_ratio: f32, fov: f32, near: f32, far: f32) -> Mat4 {
+    projection::rh_yup::perspective_vk(fov, aspect_ratio, near, far)
+}
+
+fn calculate_view(position: Vec3, orientation: Rotor3) -> Mat4 {
+    let cam_direction = orientation * Camera::forward();
+    let target = position + cam_direction;
+
+    Mat4::look_at(position, target, Camera::up())
 }

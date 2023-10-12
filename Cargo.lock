@@ -360,6 +360,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "crevice"
+version = "0.14.0"
+source = "git+https://github.com/YouSafe/crevice?branch=main#a97c04073e981c934525c9965976e2cc182acfdf"
+dependencies = [
+ "bytemuck",
+ "crevice-derive",
+ "mint",
+ "ultraviolet",
+]
+
+[[package]]
+name = "crevice-derive"
+version = "0.10.0"
+source = "git+https://github.com/YouSafe/crevice?branch=main#a97c04073e981c934525c9965976e2cc182acfdf"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -732,6 +753,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mint"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
+
+[[package]]
 name = "mio"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1058,6 +1085,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "ash-window",
+ "crevice",
  "egui",
  "egui-winit-ash-integration",
  "gpu-allocator",
@@ -1288,6 +1316,7 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a28554d13eb5daba527cc1b91b6c341372a0ae45ed277ffb2c6fbc04f319d7e"
 dependencies = [
+ "mint",
  "wide",
 ]
 

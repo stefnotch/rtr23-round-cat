@@ -33,7 +33,6 @@ impl Time {
         self.delta_seconds = delta_time.as_secs_f64();
     }
 
-    /// Remember to usually use LevelTime instead
     pub fn time_since_startup(&self) -> Duration {
         self.start_time.elapsed()
     }

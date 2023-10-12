@@ -12,3 +12,4 @@ ultraviolet = "0.9.2"
 egui-winit-ash-integration = { git = "https://github.com/YouSafe/egui-winit-ash-integration", branch = "main" }
 gpu-allocator = "0.23.0"
 egui = "0.23.0"
+crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", features = ["ultraviolet"] }
