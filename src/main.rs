@@ -1,4 +1,3 @@
-mod buffer;
 mod camera;
 mod context;
 mod cube_mesh;
@@ -36,6 +35,7 @@ use winit::window::{CursorGrabMode, Window, WindowBuilder};
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 mod shader_types {
@@ -88,7 +88,7 @@ impl Vertex {
         }]
     }
 
-    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         [
             vk::VertexInputAttributeDescription {
                 location: 0,
@@ -101,6 +101,12 @@ impl Vertex {
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(Self, normal) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 2,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: offset_of!(Self, uv) as u32,
             },
         ]
     }
@@ -170,7 +176,7 @@ impl CatDemo {
                 height: window_height,
             })
             .with_resizable(false)
-            .build(&event_loop)
+            .build(event_loop)
             .expect("Could not create window");
 
         let freecam_controller = FreecamController::new(5.0, 0.01);
@@ -624,11 +630,7 @@ impl CatDemo {
             (buffer, buffer_memory)
         };
 
-        let (
-            scene_descriptor_set_buffer,
-            scene_descriptor_set_buffer_memory,
-            scene_descriptor_set_buffer_memory_size,
-        ) = {
+        let (scene_descriptor_set_buffer, scene_descriptor_set_buffer_memory) = {
             let create_info = vk::BufferCreateInfo::builder()
                 .size(std::mem::size_of::<shader_types::Std140Scene>() as u64)
                 .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -657,14 +659,10 @@ impl CatDemo {
             unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
                 .expect("Could not bind buffer memory for scene uniform buffer");
 
-            (buffer, buffer_memory, buffer_memory_requirements.size)
+            (buffer, buffer_memory)
         };
 
-        let (
-            camera_descriptor_set_buffer,
-            camera_descriptor_set_buffer_memory,
-            camera_descriptor_buffer_memory_size,
-        ) = {
+        let (camera_descriptor_set_buffer, camera_descriptor_set_buffer_memory) = {
             let create_info = vk::BufferCreateInfo::builder()
                 .size(std::mem::size_of::<shader_types::Std140Camera>() as u64)
                 .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -693,14 +691,10 @@ impl CatDemo {
             unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
                 .expect("Could not bind buffer memory for camera uniform buffer");
 
-            (buffer, buffer_memory, buffer_memory_requirements.size)
+            (buffer, buffer_memory)
         };
 
-        let (
-            entity_descriptor_set_buffer,
-            entity_descriptor_set_buffer_memory,
-            entity_descriptor_buffer_memory_size,
-        ) = {
+        let (entity_descriptor_set_buffer, entity_descriptor_set_buffer_memory) = {
             let create_info = vk::BufferCreateInfo::builder()
                 .size(std::mem::size_of::<shader_types::Std140Entity>() as u64)
                 .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -729,7 +723,7 @@ impl CatDemo {
             unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
                 .expect("Could not bind buffer memory for entity uniform buffer");
 
-            (buffer, buffer_memory, buffer_memory_requirements.size)
+            (buffer, buffer_memory)
         };
 
         let descriptor_set_pool = {
@@ -836,10 +830,8 @@ impl CatDemo {
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY);
 
-            let command_buffers = unsafe { device.allocate_command_buffers(&allocate_info) }
-                .expect("Could not allocate command buffers");
-
-            command_buffers
+            unsafe { device.allocate_command_buffers(&allocate_info) }
+                .expect("Could not allocate command buffers")
         };
 
         let fence = {
@@ -875,12 +867,11 @@ impl CatDemo {
             context.queue_family_index,
             context.queue,
             swapchain.swapchain_loader.clone(),
-            swapchain.swapchain.clone(),
-            swapchain.surface_format.clone(),
+            swapchain.swapchain,
+            swapchain.surface_format,
         ));
 
         let allocator = ManuallyDrop::new(allocator);
-        //
 
         Self {
             window,
@@ -1229,7 +1220,7 @@ impl CatDemo {
             });
         });
 
-        let output = self.egui_integration.end_frame(&mut self.window);
+        let output = self.egui_integration.end_frame(&self.window);
         let clipped_meshes = self.egui_integration.context().tessellate(output.shapes);
         self.egui_integration.paint(
             *command_buffer,

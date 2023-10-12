@@ -72,7 +72,7 @@ impl Camera {
     }
 
     pub fn update_aspect_ratio(&mut self, aspect_ratio: f32) {
-        self.proj[0][0] = -self.proj[1][1].clone() / aspect_ratio;
+        self.proj[0][0] = -self.proj[1][1] / aspect_ratio;
     }
 
     /// in world-space

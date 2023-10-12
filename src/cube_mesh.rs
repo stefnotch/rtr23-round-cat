@@ -1,4 +1,4 @@
-use ultraviolet::Vec3;
+use ultraviolet::{Vec2, Vec3};
 
 use crate::Vertex;
 
@@ -59,12 +59,12 @@ pub fn unit_cube() -> Mesh {
         },
     ];
 
-    // let uvs_face: [Vec2; 4] = [
-    //     Vec2::new(0.0, 1.0),
-    //     Vec2::new(1.0, 1.0),
-    //     Vec2::new(1.0, 0.0),
-    //     Vec2::new(0.0, 0.0),
-    // ];
+    let uvs_face: [Vec2; 4] = [
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(0.0, 0.0),
+    ];
 
     let vertices: Vec<Vertex> = faces
         .iter()
@@ -75,7 +75,7 @@ pub fn unit_cube() -> Mesh {
                 .map(|(i, pos_index)| Vertex {
                     position: positions[*pos_index].into(),
                     normal: face.normal.into(),
-                    // uv: uvs_face[i].into(),
+                    uv: uvs_face[i].into(),
                 })
         })
         .collect();
