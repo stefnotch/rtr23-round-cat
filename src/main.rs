@@ -4,6 +4,8 @@ mod cube_mesh;
 mod input_map;
 mod swapchain;
 mod time;
+mod utility;
+mod vertex;
 
 use crevice::std140::AsStd140;
 use cube_mesh::{unit_cube, Mesh};
@@ -13,6 +15,7 @@ use std::ffi::CStr;
 use std::io::Cursor;
 use std::mem::{align_of, ManuallyDrop};
 use std::sync::{Arc, Mutex};
+use vertex::Vertex;
 
 use ash::util::{read_spv, Align};
 use ash::{self, vk};
@@ -29,14 +32,6 @@ use winit::event::{
 };
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
-
-#[derive(Clone, Debug, Copy)]
-#[repr(C)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub uv: [f32; 2],
-}
 
 mod shader_types {
     use crevice::std140::AsStd140;
@@ -63,52 +58,6 @@ mod shader_types {
     pub struct Camera {
         pub view: Mat4,
         pub proj: Mat4,
-    }
-}
-
-// See: https://github.com/ash-rs/ash/blob/master/examples/src/lib.rs#L30C1-L40C2
-// Simple offset_of macro akin to C++ offsetof
-#[macro_export]
-macro_rules! offset_of {
-    ($base:path, $field:ident) => {{
-        #[allow(unused_unsafe)]
-        unsafe {
-            let b: $base = std::mem::zeroed();
-            std::ptr::addr_of!(b.$field) as isize - std::ptr::addr_of!(b) as isize
-        }
-    }};
-}
-
-impl Vertex {
-    fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
-        [vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: std::mem::size_of::<Self>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
-        [
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(Self, position) as u32,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(Self, normal) as u32,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 2,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(Self, uv) as u32,
-            },
-        ]
     }
 }
 
@@ -149,8 +98,8 @@ struct CatDemo {
 
     present_complete_semaphore: vk::Semaphore,
     rendering_complete_semaphore: vk::Semaphore,
-
     fence: vk::Fence,
+
     swapchain_imageviews: Vec<vk::ImageView>,
 
     swapchain: SwapchainContainer,
