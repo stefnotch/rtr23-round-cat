@@ -1,23 +1,26 @@
-use std::ops::Deref;
+use std::{ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
-use crate::find_memorytype_index;
+use crate::{context::Context, find_memorytype_index};
 
 pub struct Buffer {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
+
+    context: Arc<Context>,
 }
 
 impl Buffer {
     pub fn new(
-        device: &ash::Device,
+        context: Arc<Context>,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
-        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         memory_property_flags: vk::MemoryPropertyFlags,
     ) -> Buffer {
+        let device = &context.device;
+
         let create_info = vk::BufferCreateInfo::builder()
             .size(size)
             .usage(usage)
@@ -30,7 +33,7 @@ impl Buffer {
 
         let buffer_memorytype_index = find_memorytype_index(
             &buffer_memory_requirements,
-            &device_memory_properties,
+            &context.device_memory_properties,
             memory_property_flags,
         )
         .expect("Could not find memorytype for buffer");
@@ -49,11 +52,15 @@ impl Buffer {
             buffer,
             memory,
             size: buffer_memory_requirements.size,
+            context,
         }
     }
+}
 
-    // TODO: move to drop
-    pub fn cleanup(&mut self, device: &ash::Device) {
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        let device = &self.context.device;
+
         unsafe { device.destroy_buffer(self.buffer, None) };
         unsafe { device.free_memory(self.memory, None) };
     }
