@@ -1,3 +1,4 @@
+mod buffer;
 mod camera;
 mod context;
 mod cube_mesh;
@@ -7,10 +8,11 @@ mod time;
 mod utility;
 mod vertex;
 
+use buffer::Buffer;
 use crevice::std140::AsStd140;
 use cube_mesh::{unit_cube, Mesh};
 use gpu_allocator::vulkan::*;
-use shader_types::DirectionalLight;
+use shader_types::{DirectionalLight, Std140Camera, Std140Entity};
 use std::ffi::CStr;
 use std::io::Cursor;
 use std::mem::{align_of, ManuallyDrop};
@@ -72,19 +74,12 @@ struct CatDemo {
     descriptor_set_pool: vk::DescriptorPool,
     command_pool: vk::CommandPool,
 
-    index_buffer: vk::Buffer,
-    index_buffer_memory: vk::DeviceMemory,
+    index_buffer: Buffer,
+    vertex_buffer: Buffer,
 
-    vertex_buffer: vk::Buffer,
-    vertex_buffer_memory: vk::DeviceMemory,
-
-    scene_descriptor_set_buffer: vk::Buffer,
-    camera_descriptor_set_buffer: vk::Buffer,
-    entity_descriptor_set_buffer: vk::Buffer,
-
-    scene_descriptor_set_buffer_memory: vk::DeviceMemory,
-    camera_descriptor_set_buffer_memory: vk::DeviceMemory,
-    entity_descriptor_set_buffer_memory: vk::DeviceMemory,
+    scene_descriptor_buffer: Buffer,
+    camera_descriptor_buffer: Buffer,
+    entity_descriptor_buffer: Buffer,
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -471,209 +466,80 @@ impl CatDemo {
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(context.physical_device) };
 
-        let (vertex_buffer, vertex_buffer_memory) = {
-            let create_info = vk::BufferCreateInfo::builder()
-                .size(vertices.len() as u64 * std::mem::size_of::<Vertex>() as u64)
-                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-            let buffer = unsafe { device.create_buffer(&create_info, None) }
-                .expect("Could not create vertex buffer");
-
-            let buffer_memory_requirements =
-                unsafe { device.get_buffer_memory_requirements(buffer) };
-
-            let buffer_memorytype_index = find_memorytype_index(
-                &buffer_memory_requirements,
+        let vertex_buffer = {
+            let size = vertices.len() as u64 * std::mem::size_of::<Vertex>() as u64;
+            let buffer = Buffer::new(
+                device,
+                size,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
                 &device_memory_properties,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .expect("Could not find memorytype for vertex buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(buffer_memory_requirements.size)
-                .memory_type_index(buffer_memorytype_index);
-
-            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for vertex buffer");
+            );
 
             let buffer_ptr = unsafe {
-                device.map_memory(
-                    buffer_memory,
-                    0,
-                    buffer_memory_requirements.size,
-                    vk::MemoryMapFlags::empty(),
-                )
+                device.map_memory(buffer.memory, 0, buffer.size, vk::MemoryMapFlags::empty())
             }
             .expect("Could not map memory for vertex buffer");
 
-            let mut buffer_align = unsafe {
-                Align::new(
-                    buffer_ptr,
-                    align_of::<Vertex>() as u64,
-                    buffer_memory_requirements.size,
-                )
-            };
+            let mut buffer_align =
+                unsafe { Align::new(buffer_ptr, align_of::<Vertex>() as u64, buffer.size) };
 
             buffer_align.copy_from_slice(&vertices);
 
-            unsafe { device.unmap_memory(buffer_memory) };
+            unsafe { device.unmap_memory(buffer.memory) };
 
-            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
-                .expect("Could not bind buffer memory for vertex buffer");
-
-            (buffer, buffer_memory)
+            buffer
         };
 
-        let (index_buffer, index_buffer_memory) = {
-            let create_info = vk::BufferCreateInfo::builder()
-                .size(indices.len() as u64 * std::mem::size_of::<u32>() as u64)
-                .usage(vk::BufferUsageFlags::INDEX_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let index_buffer = {
+            let size = indices.len() as u64 * std::mem::size_of::<u32>() as u64;
 
-            let buffer = unsafe { device.create_buffer(&create_info, None) }
-                .expect("Could not create index buffer");
-
-            let buffer_memory_requirements =
-                unsafe { device.get_buffer_memory_requirements(buffer) };
-
-            let buffer_memorytype_index = find_memorytype_index(
-                &buffer_memory_requirements,
+            let buffer = Buffer::new(
+                device,
+                size,
+                vk::BufferUsageFlags::INDEX_BUFFER,
                 &device_memory_properties,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .expect("Could not find memorytype for index buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(buffer_memory_requirements.size)
-                .memory_type_index(buffer_memorytype_index);
-
-            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for index buffer");
+            );
 
             let buffer_ptr = unsafe {
-                device.map_memory(
-                    buffer_memory,
-                    0,
-                    buffer_memory_requirements.size,
-                    vk::MemoryMapFlags::empty(),
-                )
+                device.map_memory(buffer.memory, 0, buffer.size, vk::MemoryMapFlags::empty())
             }
             .expect("Could not map memory for index buffer");
 
-            let mut buffer_align = unsafe {
-                Align::new(
-                    buffer_ptr,
-                    align_of::<u32>() as u64,
-                    buffer_memory_requirements.size,
-                )
-            };
+            let mut buffer_align =
+                unsafe { Align::new(buffer_ptr, align_of::<u32>() as u64, buffer.size) };
 
             buffer_align.copy_from_slice(&indices);
 
-            unsafe { device.unmap_memory(buffer_memory) };
+            unsafe { device.unmap_memory(buffer.memory) };
 
-            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
-                .expect("Could not bind buffer memory for index buffer");
-
-            (buffer, buffer_memory)
+            buffer
         };
 
-        let (scene_descriptor_set_buffer, scene_descriptor_set_buffer_memory) = {
-            let create_info = vk::BufferCreateInfo::builder()
-                .size(std::mem::size_of::<shader_types::Std140Scene>() as u64)
-                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let scene_descriptor_buffer = Buffer::new(
+            device,
+            std::mem::size_of::<shader_types::Std140Scene>() as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            &device_memory_properties,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
 
-            let buffer = unsafe { device.create_buffer(&create_info, None) }
-                .expect("Could not create scene uniform buffer");
+        let camera_descriptor_buffer = Buffer::new(
+            device,
+            std::mem::size_of::<shader_types::Std140Camera>() as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            &device_memory_properties,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
 
-            let buffer_memory_requirements =
-                unsafe { device.get_buffer_memory_requirements(buffer) };
-
-            let buffer_memorytype_index = find_memorytype_index(
-                &buffer_memory_requirements,
-                &device_memory_properties,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .expect("Could not find memorytype for scene uniform buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(buffer_memory_requirements.size)
-                .memory_type_index(buffer_memorytype_index);
-
-            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for scene uniform buffer");
-
-            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
-                .expect("Could not bind buffer memory for scene uniform buffer");
-
-            (buffer, buffer_memory)
-        };
-
-        let (camera_descriptor_set_buffer, camera_descriptor_set_buffer_memory) = {
-            let create_info = vk::BufferCreateInfo::builder()
-                .size(std::mem::size_of::<shader_types::Std140Camera>() as u64)
-                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-            let buffer = unsafe { device.create_buffer(&create_info, None) }
-                .expect("Could not create camera uniform buffer");
-
-            let buffer_memory_requirements =
-                unsafe { device.get_buffer_memory_requirements(buffer) };
-
-            let buffer_memorytype_index = find_memorytype_index(
-                &buffer_memory_requirements,
-                &device_memory_properties,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .expect("Could not find memorytype for camera uniform buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(buffer_memory_requirements.size)
-                .memory_type_index(buffer_memorytype_index);
-
-            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for camera uniform buffer");
-
-            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
-                .expect("Could not bind buffer memory for camera uniform buffer");
-
-            (buffer, buffer_memory)
-        };
-
-        let (entity_descriptor_set_buffer, entity_descriptor_set_buffer_memory) = {
-            let create_info = vk::BufferCreateInfo::builder()
-                .size(std::mem::size_of::<shader_types::Std140Entity>() as u64)
-                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-            let buffer = unsafe { device.create_buffer(&create_info, None) }
-                .expect("Could not create entity uniform buffer");
-
-            let buffer_memory_requirements =
-                unsafe { device.get_buffer_memory_requirements(buffer) };
-
-            let buffer_memorytype_index = find_memorytype_index(
-                &buffer_memory_requirements,
-                &device_memory_properties,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .expect("Could not find memorytype for entity uniform buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(buffer_memory_requirements.size)
-                .memory_type_index(buffer_memorytype_index);
-
-            let buffer_memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for entity uniform buffer");
-
-            unsafe { device.bind_buffer_memory(buffer, buffer_memory, 0) }
-                .expect("Could not bind buffer memory for entity uniform buffer");
-
-            (buffer, buffer_memory)
-        };
+        let entity_descriptor_buffer = Buffer::new(
+            device,
+            std::mem::size_of::<shader_types::Std140Entity>() as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            &device_memory_properties,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
 
         let descriptor_set_pool = {
             let pool_sizes = [vk::DescriptorPoolSize {
@@ -701,7 +567,7 @@ impl CatDemo {
             }[0];
 
             let buffer_info = vk::DescriptorBufferInfo {
-                buffer: scene_descriptor_set_buffer,
+                buffer: *scene_descriptor_buffer,
                 offset: 0,
                 range: std::mem::size_of::<shader_types::Scene>() as u64,
             };
@@ -729,7 +595,7 @@ impl CatDemo {
             }[0];
 
             let buffer_info = vk::DescriptorBufferInfo {
-                buffer: camera_descriptor_set_buffer,
+                buffer: *camera_descriptor_buffer,
                 offset: 0,
                 range: std::mem::size_of::<shader_types::Camera>() as u64,
             };
@@ -757,7 +623,7 @@ impl CatDemo {
             }[0];
 
             let buffer_info = vk::DescriptorBufferInfo {
-                buffer: entity_descriptor_set_buffer,
+                buffer: *entity_descriptor_buffer,
                 offset: 0,
                 range: std::mem::size_of::<shader_types::Entity>() as u64,
             };
@@ -837,18 +703,12 @@ impl CatDemo {
             descriptor_set_pool,
 
             vertex_buffer,
-            vertex_buffer_memory,
 
             index_buffer,
-            index_buffer_memory,
 
-            scene_descriptor_set_buffer,
-            camera_descriptor_set_buffer,
-            entity_descriptor_set_buffer,
-
-            scene_descriptor_set_buffer_memory,
-            camera_descriptor_set_buffer_memory,
-            entity_descriptor_set_buffer_memory,
+            scene_descriptor_buffer,
+            camera_descriptor_buffer,
+            entity_descriptor_buffer,
 
             scene_descriptor_set_layout,
             camera_descriptor_set_layout,
@@ -1051,7 +911,7 @@ impl CatDemo {
         unsafe {
             self.context.device.cmd_bind_index_buffer(
                 command_buffer,
-                self.index_buffer,
+                *self.index_buffer,
                 0,
                 vk::IndexType::UINT32,
             )
@@ -1204,28 +1064,30 @@ impl CatDemo {
         {
             let buffer_ptr = unsafe {
                 self.context.device.map_memory(
-                    self.scene_descriptor_set_buffer_memory,
+                    self.scene_descriptor_buffer.memory,
                     0,
-                    std::mem::size_of::<shader_types::Std140Scene>() as u64,
+                    self.scene_descriptor_buffer.size,
                     vk::MemoryMapFlags::empty(),
                 )
             }
             .expect("Could not map") as *mut shader_types::Std140Scene;
 
-            let ubo = [scene.as_std140()];
+            let data = scene.as_std140();
 
-            unsafe { buffer_ptr.copy_from_nonoverlapping(ubo.as_ptr(), ubo.len()) };
+            unsafe {
+                buffer_ptr.copy_from_nonoverlapping(&data as *const shader_types::Std140Scene, 1)
+            };
 
             unsafe {
                 self.context
                     .device
-                    .unmap_memory(self.scene_descriptor_set_buffer_memory)
+                    .unmap_memory(self.scene_descriptor_buffer.memory)
             };
         }
         {
             let buffer_ptr = unsafe {
                 self.context.device.map_memory(
-                    self.camera_descriptor_set_buffer_memory,
+                    self.camera_descriptor_buffer.memory,
                     0,
                     std::mem::size_of::<shader_types::Std140Camera>() as u64,
                     vk::MemoryMapFlags::empty(),
@@ -1234,20 +1096,22 @@ impl CatDemo {
             .expect("Could not map")
                 as *mut shader_types::Std140Camera;
 
-            let ubo = [camera.as_std140()];
+            let data = camera.as_std140();
 
-            unsafe { buffer_ptr.copy_from_nonoverlapping(ubo.as_ptr(), ubo.len()) };
+            unsafe {
+                buffer_ptr.copy_from_nonoverlapping(&data as *const shader_types::Std140Camera, 1)
+            };
 
             unsafe {
                 self.context
                     .device
-                    .unmap_memory(self.camera_descriptor_set_buffer_memory)
+                    .unmap_memory(self.camera_descriptor_buffer.memory)
             };
         }
         {
             let buffer_ptr = unsafe {
                 self.context.device.map_memory(
-                    self.entity_descriptor_set_buffer_memory,
+                    self.entity_descriptor_buffer.memory,
                     0,
                     std::mem::size_of::<shader_types::Std140Entity>() as u64,
                     vk::MemoryMapFlags::empty(),
@@ -1256,14 +1120,14 @@ impl CatDemo {
             .expect("Could not map")
                 as *mut shader_types::Std140Entity;
 
-            let ubo = [entity.as_std140()];
+            let data = entity.as_std140();
 
-            unsafe { buffer_ptr.copy_from_nonoverlapping(ubo.as_ptr(), ubo.len()) };
+            unsafe { buffer_ptr.copy_from_nonoverlapping(&data as *const Std140Entity, 1) };
 
             unsafe {
                 self.context
                     .device
-                    .unmap_memory(self.entity_descriptor_set_buffer_memory)
+                    .unmap_memory(self.entity_descriptor_buffer.memory)
             };
         }
     }
@@ -1282,20 +1146,12 @@ impl Drop for CatDemo {
         unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };
         unsafe { device.destroy_fence(self.fence, None) };
 
-        unsafe { device.destroy_buffer(self.index_buffer, None) };
-        unsafe { device.free_memory(self.index_buffer_memory, None) };
+        self.index_buffer.cleanup(device);
+        self.vertex_buffer.cleanup(device);
 
-        unsafe { device.destroy_buffer(self.vertex_buffer, None) };
-        unsafe { device.free_memory(self.vertex_buffer_memory, None) };
-
-        unsafe { device.destroy_buffer(self.scene_descriptor_set_buffer, None) };
-        unsafe { device.free_memory(self.scene_descriptor_set_buffer_memory, None) };
-
-        unsafe { device.destroy_buffer(self.camera_descriptor_set_buffer, None) };
-        unsafe { device.free_memory(self.camera_descriptor_set_buffer_memory, None) };
-
-        unsafe { device.destroy_buffer(self.entity_descriptor_set_buffer, None) };
-        unsafe { device.free_memory(self.entity_descriptor_set_buffer_memory, None) };
+        self.scene_descriptor_buffer.cleanup(device);
+        self.camera_descriptor_buffer.cleanup(device);
+        self.entity_descriptor_buffer.cleanup(device);
 
         unsafe { device.destroy_command_pool(self.command_pool, None) };
         unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
