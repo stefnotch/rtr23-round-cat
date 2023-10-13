@@ -5,7 +5,9 @@ use std::{env, fs};
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    let paths = fs::read_dir("assets/shaders/").unwrap();
+    let input_path = PathBuf::from("assets/shaders/");
+    let paths = fs::read_dir(&input_path).unwrap();
+    println!("cargo:rerun-if-changed={}", input_path.to_string_lossy());
 
     compile_shaders(paths, PathBuf::new(), out_dir);
 }
@@ -60,7 +62,5 @@ fn compile_shaders(paths: fs::ReadDir, parent_path: PathBuf, out_dir: String) {
                 shader_file_name, shader_compile_result
             );
         }
-
-        println!("cargo:rerun-if-changed={}", input_path.to_string_lossy());
     }
 }
