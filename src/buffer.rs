@@ -1,24 +1,41 @@
-use std::{ops::Deref, sync::Arc};
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
 use crate::{context::Context, find_memorytype_index};
 
-pub struct Buffer {
+pub trait IntoSlice<T> {
+    fn as_sliced(&self) -> &[T];
+}
+
+impl<T> IntoSlice<T> for T {
+    fn as_sliced(&self) -> &[T] {
+        std::slice::from_ref(self)
+    }
+}
+
+impl<T> IntoSlice<T> for &[T] {
+    fn as_sliced(&self) -> &[T] {
+        self
+    }
+}
+
+pub struct Buffer<T> {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
 
+    _marker: PhantomData<T>,
     context: Arc<Context>,
 }
 
-impl Buffer {
+impl<T> Buffer<T> {
     pub fn new(
         context: Arc<Context>,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
         memory_property_flags: vk::MemoryPropertyFlags,
-    ) -> Buffer {
+    ) -> Buffer<T> {
         let device = &context.device;
 
         let create_info = vk::BufferCreateInfo::builder()
@@ -53,11 +70,29 @@ impl Buffer {
             memory,
             size: buffer_memory_requirements.size,
             context,
+            _marker: PhantomData,
         }
     }
 }
 
-impl Drop for Buffer {
+impl<T> Buffer<T> {
+    pub fn copy_data<U: IntoSlice<T>>(&self, data: U) {
+        let data = data.as_sliced();
+
+        let buffer_ptr = unsafe {
+            self.context
+                .device
+                .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
+        }
+        .expect("Could not map memory") as *mut T;
+
+        unsafe { buffer_ptr.copy_from_nonoverlapping(data.as_ptr() as *const T, data.len()) };
+
+        unsafe { self.context.device.unmap_memory(self.memory) };
+    }
+}
+
+impl<T> Drop for Buffer<T> {
     fn drop(&mut self) {
         let device = &self.context.device;
 
@@ -66,7 +101,7 @@ impl Drop for Buffer {
     }
 }
 
-impl Deref for Buffer {
+impl<T> Deref for Buffer<T> {
     type Target = vk::Buffer;
 
     fn deref(&self) -> &Self::Target {
