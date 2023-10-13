@@ -30,9 +30,19 @@ use winit::event::{
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
+// Rust will drop these fields in the order they are declared
 struct CatDemo {
-    window: Window,
+    egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 
+    // TODO: check if this is correctly placed
+    scene_renderer: SceneRenderer,
+
+    input_map: InputMap,
+    time: Time,
+    freecam_controller: FreecamController,
+    camera: Camera,
+
+    // Low level Vulkan stuff
     descriptor_set_pool: vk::DescriptorPool,
     command_pool: vk::CommandPool,
 
@@ -42,19 +52,12 @@ struct CatDemo {
     rendering_complete_semaphore: vk::Semaphore,
     draw_fence: vk::Fence,
 
+    _allocator: Arc<Mutex<Allocator>>,
     swapchain: SwapchainContainer,
     context: Arc<Context>,
 
-    input_map: InputMap,
-    time: Time,
-    freecam_controller: FreecamController,
-    camera: Camera,
-
-    // TODO: check if this is correctly placed
-    scene_renderer: SceneRenderer,
-
-    allocator: ManuallyDrop<Arc<Mutex<Allocator>>>,
-    egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
+    /// Application window
+    window: Window,
 }
 
 impl CatDemo {
@@ -174,8 +177,6 @@ impl CatDemo {
             swapchain.surface_format,
         ));
 
-        let allocator = ManuallyDrop::new(allocator);
-
         Self {
             window,
             context,
@@ -198,7 +199,7 @@ impl CatDemo {
             scene_renderer,
 
             egui_integration,
-            allocator,
+            _allocator: allocator,
         }
     }
 
@@ -446,7 +447,6 @@ impl Drop for CatDemo {
         let device = &self.context.device;
 
         unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
-
         unsafe { self.egui_integration.destroy() };
         unsafe { ManuallyDrop::drop(&mut self.egui_integration) };
 
@@ -456,8 +456,6 @@ impl Drop for CatDemo {
 
         unsafe { device.destroy_command_pool(self.command_pool, None) };
         unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
-
-        unsafe { ManuallyDrop::drop(&mut self.allocator) };
     }
 }
 
