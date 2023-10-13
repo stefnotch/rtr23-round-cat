@@ -15,17 +15,8 @@ crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", feature
 # I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
 [target.'cfg(windows)'.dependencies]
 winit = { version = "0.28", default-features = false }
-[target.'cfg(windows)'.dependencies.egui-winit-ash-integration]
-git = "https://github.com/stefnotch/egui-winit-ash-integration"
-default-features = false
-features = ["gpu-allocator-feature", "clipboard"]
-branch = "patch-1"
+egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "clipboard"] }
 
 [target.'cfg(not(windows))'.dependencies]
 winit = { version = "0.28" }
-[target.'cfg(not(windows))'.dependencies.egui-winit-ash-integration]
-git = "https://github.com/stefnotch/egui-winit-ash-integration"
-default-features = false
-features = ["gpu-allocator-feature", "default"]
-branch = "patch-1"
-
+egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "default"] }
