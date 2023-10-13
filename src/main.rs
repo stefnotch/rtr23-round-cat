@@ -256,6 +256,9 @@ impl CatDemo {
 
                             match (button, state) {
                                 (MouseButton::Right, ElementState::Pressed) => {
+                                    if response.consumed {
+                                        return;
+                                    }
                                     self.input_map.start_capturing_mouse(mouse_position);
                                     self.window
                                         .set_cursor_grab(CursorGrabMode::Confined)
@@ -273,7 +276,6 @@ impl CatDemo {
                                     });
                                     self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
                                     self.window.set_cursor_visible(true);
-                                    //self.window.set_cursor_position(position)
                                 }
                                 _ => {}
                             };
