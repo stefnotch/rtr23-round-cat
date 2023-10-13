@@ -497,12 +497,9 @@ impl SceneRenderer {
             normal_matrix: Mat4::identity(),
         };
 
-        self.scene_descriptor_buffer
-            .copy_data(std::slice::from_ref(&scene.as_std140()));
-        self.camera_descriptor_buffer
-            .copy_data(std::slice::from_ref(&camera.as_std140()));
-        self.entity_descriptor_buffer
-            .copy_data(std::slice::from_ref(&entity.as_std140()));
+        self.scene_descriptor_buffer.copy_data(&scene.as_std140());
+        self.camera_descriptor_buffer.copy_data(&camera.as_std140());
+        self.entity_descriptor_buffer.copy_data(&entity.as_std140());
     }
 
     pub fn draw(

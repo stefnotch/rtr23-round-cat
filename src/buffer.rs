@@ -14,12 +14,13 @@ impl<T> IntoSlice<T> for T {
     }
 }
 
-impl<T> IntoSlice<T> for &[T] {
+impl<T> IntoSlice<T> for [T] {
     fn as_sliced(&self) -> &[T] {
         self
     }
 }
-impl<T> IntoSlice<T> for &Vec<T> {
+
+impl<T> IntoSlice<T> for Vec<T> {
     fn as_sliced(&self) -> &[T] {
         &self
     }
@@ -81,7 +82,7 @@ impl<T> Buffer<T> {
 }
 
 impl<T> Buffer<T> {
-    pub fn copy_data<U: IntoSlice<T>>(&self, data: U) {
+    pub fn copy_data<U: IntoSlice<T>>(&self, data: &U) {
         let data = data.as_sliced();
 
         let buffer_ptr = unsafe {
