@@ -19,6 +19,11 @@ impl<T> IntoSlice<T> for &[T] {
         self
     }
 }
+impl<T> IntoSlice<T> for &Vec<T> {
+    fn as_sliced(&self) -> &[T] {
+        &self
+    }
+}
 
 pub struct Buffer<T> {
     pub buffer: vk::Buffer,
