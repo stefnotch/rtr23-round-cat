@@ -16,6 +16,8 @@ pub struct Context {
 
     pub device: ash::Device,
     pub queue: vk::Queue,
+
+    pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
 }
 
 impl Context {
@@ -57,6 +59,9 @@ impl Context {
 
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
+        let device_memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
         Self {
             _entry: entry,
             instance,
@@ -69,6 +74,7 @@ impl Context {
 
             device,
             queue,
+            device_memory_properties,
         }
     }
 }
