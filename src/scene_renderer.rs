@@ -1,9 +1,6 @@
-use std::{ffi::CStr, io::Cursor, mem::align_of, sync::Arc};
+use std::{ffi::CStr, io::Cursor, sync::Arc};
 
-use ash::{
-    util::{read_spv, Align},
-    vk,
-};
+use ash::{util::read_spv, vk};
 use crevice::std140::AsStd140;
 use ultraviolet::{Mat4, Vec3};
 
@@ -24,12 +21,12 @@ pub struct SceneRenderer {
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
 
-    index_buffer: Buffer,
-    vertex_buffer: Buffer,
+    index_buffer: Buffer<u32>,
+    vertex_buffer: Buffer<Vertex>,
 
-    scene_descriptor_buffer: Buffer,
-    camera_descriptor_buffer: Buffer,
-    entity_descriptor_buffer: Buffer,
+    scene_descriptor_buffer: Buffer<shader_types::Std140Scene>,
+    camera_descriptor_buffer: Buffer<shader_types::Std140Camera>,
+    entity_descriptor_buffer: Buffer<shader_types::Std140Entity>,
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -333,17 +330,7 @@ impl SceneRenderer {
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
 
-            let buffer_ptr = unsafe {
-                device.map_memory(buffer.memory, 0, buffer.size, vk::MemoryMapFlags::empty())
-            }
-            .expect("Could not map memory for vertex buffer");
-
-            let mut buffer_align =
-                unsafe { Align::new(buffer_ptr, align_of::<Vertex>() as u64, buffer.size) };
-
-            buffer_align.copy_from_slice(&vertices);
-
-            unsafe { device.unmap_memory(buffer.memory) };
+            buffer.copy_data(&vertices);
 
             buffer
         };
@@ -358,38 +345,28 @@ impl SceneRenderer {
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
 
-            let buffer_ptr = unsafe {
-                device.map_memory(buffer.memory, 0, buffer.size, vk::MemoryMapFlags::empty())
-            }
-            .expect("Could not map memory for index buffer");
-
-            let mut buffer_align =
-                unsafe { Align::new(buffer_ptr, align_of::<u32>() as u64, buffer.size) };
-
-            buffer_align.copy_from_slice(&indices);
-
-            unsafe { device.unmap_memory(buffer.memory) };
+            buffer.copy_data(&indices);
 
             buffer
         };
 
         let scene_descriptor_buffer = Buffer::new(
             context.clone(),
-            std::mem::size_of::<shader_types::Std140Scene>() as u64,
+            shader_types::Scene::std140_size_static() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
         let camera_descriptor_buffer = Buffer::new(
             context.clone(),
-            std::mem::size_of::<shader_types::Std140Camera>() as u64,
+            shader_types::Camera::std140_size_static() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
         let entity_descriptor_buffer = Buffer::new(
             context.clone(),
-            std::mem::size_of::<shader_types::Std140Entity>() as u64,
+            shader_types::Entity::std140_size_static() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
@@ -520,77 +497,9 @@ impl SceneRenderer {
             normal_matrix: Mat4::identity(),
         };
 
-        {
-            let buffer_ptr = unsafe {
-                self.context.device.map_memory(
-                    self.scene_descriptor_buffer.memory,
-                    0,
-                    self.scene_descriptor_buffer.size,
-                    vk::MemoryMapFlags::empty(),
-                )
-            }
-            .expect("Could not map") as *mut shader_types::Std140Scene;
-
-            let data = scene.as_std140();
-
-            unsafe {
-                buffer_ptr.copy_from_nonoverlapping(&data as *const shader_types::Std140Scene, 1)
-            };
-
-            unsafe {
-                self.context
-                    .device
-                    .unmap_memory(self.scene_descriptor_buffer.memory)
-            };
-        }
-        {
-            let buffer_ptr = unsafe {
-                self.context.device.map_memory(
-                    self.camera_descriptor_buffer.memory,
-                    0,
-                    std::mem::size_of::<shader_types::Std140Camera>() as u64,
-                    vk::MemoryMapFlags::empty(),
-                )
-            }
-            .expect("Could not map")
-                as *mut shader_types::Std140Camera;
-
-            let data = camera.as_std140();
-
-            unsafe {
-                buffer_ptr.copy_from_nonoverlapping(&data as *const shader_types::Std140Camera, 1)
-            };
-
-            unsafe {
-                self.context
-                    .device
-                    .unmap_memory(self.camera_descriptor_buffer.memory)
-            };
-        }
-        {
-            let buffer_ptr = unsafe {
-                self.context.device.map_memory(
-                    self.entity_descriptor_buffer.memory,
-                    0,
-                    std::mem::size_of::<shader_types::Std140Entity>() as u64,
-                    vk::MemoryMapFlags::empty(),
-                )
-            }
-            .expect("Could not map")
-                as *mut shader_types::Std140Entity;
-
-            let data = entity.as_std140();
-
-            unsafe {
-                buffer_ptr.copy_from_nonoverlapping(&data as *const shader_types::Std140Entity, 1)
-            };
-
-            unsafe {
-                self.context
-                    .device
-                    .unmap_memory(self.entity_descriptor_buffer.memory)
-            };
-        }
+        self.scene_descriptor_buffer.copy_data(&scene.as_std140());
+        self.camera_descriptor_buffer.copy_data(&camera.as_std140());
+        self.entity_descriptor_buffer.copy_data(&entity.as_std140());
     }
 
     pub fn draw(
