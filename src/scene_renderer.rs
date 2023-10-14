@@ -9,6 +9,7 @@ use crate::{
     camera::Camera,
     context::Context,
     cube_mesh::{unit_cube, Mesh},
+    find_memorytype_index,
     swapchain::SwapchainContainer,
     vertex::Vertex,
 };
@@ -20,6 +21,10 @@ pub struct SceneRenderer {
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
+
+    depth_buffer_image: vk::Image,
+    depth_buffer_imageview: vk::ImageView,
+    depth_buffer_image_memory: vk::DeviceMemory,
 
     index_buffer: Buffer<u32>,
     vertex_buffer: Buffer<Vertex>,
@@ -60,18 +65,34 @@ impl SceneRenderer {
                 final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             };
 
+            let depth_stencil_attachment = vk::AttachmentDescription {
+                flags: vk::AttachmentDescriptionFlags::empty(),
+                format: vk::Format::D32_SFLOAT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::DONT_CARE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            };
+
             let color_attachment_ref = vk::AttachmentReference {
                 attachment: 0,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             };
 
-            let subpass = vk::SubpassDescription::builder()
-                    .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                    .color_attachments(std::slice::from_ref(&color_attachment_ref))
-                    // .depth_stencil_attachment(depth_stencil_attachment) // TODO: setup depth attachment for depth testing
-                    ;
+            let depth_attachment_ref = vk::AttachmentReference {
+                attachment: 1,
+                layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            };
 
-            let attachments = [color_attachment];
+            let subpass = vk::SubpassDescription::builder()
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                .color_attachments(std::slice::from_ref(&color_attachment_ref))
+                .depth_stencil_attachment(&depth_attachment_ref);
+
+            let attachments = [color_attachment, depth_stencil_attachment];
 
             let dependencies = [vk::SubpassDependency {
                 src_subpass: vk::SUBPASS_EXTERNAL,
@@ -301,14 +322,81 @@ impl SceneRenderer {
             )
         };
 
+        let (depth_buffer_image, depth_buffer_image_memory) = {
+            let create_info = vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    depth: 1,
+                    width: swapchain.extent.width,
+                    height: swapchain.extent.height,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::D32_SFLOAT)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let image =
+                unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
+
+            let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
+
+            let image_memorytype_index = find_memorytype_index(
+                &memory_requirements,
+                &context.device_memory_properties,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )
+            .expect("Could not find memorytype for buffer");
+
+            let allocate_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(memory_requirements.size)
+                .memory_type_index(image_memorytype_index);
+
+            let memory = unsafe { device.allocate_memory(&allocate_info, None) }
+                .expect("Could not allocate memory for image");
+
+            unsafe { device.bind_image_memory(image, memory, 0) }
+                .expect("Could not bind image memory");
+
+            (image, memory)
+        };
+
+        let depth_buffer_imageview = {
+            let create_info = vk::ImageViewCreateInfo::builder()
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::D32_SFLOAT)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::IDENTITY,
+                    g: vk::ComponentSwizzle::IDENTITY,
+                    b: vk::ComponentSwizzle::IDENTITY,
+                    a: vk::ComponentSwizzle::IDENTITY,
+                })
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .image(depth_buffer_image);
+
+            unsafe { context.device.create_image_view(&create_info, None) }
+                .expect("Could not create image view")
+        };
+
         let framebuffers = {
             swapchain
                 .imageviews
                 .iter()
-                .map(|image_view| {
+                .map(|swapchain_image_view| {
+                    let image_views = [swapchain_image_view.clone(), depth_buffer_imageview];
+
                     let create_info = vk::FramebufferCreateInfo::builder()
                         .render_pass(render_pass)
-                        .attachments(std::slice::from_ref(image_view))
+                        .attachments(&image_views)
                         .width(swapchain.extent.width)
                         .height(swapchain.extent.height)
                         .layers(1);
@@ -460,6 +548,9 @@ impl SceneRenderer {
             render_pass,
             pipeline,
             framebuffers,
+            depth_buffer_image,
+            depth_buffer_imageview,
+            depth_buffer_image_memory,
             index_buffer,
             vertex_buffer,
             scene_descriptor_buffer,
@@ -508,11 +599,19 @@ impl SceneRenderer {
         swapchain_index: usize,
         swapchain: &SwapchainContainer,
     ) {
-        let clear_values = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 1.0, 1.0],
+        let clear_values = [
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 1.0, 1.0],
+                },
             },
-        }];
+            vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            },
+        ];
 
         let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.render_pass)
@@ -587,6 +686,10 @@ impl SceneRenderer {
 impl Drop for SceneRenderer {
     fn drop(&mut self) {
         let device = &self.context.device;
+
+        unsafe { device.destroy_image(self.depth_buffer_image, None) };
+        unsafe { device.destroy_image_view(self.depth_buffer_imageview, None) };
+        unsafe { device.free_memory(self.depth_buffer_image_memory, None) };
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
