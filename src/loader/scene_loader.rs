@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use gltf::{Gltf, Semantic};
 
-use crate::{loader::LoadedMeshVertex, transform::Transform};
+use crate::{scene::Vertex, transform::Transform};
 
 use super::{
     AssetId, AssetLoader, LoadedMaterial, LoadedMesh, LoadedModel, LoadedPrimitive, LoadedScene,
@@ -149,10 +149,10 @@ impl AssetLoader {
 
                 // zippy zip https://stackoverflow.com/a/71494478/3492994
                 for (position, (normal, tex_coord)) in positions.zip(normals.zip(tex_coords)) {
-                    vertices.push(LoadedMeshVertex {
+                    vertices.push(Vertex {
                         position,
                         normal,
-                        tex_coord,
+                        uv: tex_coord,
                     });
                 }
 

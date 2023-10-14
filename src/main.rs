@@ -333,7 +333,7 @@ impl CatDemo {
         command_pool: vk::CommandPool,
         finished_fence: vk::Fence,
     ) -> Scene {
-        let device = context.device;
+        let device = &context.device;
         let setup_command_buffer = {
             let allocate_info = vk::CommandBufferAllocateInfo::builder()
                 .command_buffer_count(1)
@@ -353,9 +353,12 @@ impl CatDemo {
         //let mut material_map = HashMap::new();
         let mut model_map = HashMap::new();
 
-        let scene = Scene { models: vec![] };
+        let mut staging_vertex_buffers = vec![];
+        let mut staging_index_buffers = vec![];
+
+        let mut scene = Scene { models: vec![] };
         for loaded_model in loaded_scene.models {
-            let model = Model {
+            let mut model = Model {
                 transform: loaded_model.transform,
                 primitives: vec![],
             };
@@ -366,7 +369,7 @@ impl CatDemo {
                     .entry(loaded_primitive.mesh.id())
                     .or_insert_with(|| {
                         let vertex_buffer = {
-                            let vertices = loaded_primitive.mesh.vertices;
+                            let vertices = &loaded_primitive.mesh.vertices;
                             let staging_buffer = Buffer::new(
                                 context.clone(),
                                 vertices.get_vec_size(),
@@ -374,7 +377,7 @@ impl CatDemo {
                                 vk::MemoryPropertyFlags::HOST_VISIBLE
                                     | vk::MemoryPropertyFlags::HOST_COHERENT,
                             );
-                            staging_buffer.copy_data(&vertices);
+                            staging_buffer.copy_data(vertices);
 
                             let buffer = Buffer::new(
                                 context.clone(),
@@ -384,11 +387,12 @@ impl CatDemo {
                                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                             );
                             buffer.copy_from(setup_command_buffer, &staging_buffer);
+                            staging_vertex_buffers.push(staging_buffer);
                             buffer
                         };
 
                         let index_buffer = {
-                            let indices = loaded_primitive.mesh.indices;
+                            let indices = &loaded_primitive.mesh.indices;
                             let staging_buffer = Buffer::new(
                                 context.clone(),
                                 indices.get_vec_size(),
@@ -396,7 +400,7 @@ impl CatDemo {
                                 vk::MemoryPropertyFlags::HOST_VISIBLE
                                     | vk::MemoryPropertyFlags::HOST_COHERENT,
                             );
-                            staging_buffer.copy_data(&indices);
+                            staging_buffer.copy_data(indices);
 
                             let buffer = Buffer::new(
                                 context.clone(),
@@ -406,6 +410,7 @@ impl CatDemo {
                                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                             );
                             buffer.copy_from(setup_command_buffer, &staging_buffer);
+                            staging_index_buffers.push(staging_buffer);
                             buffer
                         };
 
@@ -416,7 +421,9 @@ impl CatDemo {
                     })
                     .clone();
                 let primitive = Primitive { material, mesh };
+                model.primitives.push(primitive)
             }
+            scene.models.push(model);
         }
 
         unsafe { device.end_command_buffer(setup_command_buffer) }
@@ -427,8 +434,14 @@ impl CatDemo {
             .command_buffers(&[setup_command_buffer])
             .build();
 
-        unsafe { device.queue_submit(queue, &[submit_info], finished_fence) }
+        unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
             .expect("Could not submit to queue");
+
+        unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
+
+        // *happy venti noises*
+        unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
+
         scene
     }
 
@@ -581,6 +594,7 @@ impl Drop for CatDemo {
         unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };
         unsafe { device.destroy_fence(self.draw_fence, None) };
 
+        unsafe { device.free_command_buffers(self.command_pool, &self.command_buffers) };
         unsafe { device.destroy_command_pool(self.command_pool, None) };
         unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
     }

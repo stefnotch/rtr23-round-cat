@@ -106,8 +106,8 @@ impl<T> Buffer<T> {
         unsafe {
             self.context.device.cmd_copy_buffer(
                 command_buffer,
-                self.buffer,
                 other.buffer,
+                self.buffer,
                 &[buffer_copy_info.build()],
             )
         }
