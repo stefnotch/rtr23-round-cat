@@ -1,7 +1,6 @@
 mod buffer;
 mod camera;
 mod context;
-mod cube_mesh;
 mod input_map;
 mod loader;
 mod scene;
@@ -14,7 +13,7 @@ mod utility;
 use buffer::Buffer;
 use gpu_allocator::vulkan::*;
 use loader::{Asset, AssetLoader};
-use scene::{Material, Mesh, Model, Primitive, Scene, Vertex};
+use scene::{Material, Mesh, Model, Primitive, Scene};
 use scene_renderer::SceneRenderer;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
@@ -188,13 +187,7 @@ impl CatDemo {
             swapchain.surface_format,
         ));
 
-        let scene = Self::setup(
-            loaded_scene,
-            context.clone(),
-            context.queue,
-            command_pool,
-            fence,
-        );
+        let scene = Self::setup(loaded_scene, context.clone(), context.queue, command_pool);
 
         Self {
             window,
@@ -331,7 +324,6 @@ impl CatDemo {
         context: Arc<Context>,
         queue: vk::Queue,
         command_pool: vk::CommandPool,
-        finished_fence: vk::Fence,
     ) -> Scene {
         let device = &context.device;
         let setup_command_buffer = {
@@ -364,7 +356,7 @@ impl CatDemo {
             };
 
             for loaded_primitive in loaded_model.primitives {
-                let material = Arc::new(Material {}); // TODO:
+                let material = Arc::new(Material {}); // TODO: materialz
                 let mesh = model_map
                     .entry(loaded_primitive.mesh.id())
                     .or_insert_with(|| {
@@ -486,8 +478,12 @@ impl CatDemo {
         }
         .expect("Could not begin command buffer");
 
-        self.scene_renderer
-            .draw(command_buffer, present_index as usize, &self.swapchain);
+        self.scene_renderer.draw(
+            &self.scene,
+            command_buffer,
+            present_index as usize,
+            &self.swapchain,
+        );
 
         self.draw_ui(&command_buffer, present_index as usize);
 
