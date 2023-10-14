@@ -28,6 +28,7 @@ impl<T> IntoSlice<T> for Vec<T> {
 
 pub struct Buffer<T> {
     pub buffer: vk::Buffer,
+    pub usage: vk::BufferUsageFlags,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
 
@@ -73,6 +74,7 @@ impl<T> Buffer<T> {
 
         Self {
             buffer,
+            usage,
             memory,
             size: buffer_memory_requirements.size,
             context,
@@ -95,6 +97,20 @@ impl<T> Buffer<T> {
         unsafe { buffer_ptr.copy_from_nonoverlapping(data.as_ptr() as *const T, data.len()) };
 
         unsafe { self.context.device.unmap_memory(self.memory) };
+    }
+
+    pub fn copy_from(&self, command_buffer: vk::CommandBuffer, other: &Buffer<T>) {
+        assert!(other.usage.contains(vk::BufferUsageFlags::TRANSFER_SRC));
+        assert!(self.usage.contains(vk::BufferUsageFlags::TRANSFER_DST));
+        let buffer_copy_info = vk::BufferCopy::builder().size(self.size);
+        unsafe {
+            self.context.device.cmd_copy_buffer(
+                command_buffer,
+                other.buffer,
+                self.buffer,
+                &[buffer_copy_info.build()],
+            )
+        }
     }
 }
 

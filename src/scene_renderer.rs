@@ -2,15 +2,14 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 
 use ash::{util::read_spv, vk};
 use crevice::std140::AsStd140;
-use ultraviolet::{Mat4, Vec3};
+use ultraviolet::Vec3;
 
 use crate::{
     buffer::Buffer,
     camera::Camera,
     context::Context,
-    cube_mesh::{unit_cube, Mesh},
+    scene::{Scene, Vertex},
     swapchain::SwapchainContainer,
-    vertex::Vertex,
 };
 
 use self::shader_types::DirectionalLight;
@@ -21,20 +20,14 @@ pub struct SceneRenderer {
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
 
-    index_buffer: Buffer<u32>,
-    vertex_buffer: Buffer<Vertex>,
-
     scene_descriptor_buffer: Buffer<shader_types::Std140Scene>,
     camera_descriptor_buffer: Buffer<shader_types::Std140Camera>,
-    entity_descriptor_buffer: Buffer<shader_types::Std140Entity>,
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
-    entity_descriptor_set_layout: vk::DescriptorSetLayout,
 
     scene_descriptor_set: vk::DescriptorSet,
     camera_descriptor_set: vk::DescriptorSet,
-    entity_descriptor_set: vk::DescriptorSet,
 
     context: Arc<Context>,
 }
@@ -91,13 +84,7 @@ impl SceneRenderer {
                 .expect("Could not create render pass")
         };
 
-        let (
-            pipeline,
-            pipeline_layout,
-            scene_descriptor_set_layout,
-            camera_descriptor_set_layout,
-            entity_descriptor_set_layout,
-        ) = {
+        let (pipeline, pipeline_layout, scene_descriptor_set_layout, camera_descriptor_set_layout) = {
             let mut vert_spv_file =
                 Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
             let mut frag_spv_file =
@@ -241,28 +228,16 @@ impl SceneRenderer {
                     .expect("Could not create scene descriptor set layout")
             };
 
-            let entity_descriptor_set_layout = {
-                let bindings = [vk::DescriptorSetLayoutBinding::builder()
-                    .binding(0)
-                    .descriptor_count(1)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                    .build()];
-
-                let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-                unsafe { device.create_descriptor_set_layout(&create_info, None) }
-                    .expect("Could not create scene descriptor set layout")
-            };
-
-            let descriptor_set_layouts = [
-                scene_descriptor_set_layout,
-                camera_descriptor_set_layout,
-                entity_descriptor_set_layout,
-            ];
+            let descriptor_set_layouts =
+                [scene_descriptor_set_layout, camera_descriptor_set_layout];
 
             let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&descriptor_set_layouts)
+                .push_constant_ranges(&[vk::PushConstantRange {
+                    stage_flags: vk::ShaderStageFlags::VERTEX,
+                    offset: 0,
+                    size: std::mem::size_of::<shader_types::Entity>() as u32,
+                }])
                 .build();
 
             let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
@@ -297,7 +272,6 @@ impl SceneRenderer {
                 layout,
                 scene_descriptor_set_layout,
                 camera_descriptor_set_layout,
-                entity_descriptor_set_layout,
             )
         };
 
@@ -319,37 +293,6 @@ impl SceneRenderer {
                 .collect::<Vec<_>>()
         };
 
-        let Mesh { vertices, indices } = unit_cube();
-
-        let vertex_buffer = {
-            let size = vertices.len() as u64 * std::mem::size_of::<Vertex>() as u64;
-            let buffer = Buffer::new(
-                context.clone(),
-                size,
-                vk::BufferUsageFlags::VERTEX_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            );
-
-            buffer.copy_data(&vertices);
-
-            buffer
-        };
-
-        let index_buffer = {
-            let size = indices.len() as u64 * std::mem::size_of::<u32>() as u64;
-
-            let buffer = Buffer::new(
-                context.clone(),
-                size,
-                vk::BufferUsageFlags::INDEX_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            );
-
-            buffer.copy_data(&indices);
-
-            buffer
-        };
-
         let scene_descriptor_buffer = Buffer::new(
             context.clone(),
             shader_types::Scene::std140_size_static() as u64,
@@ -360,13 +303,6 @@ impl SceneRenderer {
         let camera_descriptor_buffer = Buffer::new(
             context.clone(),
             shader_types::Camera::std140_size_static() as u64,
-            vk::BufferUsageFlags::UNIFORM_BUFFER,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
-
-        let entity_descriptor_buffer = Buffer::new(
-            context.clone(),
-            shader_types::Entity::std140_size_static() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
@@ -427,50 +363,17 @@ impl SceneRenderer {
             set
         };
 
-        let entity_descriptor_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_set_pool)
-                .set_layouts(std::slice::from_ref(&entity_descriptor_set_layout));
-
-            let set = unsafe {
-                device
-                    .allocate_descriptor_sets(&allocate_info)
-                    .expect("Could not create entity descriptor_set")
-            }[0];
-
-            let buffer_info = vk::DescriptorBufferInfo {
-                buffer: *entity_descriptor_buffer,
-                offset: 0,
-                range: std::mem::size_of::<shader_types::Entity>() as u64,
-            };
-
-            let write_set = vk::WriteDescriptorSet::builder()
-                .dst_set(set)
-                .dst_binding(0)
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER);
-
-            unsafe { device.update_descriptor_sets(std::slice::from_ref(&write_set), &[]) };
-
-            set
-        };
-
         Self {
             pipeline_layout,
             render_pass,
             pipeline,
             framebuffers,
-            index_buffer,
-            vertex_buffer,
             scene_descriptor_buffer,
             camera_descriptor_buffer,
-            entity_descriptor_buffer,
             scene_descriptor_set_layout,
             camera_descriptor_set_layout,
-            entity_descriptor_set_layout,
             scene_descriptor_set,
             camera_descriptor_set,
-            entity_descriptor_set,
             context,
         }
     }
@@ -492,18 +395,13 @@ impl SceneRenderer {
             proj: camera.projection_matrix(),
         };
 
-        let entity = shader_types::Entity {
-            model: Mat4::identity(),
-            normal_matrix: Mat4::identity(),
-        };
-
         self.scene_descriptor_buffer.copy_data(&scene.as_std140());
         self.camera_descriptor_buffer.copy_data(&camera.as_std140());
-        self.entity_descriptor_buffer.copy_data(&entity.as_std140());
     }
 
     pub fn draw(
         &self,
+        scene: &Scene,
         command_buffer: vk::CommandBuffer,
         swapchain_index: usize,
         swapchain: &SwapchainContainer,
@@ -539,29 +437,7 @@ impl SceneRenderer {
             )
         };
 
-        unsafe {
-            self.context.device.cmd_bind_index_buffer(
-                command_buffer,
-                *self.index_buffer,
-                0,
-                vk::IndexType::UINT32,
-            )
-        };
-
-        unsafe {
-            self.context.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                std::slice::from_ref(&self.vertex_buffer),
-                &[0],
-            )
-        }
-
-        let descriptor_sets = [
-            self.scene_descriptor_set,
-            self.camera_descriptor_set,
-            self.entity_descriptor_set,
-        ];
+        let descriptor_sets = [self.scene_descriptor_set, self.camera_descriptor_set];
 
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(
@@ -574,11 +450,50 @@ impl SceneRenderer {
             )
         };
 
-        unsafe {
-            self.context
-                .device
-                .cmd_draw_indexed(command_buffer, 6 * 3 * 2, 1, 0, 0, 0)
-        };
+        for model in &scene.models {
+            let entity = {
+                let model_matrix = model.transform.clone().into();
+                shader_types::Entity {
+                    model: model_matrix,
+                    normal_matrix: model_matrix.inversed().transposed(),
+                }
+            };
+            for primitive in &model.primitives {
+                unsafe {
+                    self.context.device.cmd_bind_index_buffer(
+                        command_buffer,
+                        *primitive.mesh.index_buffer,
+                        0,
+                        vk::IndexType::UINT32,
+                    )
+                };
+
+                unsafe {
+                    self.context.device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        std::slice::from_ref(&*primitive.mesh.vertex_buffer),
+                        &[0],
+                    )
+                }
+
+                unsafe {
+                    self.context.device.cmd_push_constants(
+                        command_buffer,
+                        self.pipeline_layout,
+                        vk::ShaderStageFlags::VERTEX,
+                        0,
+                        entity.as_std140().as_bytes(),
+                    );
+                }
+
+                unsafe {
+                    self.context
+                        .device
+                        .cmd_draw_indexed(command_buffer, 6 * 3 * 2, 1, 0, 0, 0)
+                };
+            }
+        }
 
         unsafe { self.context.device.cmd_end_render_pass(command_buffer) };
     }
@@ -590,7 +505,6 @@ impl Drop for SceneRenderer {
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
-        unsafe { device.destroy_descriptor_set_layout(self.entity_descriptor_set_layout, None) };
 
         for &framebuffer in self.framebuffers.iter() {
             unsafe { device.destroy_framebuffer(framebuffer, None) };
