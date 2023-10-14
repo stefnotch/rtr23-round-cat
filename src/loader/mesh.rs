@@ -1,14 +1,10 @@
-use super::{Asset, AssetId};
+use crate::scene::Vertex;
 
-pub struct LoadedMeshVertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub tex_coord: [f32; 2],
-}
+use super::{Asset, AssetId};
 
 pub struct LoadedMesh {
     pub id: AssetId,
-    pub vertices: Vec<LoadedMeshVertex>,
+    pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
 

@@ -11,10 +11,12 @@ mod time;
 mod transform;
 mod utility;
 
+use buffer::Buffer;
 use gpu_allocator::vulkan::*;
-use loader::AssetLoader;
-use scene::{Scene, Vertex};
+use loader::{Asset, AssetLoader};
+use scene::{Material, Mesh, Model, Primitive, Scene, Vertex};
 use scene_renderer::SceneRenderer;
+use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
@@ -82,8 +84,6 @@ impl CatDemo {
             .load_scene("assets/scene.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
-
-        let scene = Scene { models: vec![] };
 
         let freecam_controller = FreecamController::new(5.0, 0.01);
         let camera = Camera::new(
@@ -187,6 +187,14 @@ impl CatDemo {
             swapchain.swapchain,
             swapchain.surface_format,
         ));
+
+        let scene = Self::setup(
+            loaded_scene,
+            context.clone(),
+            context.queue,
+            command_pool,
+            fence,
+        );
 
         Self {
             window,
@@ -316,6 +324,112 @@ impl CatDemo {
                 _ => (),
             }
         });
+    }
+
+    fn setup(
+        loaded_scene: loader::LoadedScene,
+        context: Arc<Context>,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        finished_fence: vk::Fence,
+    ) -> Scene {
+        let device = context.device;
+        let setup_command_buffer = {
+            let allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .command_buffer_count(1)
+                .command_pool(command_pool)
+                .level(vk::CommandBufferLevel::PRIMARY);
+
+            unsafe { device.allocate_command_buffers(&allocate_info) }
+                .expect("Could not allocate command buffers")[0]
+        };
+
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe { device.begin_command_buffer(setup_command_buffer, &begin_info) }
+            .expect("Could not begin command buffer");
+
+        //let mut material_map = HashMap::new();
+        let mut model_map = HashMap::new();
+
+        let scene = Scene { models: vec![] };
+        for loaded_model in loaded_scene.models {
+            let model = Model {
+                transform: loaded_model.transform,
+                primitives: vec![],
+            };
+
+            for loaded_primitive in loaded_model.primitives {
+                let material = Arc::new(Material {}); // TODO:
+                let mesh = model_map
+                    .entry(loaded_primitive.mesh.id())
+                    .or_insert_with(|| {
+                        let vertex_buffer = {
+                            let vertices = loaded_primitive.mesh.vertices;
+                            let staging_buffer = Buffer::new(
+                                context.clone(),
+                                vertices.get_vec_size(),
+                                vk::BufferUsageFlags::TRANSFER_SRC,
+                                vk::MemoryPropertyFlags::HOST_VISIBLE
+                                    | vk::MemoryPropertyFlags::HOST_COHERENT,
+                            );
+                            staging_buffer.copy_data(&vertices);
+
+                            let buffer = Buffer::new(
+                                context.clone(),
+                                vertices.get_vec_size(),
+                                vk::BufferUsageFlags::TRANSFER_DST
+                                    | vk::BufferUsageFlags::VERTEX_BUFFER,
+                                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                            );
+                            buffer.copy_from(setup_command_buffer, &staging_buffer);
+                            buffer
+                        };
+
+                        let index_buffer = {
+                            let indices = loaded_primitive.mesh.indices;
+                            let staging_buffer = Buffer::new(
+                                context.clone(),
+                                indices.get_vec_size(),
+                                vk::BufferUsageFlags::TRANSFER_SRC,
+                                vk::MemoryPropertyFlags::HOST_VISIBLE
+                                    | vk::MemoryPropertyFlags::HOST_COHERENT,
+                            );
+                            staging_buffer.copy_data(&indices);
+
+                            let buffer = Buffer::new(
+                                context.clone(),
+                                indices.get_vec_size(),
+                                vk::BufferUsageFlags::TRANSFER_DST
+                                    | vk::BufferUsageFlags::INDEX_BUFFER,
+                                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                            );
+                            buffer.copy_from(setup_command_buffer, &staging_buffer);
+                            buffer
+                        };
+
+                        Arc::new(Mesh {
+                            index_buffer,
+                            vertex_buffer,
+                        })
+                    })
+                    .clone();
+                let primitive = Primitive { material, mesh };
+            }
+        }
+
+        unsafe { device.end_command_buffer(setup_command_buffer) }
+            .expect("Could not end command buffer");
+
+        // submit
+        let submit_info = vk::SubmitInfo::builder()
+            .command_buffers(&[setup_command_buffer])
+            .build();
+
+        unsafe { device.queue_submit(queue, &[submit_info], finished_fence) }
+            .expect("Could not submit to queue");
+        scene
     }
 
     fn update_camera(&mut self) {
@@ -492,4 +606,14 @@ pub fn find_memorytype_index(
                 && memory_type.property_flags & flags == flags
         })
         .map(|(index, _memory_type)| index as u32)
+}
+
+trait GetVecSize {
+    fn get_vec_size(&self) -> u64;
+}
+
+impl<T> GetVecSize for Vec<T> {
+    fn get_vec_size(&self) -> u64 {
+        std::mem::size_of::<T>() as u64 * self.len() as u64
+    }
 }
