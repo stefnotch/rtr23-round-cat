@@ -8,8 +8,8 @@ use crate::{
     buffer::Buffer,
     camera::Camera,
     context::Context,
-    scene::{Scene, Vertex},
     find_memorytype_index,
+    scene::{Scene, Vertex},
     swapchain::SwapchainContainer,
 };
 
@@ -196,8 +196,8 @@ impl SceneRenderer {
 
             let depth_stencil_state_create_info =
                 vk::PipelineDepthStencilStateCreateInfo::builder()
-                    .depth_test_enable(false)
-                    .depth_write_enable(false)
+                    .depth_test_enable(true)
+                    .depth_write_enable(true)
                     .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
                     .depth_bounds_test_enable(false)
                     .stencil_test_enable(false)
