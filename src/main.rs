@@ -3,13 +3,16 @@ mod camera;
 mod context;
 mod cube_mesh;
 mod input_map;
+mod loader;
 mod scene_renderer;
 mod swapchain;
 mod time;
+mod transform;
 mod utility;
 mod vertex;
 
 use gpu_allocator::vulkan::*;
+use loader::AssetLoader;
 use scene_renderer::SceneRenderer;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
@@ -73,6 +76,12 @@ impl CatDemo {
             .with_resizable(false)
             .build(event_loop)
             .expect("Could not create window");
+
+        let mut asset_loader = AssetLoader::new();
+        let scene = asset_loader
+            .load_scene("assets/scene.glb")
+            .expect("Could not load scene");
+        println!("Loaded scene : {:?}", scene.models.len());
 
         let freecam_controller = FreecamController::new(5.0, 0.01);
         let camera = Camera::new(
