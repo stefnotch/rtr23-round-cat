@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use ash::vk::{self, SwapchainCreateInfoKHR};
+use game_libs::ash::vk::{self, SwapchainCreateInfoKHR};
 
 use crate::context::Context;
 
 pub struct SwapchainContainer {
-    pub swapchain_loader: ash::extensions::khr::Swapchain,
+    pub swapchain_loader: game_libs::ash::extensions::khr::Swapchain,
     pub swapchain: vk::SwapchainKHR,
 
     pub images: Vec<vk::Image>,
@@ -76,7 +76,7 @@ impl SwapchainContainer {
         let num_images = capabilities.max_image_count.max(2);
 
         let swapchain_loader =
-            ash::extensions::khr::Swapchain::new(&context.instance, &context.device);
+            game_libs::ash::extensions::khr::Swapchain::new(&context.instance, &context.device);
 
         let create_info = SwapchainCreateInfoKHR::builder()
             .surface(context.surface)

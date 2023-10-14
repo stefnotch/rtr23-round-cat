@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
-use ash::{self, vk};
+use game_libs::ash::{self, vk};
 
 use crate::{context::Context, find_memorytype_index};
 

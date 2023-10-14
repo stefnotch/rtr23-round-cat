@@ -1,20 +1,22 @@
 use std::ffi::CStr;
 
-use ash::vk::{self, ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use winit::{event_loop::EventLoop, window::Window};
+use game_libs::ash::vk::{
+    self, ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo,
+};
+use game_libs::raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use game_libs::winit::{event_loop::EventLoop, window::Window};
 
 pub struct Context {
-    _entry: ash::Entry,
-    pub instance: ash::Instance,
+    _entry: game_libs::ash::Entry,
+    pub instance: game_libs::ash::Instance,
 
-    pub surface_loader: ash::extensions::khr::Surface,
+    pub surface_loader: game_libs::ash::extensions::khr::Surface,
     pub surface: vk::SurfaceKHR,
 
     pub physical_device: vk::PhysicalDevice,
     pub queue_family_index: u32,
 
-    pub device: ash::Device,
+    pub device: game_libs::ash::Device,
     pub queue: vk::Queue,
 
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
@@ -22,11 +24,14 @@ pub struct Context {
 
 impl Context {
     pub fn new(event_loop: &EventLoop<()>, window: &Window) -> Self {
-        let entry = unsafe { ash::Entry::load() }.expect("Could not load vulkan library");
+        let entry =
+            unsafe { game_libs::ash::Entry::load() }.expect("Could not load vulkan library");
 
         let instance = {
-            let surface_extension =
-                ash_window::enumerate_required_extensions(event_loop.raw_display_handle()).unwrap();
+            let surface_extension = game_libs::ash_window::enumerate_required_extensions(
+                event_loop.raw_display_handle(),
+            )
+            .unwrap();
 
             let app_info = ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
             let create_info = InstanceCreateInfo::builder()
@@ -37,7 +42,7 @@ impl Context {
 
         let (surface, surface_loader) = {
             let surface = unsafe {
-                ash_window::create_surface(
+                game_libs::ash_window::create_surface(
                     &entry,
                     &instance,
                     window.raw_display_handle(),
@@ -47,7 +52,7 @@ impl Context {
             }
             .expect("Could not create surface");
 
-            let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+            let surface_loader = game_libs::ash::extensions::khr::Surface::new(&entry, &instance);
 
             (surface, surface_loader)
         };
@@ -90,11 +95,11 @@ impl Drop for Context {
 }
 
 fn find_physical_device(
-    instance: &ash::Instance,
+    instance: &game_libs::ash::Instance,
     surface: &vk::SurfaceKHR,
-    surface_loader: &ash::extensions::khr::Surface,
+    surface_loader: &game_libs::ash::extensions::khr::Surface,
 ) -> (vk::PhysicalDevice, u32) {
-    let swapchain_extension = ash::extensions::khr::Swapchain::name();
+    let swapchain_extension = game_libs::ash::extensions::khr::Swapchain::name();
 
     let (physical_device, queue_family_index) = {
         let physical_devices = unsafe { instance.enumerate_physical_devices() }
@@ -151,10 +156,10 @@ fn find_physical_device(
 }
 
 fn create_logical_device(
-    instance: &ash::Instance,
+    instance: &game_libs::ash::Instance,
     physical_device: &vk::PhysicalDevice,
-) -> ash::Device {
-    let swapchain_extension = ash::extensions::khr::Swapchain::name();
+) -> game_libs::ash::Device {
+    let swapchain_extension = game_libs::ash::extensions::khr::Swapchain::name();
 
     let device_extensions = [swapchain_extension.as_ptr()];
 

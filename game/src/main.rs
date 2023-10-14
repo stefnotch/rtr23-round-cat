@@ -9,30 +9,31 @@ mod time;
 mod utility;
 mod vertex;
 
-use gpu_allocator::vulkan::*;
+use game_libs::gpu_allocator::vulkan::*;
 use scene_renderer::SceneRenderer;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 use vertex::Vertex;
 
-use ash::{self, vk};
 use camera::freecam_controller::FreecamController;
 use camera::Camera;
 use context::Context;
+use game_libs::ash::{self, vk};
+use game_libs::winit::dpi::{self};
+use game_libs::winit::event::{
+    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
+};
+use game_libs::winit::event_loop::EventLoop;
+use game_libs::winit::window::{CursorGrabMode, Window, WindowBuilder};
 use input_map::InputMap;
 use swapchain::SwapchainContainer;
 use time::Time;
 use ultraviolet::Vec2;
-use winit::dpi::{self};
-use winit::event::{
-    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
-};
-use winit::event_loop::EventLoop;
-use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
-    egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
+    egui_integration:
+        ManuallyDrop<game_libs::egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 
     // TODO: check if this is correctly placed
     scene_renderer: SceneRenderer,
@@ -161,21 +162,22 @@ impl CatDemo {
 
         let allocator = Arc::new(Mutex::new(allocator));
 
-        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
-            event_loop,
-            window.inner_size().width,
-            window.inner_size().height,
-            window.scale_factor(),
-            egui::FontDefinitions::default(),
-            egui::Style::default(),
-            device.clone(),
-            allocator.clone(),
-            context.queue_family_index,
-            context.queue,
-            swapchain.swapchain_loader.clone(),
-            swapchain.swapchain,
-            swapchain.surface_format,
-        ));
+        let egui_integration =
+            ManuallyDrop::new(game_libs::egui_winit_ash_integration::Integration::new(
+                event_loop,
+                window.inner_size().width,
+                window.inner_size().height,
+                window.scale_factor(),
+                game_libs::egui::FontDefinitions::default(),
+                game_libs::egui::Style::default(),
+                device.clone(),
+                allocator.clone(),
+                context.queue_family_index,
+                context.queue,
+                swapchain.swapchain_loader.clone(),
+                swapchain.swapchain,
+                swapchain.surface_format,
+            ));
 
         Self {
             window,
@@ -387,45 +389,54 @@ impl CatDemo {
     fn draw_ui(&mut self, command_buffer: &vk::CommandBuffer, swapchain_image_index: usize) {
         self.egui_integration
             .context()
-            .set_visuals(egui::style::Visuals::dark());
+            .set_visuals(game_libs::egui::style::Visuals::dark());
 
         self.egui_integration.begin_frame(&self.window);
-        egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
-            ui.heading("Hello");
-            ui.label("Hello egui!");
-            ui.separator();
-            ui.label(format!(
-                "Frametime: {:.4}ms",
-                self.time.delta().as_secs_f64() * 1000.0
-            ));
-            ui.separator();
-            ui.label("Camera Settings: ");
-            ui.label("Position: ");
-            ui.horizontal(|ui| {
-                ui.label("x:");
-                ui.add(
-                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.x)
+        game_libs::egui::SidePanel::left("my_side_panel").show(
+            &self.egui_integration.context(),
+            |ui| {
+                ui.heading("Hello");
+                ui.label("Hello egui!");
+                ui.separator();
+                ui.label(format!(
+                    "Frametime: {:.4}ms",
+                    self.time.delta().as_secs_f64() * 1000.0
+                ));
+                ui.separator();
+                ui.label("Camera Settings: ");
+                ui.label("Position: ");
+                ui.horizontal(|ui| {
+                    ui.label("x:");
+                    ui.add(
+                        game_libs::egui::widgets::DragValue::new(
+                            &mut self.freecam_controller.position.x,
+                        )
                         .speed(0.1),
-                );
-                ui.label("y:");
-                ui.add(
-                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.y)
+                    );
+                    ui.label("y:");
+                    ui.add(
+                        game_libs::egui::widgets::DragValue::new(
+                            &mut self.freecam_controller.position.y,
+                        )
                         .speed(0.1),
-                );
-                ui.label("z:");
-                ui.add(
-                    egui::widgets::DragValue::new(&mut self.freecam_controller.position.z)
+                    );
+                    ui.label("z:");
+                    ui.add(
+                        game_libs::egui::widgets::DragValue::new(
+                            &mut self.freecam_controller.position.z,
+                        )
                         .speed(0.1),
-                );
-            });
-            ui.label("Orientation:");
-            ui.horizontal(|ui| {
-                ui.label("Yaw:");
-                ui.drag_angle(&mut self.freecam_controller.yaw);
-                ui.label("pitch:");
-                ui.drag_angle(&mut self.freecam_controller.pitch);
-            });
-        });
+                    );
+                });
+                ui.label("Orientation:");
+                ui.horizontal(|ui| {
+                    ui.label("Yaw:");
+                    ui.drag_angle(&mut self.freecam_controller.yaw);
+                    ui.label("pitch:");
+                    ui.drag_angle(&mut self.freecam_controller.pitch);
+                });
+            },
+        );
 
         let output = self.egui_integration.end_frame(&self.window);
         let clipped_meshes = self.egui_integration.context().tessellate(output.shapes);

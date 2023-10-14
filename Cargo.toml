@@ -1,22 +1,6 @@
-[package]
-name = "round-cat"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-ash = "0.37.3"
-ash-window = "0.12.0"
-raw-window-handle = "0.5.0"
-ultraviolet = "0.9.2"
-gpu-allocator = { version = "0.23", default-features = false, features = ["vulkan"] }
-egui = "0.23.0"
-crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", features = ["ultraviolet"] }
-
-# I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
-[target.'cfg(windows)'.dependencies]
-winit = { version = "0.28", default-features = false }
-egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "clipboard"] }
-
-[target.'cfg(not(windows))'.dependencies]
-winit = { version = "0.28" }
-egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "default"] }
+[workspace]
+resolver = "2"
+members = [
+  "game",
+  "game_libs"
+]

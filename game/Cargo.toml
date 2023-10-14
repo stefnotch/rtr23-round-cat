@@ -1,0 +1,11 @@
+[package]
+name = "game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+game_libs = { path = "../game_libs" }
+ultraviolet = "0.9.2"
+crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", features = ["ultraviolet"] }

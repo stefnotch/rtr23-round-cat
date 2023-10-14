@@ -1,7 +1,7 @@
 use std::{ffi::CStr, io::Cursor, sync::Arc};
 
-use ash::{util::read_spv, vk};
 use crevice::std140::AsStd140;
+use game_libs::ash::{util::read_spv, vk};
 use ultraviolet::{Mat4, Vec3};
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 };
 
 use self::shader_types::DirectionalLight;
-
+//
 pub struct SceneRenderer {
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
@@ -98,6 +98,7 @@ impl SceneRenderer {
             camera_descriptor_set_layout,
             entity_descriptor_set_layout,
         ) = {
+            //a
             let mut vert_spv_file =
                 Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
             let mut frag_spv_file =

@@ -1,5 +1,5 @@
+use game_libs::winit::event::VirtualKeyCode;
 use ultraviolet::{Rotor3, Vec2, Vec3};
-use winit::event::VirtualKeyCode;
 
 use crate::input_map::InputMap;
 

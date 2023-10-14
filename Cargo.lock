@@ -506,6 +506,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "game"
+version = "0.1.0"
+dependencies = [
+ "crevice",
+ "game_libs",
+ "ultraviolet",
+]
+
+[[package]]
+name = "game_libs"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "ash-window",
+ "egui",
+ "egui-winit-ash-integration",
+ "gpu-allocator",
+ "raw-window-handle",
+ "winit",
+]
+
+[[package]]
 name = "gethostname"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1043,21 +1065,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567664f262709473930a4bf9e51bf2ebf3348f2e748ccc50dea20646858f8f29"
 dependencies = [
  "bitflags",
-]
-
-[[package]]
-name = "round-cat"
-version = "0.1.0"
-dependencies = [
- "ash",
- "ash-window",
- "crevice",
- "egui",
- "egui-winit-ash-integration",
- "gpu-allocator",
- "raw-window-handle",
- "ultraviolet",
- "winit",
 ]
 
 [[package]]

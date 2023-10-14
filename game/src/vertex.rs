@@ -1,4 +1,4 @@
-use ash::vk;
+use game_libs::ash::vk;
 
 use crate::offset_of;
 

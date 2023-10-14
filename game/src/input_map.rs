@@ -1,5 +1,5 @@
+use game_libs::winit::event::{MouseButton, VirtualKeyCode};
 use ultraviolet::Vec2;
-use winit::event::{MouseButton, VirtualKeyCode};
 
 const NUM_KEYS: usize = VirtualKeyCode::Cut as usize + 1;
 const NUM_MOUSE_BUTTONS: usize = 2;
