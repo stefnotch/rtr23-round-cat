@@ -409,6 +409,7 @@ impl CatDemo {
                         Arc::new(Mesh {
                             index_buffer,
                             vertex_buffer,
+                            num_indices: loaded_primitive.mesh.indices.len() as u32,
                         })
                     })
                     .clone();

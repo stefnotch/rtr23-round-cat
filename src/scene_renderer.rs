@@ -587,9 +587,14 @@ impl SceneRenderer {
                 }
 
                 unsafe {
-                    self.context
-                        .device
-                        .cmd_draw_indexed(command_buffer, 6 * 3 * 2, 1, 0, 0, 0)
+                    self.context.device.cmd_draw_indexed(
+                        command_buffer,
+                        primitive.mesh.num_indices,
+                        1,
+                        0,
+                        0,
+                        0,
+                    )
                 };
             }
         }
