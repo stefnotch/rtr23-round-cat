@@ -9,8 +9,8 @@ use crate::{
     camera::Camera,
     context::Context,
     cube_mesh::{unit_cube, Mesh},
+    scene::Vertex,
     swapchain::SwapchainContainer,
-    vertex::Vertex,
 };
 
 use self::shader_types::DirectionalLight;

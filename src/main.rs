@@ -4,19 +4,19 @@ mod context;
 mod cube_mesh;
 mod input_map;
 mod loader;
+mod scene;
 mod scene_renderer;
 mod swapchain;
 mod time;
 mod transform;
 mod utility;
-mod vertex;
 
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
+use scene::{Scene, Vertex};
 use scene_renderer::SceneRenderer;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
-use vertex::Vertex;
 
 use ash::{self, vk};
 use camera::freecam_controller::FreecamController;
@@ -37,9 +37,9 @@ use winit::window::{CursorGrabMode, Window, WindowBuilder};
 struct CatDemo {
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 
-    // TODO: check if this is correctly placed
     scene_renderer: SceneRenderer,
 
+    scene: Scene,
     input_map: InputMap,
     time: Time,
     freecam_controller: FreecamController,
@@ -78,10 +78,12 @@ impl CatDemo {
             .expect("Could not create window");
 
         let mut asset_loader = AssetLoader::new();
-        let scene = asset_loader
+        let loaded_scene = asset_loader
             .load_scene("assets/scene.glb")
             .expect("Could not load scene");
-        println!("Loaded scene : {:?}", scene.models.len());
+        println!("Loaded scene : {:?}", loaded_scene.models.len());
+
+        let scene = Scene { models: vec![] };
 
         let freecam_controller = FreecamController::new(5.0, 0.01);
         let camera = Camera::new(
@@ -206,7 +208,7 @@ impl CatDemo {
             time,
 
             scene_renderer,
-
+            scene,
             egui_integration,
             _allocator: allocator,
         }
