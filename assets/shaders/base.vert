@@ -22,7 +22,7 @@ layout(set = 1, binding = 0) uniform Camera {
     mat4 proj;
 } camera;
 
-layout(set = 2, binding = 0) uniform Entity {
+layout(push_constant) uniform Entity {
     mat4 model;
     mat4 normalMatrix;
 } entity;
