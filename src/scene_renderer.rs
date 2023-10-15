@@ -160,8 +160,9 @@ impl SceneRenderer {
             let scissors = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: vk::Extent2D {
-                    width: u32::MAX,
-                    height: u32::MAX,
+                    // Evaluation of (offset.x + extent.width) must not cause a ***signed*** integer addition overflow
+                    width: i32::MAX as u32,
+                    height: i32::MAX as u32,
                 },
             }];
 
