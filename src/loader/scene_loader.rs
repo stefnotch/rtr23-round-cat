@@ -226,7 +226,7 @@ impl AssetLoader {
                 let indices = reader
                     .read_indices()
                     .map(|indices| indices.into_u32().collect())
-                    .unwrap_or_else(|| (0..vertices.len()).map(|index| index as u32).collect());
+                    .unwrap_or_else(|| (0..(vertices.len() as u32)).collect());
 
                 Arc::new(LoadedMesh {
                     id,
