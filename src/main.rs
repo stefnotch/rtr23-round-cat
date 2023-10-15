@@ -80,7 +80,7 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene.glb")
+            .load_scene("assets/sponza/sponza.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 

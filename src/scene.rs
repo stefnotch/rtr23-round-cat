@@ -1,5 +1,6 @@
 mod material;
 mod mesh;
+mod texture;
 mod vertex;
 
 pub use material::*;

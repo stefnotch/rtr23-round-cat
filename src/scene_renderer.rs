@@ -477,7 +477,7 @@ impl SceneRenderer {
                     y: -1.0,
                     z: 0.0,
                 },
-                color: Vec3::new(1.0, 0.0, 0.0),
+                color: Vec3::new(0.0, 0.0, 0.0),
             },
         };
 
