@@ -222,6 +222,15 @@ impl SwapchainContainer {
             })
             .collect::<Vec<_>>();
 
+        // We brutally assume that the old swapchain is not in use anymore
+        for &imageview in self.imageviews.iter() {
+            unsafe { device.destroy_image_view(imageview, None) };
+        }
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
+
         self.swapchain = swapchain;
         self.extent = swapchain_extent;
         self.images = images;

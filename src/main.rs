@@ -80,7 +80,7 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene.glb")
+            .load_scene("assets/scene-local/duck.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
@@ -224,8 +224,7 @@ impl CatDemo {
                         WindowEvent::CloseRequested => {
                             control_flow.set_exit();
                         }
-                        WindowEvent::Resized(size @ PhysicalSize { width, height }) => {
-                            println!("resized: {:?}", size);
+                        WindowEvent::Resized(PhysicalSize { width, height }) => {
                             let aspect_ratio = width as f32 / height as f32;
 
                             self.camera.update_aspect_ratio(aspect_ratio);
@@ -450,6 +449,9 @@ impl CatDemo {
 
     fn draw_frame(&mut self) {
         let window_size = self.window.inner_size();
+        if window_size.width == 0 || window_size.height == 0 {
+            return;
+        }
 
         // wait for fence
         unsafe {
@@ -467,10 +469,6 @@ impl CatDemo {
             min_depth: 0.0,
             max_depth: 1.0,
         };
-
-        if window_size.width == 0 || window_size.height == 0 {
-            return;
-        }
 
         if self.should_recreate_swapchain {
             self.swapchain.recreate(window_size);
@@ -556,12 +554,21 @@ impl CatDemo {
             .swapchains(std::slice::from_ref(&self.swapchain.swapchain))
             .image_indices(std::slice::from_ref(&present_index));
 
-        unsafe {
+        let result = unsafe {
             self.swapchain
                 .swapchain_loader
                 .queue_present(self.context.queue, &present_info)
-        }
-        .expect("Could not queue present");
+        };
+        match result {
+            Ok(true) => {
+                self.should_recreate_swapchain = true;
+            }
+            Ok(false) => {}
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                self.should_recreate_swapchain = true;
+            }
+            Err(e) => panic!("Could not present queue: {:?}", e),
+        };
     }
 
     fn draw_ui(&mut self, command_buffer: &vk::CommandBuffer, swapchain_image_index: usize) {

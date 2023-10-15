@@ -159,7 +159,10 @@ impl SceneRenderer {
 
             let scissors = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
-                extent: swapchain.extent,
+                extent: vk::Extent2D {
+                    width: u32::MAX,
+                    height: u32::MAX,
+                },
             }];
 
             let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
@@ -371,8 +374,6 @@ impl SceneRenderer {
                         .height(swapchain.extent.height)
                         .layers(1);
 
-                    dbg!(create_info.attachment_count);
-
                     unsafe { device.create_framebuffer(&create_info, None) }
                         .expect("Could not create framebuffer")
                 })
@@ -515,7 +516,7 @@ impl SceneRenderer {
             .framebuffer(self.framebuffers[swapchain_index])
             .render_area(vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
-                extent: dbg!(swapchain.extent),
+                extent: swapchain.extent,
             })
             .clear_values(&clear_values);
 
@@ -611,6 +612,9 @@ impl SceneRenderer {
         let device = &self.context.device;
         let render_pass = self.render_pass;
 
+        for &framebuffer in self.framebuffers.iter() {
+            unsafe { device.destroy_framebuffer(framebuffer, None) };
+        }
         let (depth_buffer_image, depth_buffer_image_memory) = {
             let create_info = vk::ImageCreateInfo::builder()
                 .image_type(vk::ImageType::TYPE_2D)
