@@ -377,7 +377,7 @@ impl CatDemo {
             let image = Image::new(context.clone(), &image_info);
 
             let image_data_buffer = Buffer::new(
-                context,
+                context.clone(),
                 4, // A single 32 bit pixels = 4 bytes
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -392,8 +392,8 @@ impl CatDemo {
                 vk::ImageAspectFlags::COLOR,
             ))
         };
-        let mut sampler_map = HashMap::new();
-        let mut texture_map = HashMap::new();
+        // let mut sampler_map = HashMap::new();
+        // let mut texture_map = HashMap::new();
         let mut material_map = HashMap::new();
         let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
 
@@ -413,7 +413,9 @@ impl CatDemo {
                     .or_insert_with(|| {
                         let base_color_texture = loaded_primitive
                             .material
+                            .as_ref()
                             .base_color_texture
+                            .as_ref()
                             .map(|v| Texture {
                                 image_view: default_image_view.clone(),
                                 sampler: default_sampler.clone(),
