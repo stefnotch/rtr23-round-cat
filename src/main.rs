@@ -27,7 +27,7 @@ use input_map::InputMap;
 use swapchain::SwapchainContainer;
 use time::Time;
 use ultraviolet::Vec2;
-use winit::dpi::{self};
+use winit::dpi::{self, PhysicalSize};
 use winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
 };
@@ -51,6 +51,7 @@ struct CatDemo {
     command_pool: vk::CommandPool,
 
     command_buffers: Vec<vk::CommandBuffer>,
+    should_recreate_swapchain: bool,
 
     present_complete_semaphore: vk::Semaphore,
     rendering_complete_semaphore: vk::Semaphore,
@@ -74,13 +75,12 @@ impl CatDemo {
                 width: window_width,
                 height: window_height,
             })
-            .with_resizable(false)
             .build(event_loop)
             .expect("Could not create window");
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene.glb")
+            .load_scene("assets/scene-local/duck.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
@@ -93,10 +93,7 @@ impl CatDemo {
 
         let context = Arc::new(Context::new(event_loop, &window));
 
-        let swapchain = SwapchainContainer::new(
-            context.clone(),
-            (window.inner_size().width, window.inner_size().height),
-        );
+        let swapchain = SwapchainContainer::new(context.clone(), window.inner_size());
 
         let instance = &context.instance;
         let device = &context.device;
@@ -197,6 +194,7 @@ impl CatDemo {
             descriptor_set_pool,
 
             command_buffers,
+            should_recreate_swapchain: false,
 
             draw_fence: fence,
             present_complete_semaphore,
@@ -225,6 +223,12 @@ impl CatDemo {
                     match event {
                         WindowEvent::CloseRequested => {
                             control_flow.set_exit();
+                        }
+                        WindowEvent::Resized(PhysicalSize { width, height }) => {
+                            let aspect_ratio = width as f32 / height as f32;
+
+                            self.camera.update_aspect_ratio(aspect_ratio);
+                            self.should_recreate_swapchain = true;
                         }
                         WindowEvent::KeyboardInput {
                             input:
@@ -444,6 +448,11 @@ impl CatDemo {
     }
 
     fn draw_frame(&mut self) {
+        let window_size = self.window.inner_size();
+        if window_size.width == 0 || window_size.height == 0 {
+            return;
+        }
+
         // wait for fence
         unsafe {
             self.context
@@ -452,19 +461,53 @@ impl CatDemo {
         }
         .expect("Could not wait for fences");
 
+        let viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: window_size.width as f32,
+            height: window_size.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+
+        if self.should_recreate_swapchain {
+            self.swapchain.recreate(window_size);
+            self.egui_integration.update_swapchain(
+                window_size.width,
+                window_size.height,
+                self.swapchain.swapchain,
+                self.swapchain.surface_format,
+            );
+            self.scene_renderer.resize(&self.swapchain);
+            self.should_recreate_swapchain = false;
+        }
+
         // reset fence
         unsafe { self.context.device.reset_fences(&[self.draw_fence]) }
             .expect("Could not reset fences");
 
-        let (present_index, _) = unsafe {
+        let acquire_result = unsafe {
             self.swapchain.swapchain_loader.acquire_next_image(
                 self.swapchain.swapchain,
                 std::u64::MAX,
                 self.present_complete_semaphore,
                 vk::Fence::null(),
             )
-        }
-        .expect("Could not accquire next image");
+        };
+
+        let present_index = match acquire_result {
+            Ok((index, suboptimal)) => {
+                if suboptimal {
+                    self.should_recreate_swapchain = true;
+                }
+                index
+            }
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                self.should_recreate_swapchain = true;
+                return;
+            }
+            _ => panic!("Could not accquire next image"),
+        };
 
         let command_buffer = self.command_buffers[present_index as usize];
 
@@ -483,6 +526,7 @@ impl CatDemo {
             command_buffer,
             present_index as usize,
             &self.swapchain,
+            viewport,
         );
 
         self.draw_ui(&command_buffer, present_index as usize);
@@ -510,12 +554,21 @@ impl CatDemo {
             .swapchains(std::slice::from_ref(&self.swapchain.swapchain))
             .image_indices(std::slice::from_ref(&present_index));
 
-        unsafe {
+        let result = unsafe {
             self.swapchain
                 .swapchain_loader
                 .queue_present(self.context.queue, &present_info)
-        }
-        .expect("Could not queue present");
+        };
+        match result {
+            Ok(true) => {
+                self.should_recreate_swapchain = true;
+            }
+            Ok(false) => {}
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                self.should_recreate_swapchain = true;
+            }
+            Err(e) => panic!("Could not present queue: {:?}", e),
+        };
     }
 
     fn draw_ui(&mut self, command_buffer: &vk::CommandBuffer, swapchain_image_index: usize) {
