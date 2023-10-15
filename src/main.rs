@@ -1,6 +1,8 @@
 mod buffer;
 mod camera;
 mod context;
+mod image;
+mod image_view;
 mod input_map;
 mod loader;
 mod scene;
