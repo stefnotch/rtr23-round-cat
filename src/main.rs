@@ -18,7 +18,7 @@ use buffer::Buffer;
 use gpu_allocator::vulkan::*;
 use image::Image;
 use image_view::ImageView;
-use loader::{Asset, AssetLoader, LoadedMaterial, LoadedSampler};
+use loader::{Asset, AssetLoader, LoadedImage, LoadedMaterial, LoadedSampler};
 use sampler::Sampler;
 use scene::{Material, Mesh, Model, Primitive, Scene, Texture};
 use scene_renderer::SceneRenderer;
@@ -376,13 +376,13 @@ impl CatDemo {
                 .build();
             let image = Image::new(context.clone(), &image_info);
 
-            let image_data_buffer = Buffer::new(
+            let image_data_buffer: Buffer<u8> = Buffer::new(
                 context.clone(),
                 4, // A single 32 bit pixels = 4 bytes
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
-            image_data_buffer.copy_data(&[0xFF, 0xFF, 0xFF, 0xFF]);
+            image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
             image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
             image_data_buffers.push(image_data_buffer);
 
@@ -392,8 +392,8 @@ impl CatDemo {
                 vk::ImageAspectFlags::COLOR,
             ))
         };
-        // let mut sampler_map = HashMap::new();
-        // let mut texture_map = HashMap::new();
+        let mut sampler_map = HashMap::new();
+        let mut texture_map = HashMap::new();
         let mut material_map = HashMap::new();
         let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
 
@@ -416,9 +416,28 @@ impl CatDemo {
                             .as_ref()
                             .base_color_texture
                             .as_ref()
-                            .map(|v| Texture {
-                                image_view: default_image_view.clone(),
-                                sampler: default_sampler.clone(),
+                            .map(|v| {
+                                let image_view = texture_map
+                                    .entry(v.image.id())
+                                    .or_insert_with(|| {
+                                        create_image(
+                                            v.image.clone(),
+                                            context.clone(),
+                                            setup_command_buffer,
+                                            &mut image_data_buffers,
+                                        )
+                                    })
+                                    .clone();
+                                let sampler = sampler_map
+                                    .entry(v.sampler.id())
+                                    .or_insert_with(|| {
+                                        create_sampler(v.sampler.clone(), context.clone())
+                                    })
+                                    .clone();
+                                Texture {
+                                    image_view,
+                                    sampler,
+                                }
                             })
                             .unwrap_or_else(|| Texture {
                                 image_view: default_image_view.clone(),
@@ -702,6 +721,96 @@ impl CatDemo {
         self.update_camera();
         self.scene_renderer.update(&self.camera);
     }
+}
+
+fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> Arc<Sampler> {
+    fn convert_filter(filter: &loader::Filter) -> vk::Filter {
+        match filter {
+            loader::Filter::Nearest => vk::Filter::NEAREST,
+            loader::Filter::Linear => vk::Filter::LINEAR,
+        }
+    }
+    fn convert_address_mode(address_mode: &loader::AddressMode) -> vk::SamplerAddressMode {
+        match address_mode {
+            loader::AddressMode::ClampToEdge => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            loader::AddressMode::MirroredRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
+            loader::AddressMode::Repeat => vk::SamplerAddressMode::REPEAT,
+            loader::AddressMode::ClampToBorder => vk::SamplerAddressMode::CLAMP_TO_BORDER,
+        }
+    }
+
+    let sampler_info = vk::SamplerCreateInfo::builder()
+        .flags(vk::SamplerCreateFlags::empty())
+        .mag_filter(convert_filter(&loaded_sampler.sampler_info.mag_filter))
+        .min_filter(convert_filter(&loaded_sampler.sampler_info.min_filter))
+        .mipmap_mode(match &loaded_sampler.sampler_info.mipmap_mode {
+            loader::MipmapMode::Nearest => vk::SamplerMipmapMode::NEAREST,
+            loader::MipmapMode::Linear => vk::SamplerMipmapMode::LINEAR,
+        })
+        .address_mode_u(convert_address_mode(
+            &loaded_sampler.sampler_info.address_mode[0],
+        ))
+        .address_mode_v(convert_address_mode(
+            &loaded_sampler.sampler_info.address_mode[1],
+        ))
+        .address_mode_w(convert_address_mode(
+            &loaded_sampler.sampler_info.address_mode[2],
+        ))
+        .build();
+    let sampler = unsafe { context.device.create_sampler(&sampler_info, None) }
+        .expect("Could not create sampler");
+    Arc::new(Sampler::new(sampler, context.clone()))
+}
+
+fn create_image(
+    loaded_image: Arc<LoadedImage>,
+    context: Arc<Context>,
+    setup_command_buffer: vk::CommandBuffer,
+    image_data_buffers: &mut Vec<Buffer<u8>>,
+) -> Arc<ImageView> {
+    fn convert_format(format: &loader::ImageFormat) -> vk::Format {
+        match format {
+            loader::ImageFormat::R8_UNORM => vk::Format::R8_UNORM,
+            loader::ImageFormat::R8G8_UNORM => vk::Format::R8G8_UNORM,
+            loader::ImageFormat::R8G8B8A8_UNORM => vk::Format::R8G8B8A8_UNORM,
+            loader::ImageFormat::R16_UNORM => vk::Format::R16_UNORM,
+            loader::ImageFormat::R16G16_UNORM => vk::Format::R16G16_UNORM,
+            loader::ImageFormat::R16G16B16A16_UNORM => vk::Format::R16G16B16A16_UNORM,
+            loader::ImageFormat::R32G32B32A32_SFLOAT => vk::Format::R32G32B32A32_SFLOAT,
+        }
+    }
+
+    let image_info = vk::ImageCreateInfo::builder()
+        .image_type(vk::ImageType::TYPE_2D)
+        .format(convert_format(&loaded_image.data.format))
+        .extent(vk::Extent3D {
+            width: loaded_image.data.dimensions.0,
+            height: loaded_image.data.dimensions.1,
+            depth: 1,
+        })
+        .mip_levels(1)
+        .array_layers(1)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .build();
+    let image = Image::new(context.clone(), &image_info);
+
+    let image_data_buffer: Buffer<u8> = Buffer::new(
+        context.clone(),
+        loaded_image.data.bytes.len() as u64,
+        vk::BufferUsageFlags::TRANSFER_SRC,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+    );
+    image_data_buffer.copy_data(&loaded_image.data.bytes);
+    image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+    image_data_buffers.push(image_data_buffer);
+
+    Arc::new(ImageView::new_default(
+        context.clone(),
+        Arc::new(image),
+        vk::ImageAspectFlags::COLOR,
+    ))
 }
 
 impl Drop for CatDemo {
