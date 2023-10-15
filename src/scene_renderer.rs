@@ -3,6 +3,7 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 use ash::{util::read_spv, vk};
 use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
+use winit::dpi::PhysicalSize;
 
 use crate::{
     buffer::Buffer,
@@ -156,22 +157,13 @@ impl SceneRenderer {
                 vk::PipelineInputAssemblyStateCreateInfo::builder()
                     .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
 
-            let viewports = [vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: swapchain.extent.width as f32,
-                height: swapchain.extent.height as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            }];
-
             let scissors = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: swapchain.extent,
             }];
 
             let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
-                .viewports(&viewports)
+                .viewport_count(1)
                 .scissors(&scissors);
 
             let rasterization_state_create_info =
@@ -264,6 +256,9 @@ impl SceneRenderer {
             let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
                 .expect("Could not create pipeline layout");
 
+            let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
+                .dynamic_states(std::slice::from_ref(&vk::DynamicState::VIEWPORT));
+
             let create_info = vk::GraphicsPipelineCreateInfo::builder()
                 .stages(&shader_stages)
                 .vertex_input_state(&vertex_input_state_create_info)
@@ -273,6 +268,7 @@ impl SceneRenderer {
                 .multisample_state(&multisample_state_create_info)
                 .depth_stencil_state(&depth_stencil_state_create_info)
                 .color_blend_state(&color_blend_state)
+                .dynamic_state(&dynamic_state)
                 .layout(layout)
                 .render_pass(render_pass);
 
@@ -374,6 +370,8 @@ impl SceneRenderer {
                         .width(swapchain.extent.width)
                         .height(swapchain.extent.height)
                         .layers(1);
+
+                    dbg!(create_info.attachment_count);
 
                     unsafe { device.create_framebuffer(&create_info, None) }
                         .expect("Could not create framebuffer")
@@ -496,6 +494,7 @@ impl SceneRenderer {
         command_buffer: vk::CommandBuffer,
         swapchain_index: usize,
         swapchain: &SwapchainContainer,
+        viewport: vk::Viewport,
     ) {
         let clear_values = [
             vk::ClearValue {
@@ -516,7 +515,7 @@ impl SceneRenderer {
             .framebuffer(self.framebuffers[swapchain_index])
             .render_area(vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
-                extent: swapchain.extent,
+                extent: dbg!(swapchain.extent),
             })
             .clear_values(&clear_values);
 
@@ -534,6 +533,12 @@ impl SceneRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             )
+        };
+
+        unsafe {
+            self.context
+                .device
+                .cmd_set_viewport(command_buffer, 0, std::slice::from_ref(&viewport))
         };
 
         let descriptor_sets = [self.scene_descriptor_set, self.camera_descriptor_set];
@@ -600,6 +605,32 @@ impl SceneRenderer {
         }
 
         unsafe { self.context.device.cmd_end_render_pass(command_buffer) };
+    }
+
+    pub fn resize(&mut self, swapchain: &SwapchainContainer) {
+        let device = &self.context.device;
+        let render_pass = self.render_pass;
+
+        let framebuffers = {
+            swapchain
+                .imageviews
+                .iter()
+                .map(|swapchain_image_view| {
+                    let image_views = [swapchain_image_view.clone(), self.depth_buffer_imageview];
+                    let create_info = vk::FramebufferCreateInfo::builder()
+                        .render_pass(render_pass)
+                        .attachments(&image_views)
+                        .width(swapchain.extent.width)
+                        .height(swapchain.extent.height)
+                        .layers(1);
+
+                    unsafe { device.create_framebuffer(&create_info, None) }
+                        .expect("Could not create framebuffer")
+                })
+                .collect::<Vec<_>>()
+        };
+
+        self.framebuffers = framebuffers;
     }
 }
 

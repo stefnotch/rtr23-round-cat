@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk::{self, SwapchainCreateInfoKHR};
+use winit::dpi::PhysicalSize;
 
 use crate::context::Context;
 
@@ -13,14 +14,15 @@ pub struct SwapchainContainer {
 
     pub format: vk::Format,
     pub surface_format: vk::SurfaceFormatKHR,
-
     pub extent: vk::Extent2D,
+
+    present_mode: vk::PresentModeKHR,
 
     context: Arc<Context>,
 }
 
 impl SwapchainContainer {
-    pub fn new(context: Arc<Context>, window_size: (u32, u32)) -> Self {
+    pub fn new(context: Arc<Context>, window_size: PhysicalSize<u32>) -> Self {
         let capabilities = unsafe {
             context
                 .surface_loader
@@ -61,11 +63,11 @@ impl SwapchainContainer {
                 capabilities.current_extent
             } else {
                 vk::Extent2D {
-                    width: window_size.0.clamp(
+                    width: window_size.width.clamp(
                         capabilities.min_image_extent.width,
                         capabilities.max_image_extent.width,
                     ),
-                    height: window_size.1.clamp(
+                    height: window_size.height.clamp(
                         capabilities.min_image_extent.height,
                         capabilities.max_image_extent.height,
                     ),
@@ -73,7 +75,7 @@ impl SwapchainContainer {
             }
         };
 
-        let num_images = capabilities.max_image_count.max(2);
+        let num_images = capabilities.min_image_count.max(2);
 
         let swapchain_loader =
             ash::extensions::khr::Swapchain::new(&context.instance, &context.device);
@@ -133,12 +135,97 @@ impl SwapchainContainer {
             surface_format: image_format,
             imageviews,
 
+            present_mode,
+
             context,
         }
     }
 
-    pub fn recreate() {
-        todo!()
+    pub fn recreate(&mut self, window_size: PhysicalSize<u32>) {
+        let device = &self.context.device;
+
+        unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
+
+        let capabilities = unsafe {
+            self.context
+                .surface_loader
+                .get_physical_device_surface_capabilities(
+                    self.context.physical_device,
+                    self.context.surface,
+                )
+        }
+        .expect("Could not get surface capabilities from physical device");
+
+        let num_images = capabilities.min_image_count.max(2);
+
+        let swapchain_extent = {
+            if capabilities.current_extent.width != u32::MAX {
+                capabilities.current_extent
+            } else {
+                vk::Extent2D {
+                    width: window_size.width.clamp(
+                        capabilities.min_image_extent.width,
+                        capabilities.max_image_extent.width,
+                    ),
+                    height: window_size.height.clamp(
+                        capabilities.min_image_extent.height,
+                        capabilities.max_image_extent.height,
+                    ),
+                }
+            }
+        };
+
+        let create_info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(self.context.surface)
+            .min_image_count(num_images)
+            .image_format(self.surface_format.format)
+            .image_color_space(self.surface_format.color_space)
+            .image_extent(swapchain_extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .pre_transform(capabilities.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(self.present_mode)
+            .clipped(true)
+            .old_swapchain(self.swapchain);
+
+        let swapchain = unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }
+            .expect("Could not recreate swapchain");
+
+        let images = unsafe { self.swapchain_loader.get_swapchain_images(swapchain) }
+            .expect("Could not get swapchain images");
+
+        let imageviews = images
+            .iter()
+            .map(|&image| {
+                let create_info = vk::ImageViewCreateInfo::builder()
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(self.surface_format.format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .image(image);
+
+                unsafe { device.create_image_view(&create_info, None) }
+                    .expect("Could not create image view")
+            })
+            .collect::<Vec<_>>();
+
+        self.swapchain = swapchain;
+        self.extent = swapchain_extent;
+        self.images = images;
+        self.imageviews = imageviews;
     }
 }
 
