@@ -5,6 +5,7 @@ mod image;
 mod image_view;
 mod input_map;
 mod loader;
+mod sampler;
 mod scene;
 mod scene_renderer;
 mod swapchain;
@@ -12,10 +13,14 @@ mod time;
 mod transform;
 mod utility;
 
+use ash::vk::ImageUsageFlags;
 use buffer::Buffer;
 use gpu_allocator::vulkan::*;
-use loader::{Asset, AssetLoader};
-use scene::{Material, Mesh, Model, Primitive, Scene};
+use image::Image;
+use image_view::ImageView;
+use loader::{Asset, AssetLoader, LoadedMaterial, LoadedSampler};
+use sampler::Sampler;
+use scene::{Material, Mesh, Model, Primitive, Scene, Texture};
 use scene_renderer::SceneRenderer;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
@@ -347,8 +352,50 @@ impl CatDemo {
         unsafe { device.begin_command_buffer(setup_command_buffer, &begin_info) }
             .expect("Could not begin command buffer");
 
-        //let mut material_map = HashMap::new();
-        let mut model_map = HashMap::new();
+        let mut image_data_buffers = vec![];
+        let default_sampler = {
+            let sampler_info = vk::SamplerCreateInfo::builder().build();
+            let sampler = unsafe { device.create_sampler(&sampler_info, None) }
+                .expect("Could not create sampler");
+            Arc::new(Sampler::new(sampler, context.clone()))
+        };
+        let default_image_view = {
+            let image_info = vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8G8B8A8_UNORM)
+                .extent(vk::Extent3D {
+                    width: 1,
+                    height: 1,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .build();
+            let image = Image::new(context.clone(), &image_info);
+
+            let image_data_buffer = Buffer::new(
+                context,
+                4, // A single 32 bit pixels = 4 bytes
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            image_data_buffer.copy_data(&[0xFF, 0xFF, 0xFF, 0xFF]);
+            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image_data_buffers.push(image_data_buffer);
+
+            Arc::new(ImageView::new_default(
+                context.clone(),
+                Arc::new(image),
+                vk::ImageAspectFlags::COLOR,
+            ))
+        };
+        let mut sampler_map = HashMap::new();
+        let mut texture_map = HashMap::new();
+        let mut material_map = HashMap::new();
+        let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
 
         let mut staging_vertex_buffers = vec![];
         let mut staging_index_buffers = vec![];
@@ -361,7 +408,29 @@ impl CatDemo {
             };
 
             for loaded_primitive in loaded_model.primitives {
-                let material = Arc::new(Material {}); // TODO: materialz
+                let material = material_map
+                    .entry(loaded_primitive.material.id())
+                    .or_insert_with(|| {
+                        let base_color_texture = loaded_primitive
+                            .material
+                            .base_color_texture
+                            .map(|v| Texture {
+                                image_view: default_image_view.clone(),
+                                sampler: default_sampler.clone(),
+                            })
+                            .unwrap_or_else(|| Texture {
+                                image_view: default_image_view.clone(),
+                                sampler: default_sampler.clone(),
+                            });
+                        Arc::new(Material {
+                            base_color: loaded_primitive.material.base_color,
+                            base_color_texture,
+                            roughness_factor: loaded_primitive.material.roughness_factor,
+                            metallic_factor: loaded_primitive.material.metallic_factor,
+                            emissivity: loaded_primitive.material.emissivity,
+                        })
+                    })
+                    .clone();
                 let mesh = model_map
                     .entry(loaded_primitive.mesh.id())
                     .or_insert_with(|| {

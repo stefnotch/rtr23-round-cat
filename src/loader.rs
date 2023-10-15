@@ -11,11 +11,10 @@ pub use material::*;
 pub use mesh::*;
 pub use model::*;
 pub use scene::*;
+pub use texture::*;
 use ultraviolet::{Rotor3, Vec3};
 
 use crate::transform::Transform;
-
-use self::texture::{LoadedImage, LoadedSampler};
 
 pub struct AssetLoader {
     pub materials: Assets<LoadedMaterial>,

@@ -23,15 +23,6 @@ pub struct BytesImageData {
     pub bytes: Vec<u8>,
 }
 
-impl BytesImageData {
-    pub fn new(dimensions: (u32, u32), format: ImageFormat, bytes: Vec<u8>) -> Self {
-        Self {
-            bytes,
-            dimensions,
-            format,
-        }
-    }
-}
 #[allow(non_camel_case_types)]
 /// A list of the more common image formats that we actually support.
 pub enum ImageFormat {

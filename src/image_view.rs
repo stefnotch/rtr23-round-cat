@@ -7,13 +7,14 @@ use crate::{context::Context, image::Image};
 pub struct ImageView {
     pub imageview: vk::ImageView,
 
+    image: Arc<Image>,
     context: Arc<Context>,
 }
 
 impl ImageView {
     pub fn new_default(
         context: Arc<Context>,
-        image: &Image,
+        image: Arc<Image>,
         aspect_mask: vk::ImageAspectFlags,
     ) -> Self {
         let create_info = vk::ImageViewCreateInfo::builder()
@@ -37,7 +38,11 @@ impl ImageView {
         let imageview = unsafe { context.device.create_image_view(&create_info, None) }
             .expect("Could not create image view");
 
-        Self { imageview, context }
+        Self {
+            imageview,
+            image,
+            context,
+        }
     }
 }
 
