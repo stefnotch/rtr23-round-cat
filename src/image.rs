@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageSubresourceRange};
+use ash::vk::{self, ImageSubresource, ImageSubresourceRange};
 
 use crate::{buffer::Buffer, context::Context, find_memorytype_index};
 
@@ -8,6 +8,7 @@ pub struct Image {
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
     pub format: vk::Format,
+    pub extent: vk::Extent3D,
 
     context: Arc<Context>,
 }
@@ -17,6 +18,7 @@ impl Image {
         let device = &context.device;
 
         let format = create_info.format;
+        let extent = create_info.extent;
 
         let image =
             unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
@@ -43,6 +45,7 @@ impl Image {
             image,
             memory,
             format,
+            extent,
             context,
         }
     }
@@ -51,8 +54,6 @@ impl Image {
         &self,
         command_buffer: vk::CommandBuffer,
         buffer: &Buffer<T>,
-        regions: &[vk::BufferImageCopy],
-        dst_image_layout: vk::ImageLayout,
     ) {
         // TODO: mipmapping
 
@@ -129,13 +130,27 @@ impl Image {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         );
 
+        let buffer_image_copy = vk::BufferImageCopy {
+            buffer_offset: 0,
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+            image_subresource: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            image_extent: self.extent,
+        };
+
         unsafe {
             self.context.device.cmd_copy_buffer_to_image(
                 command_buffer,
                 buffer.buffer,
                 self.image,
-                dst_image_layout,
-                regions,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[buffer_image_copy],
             )
         };
 
