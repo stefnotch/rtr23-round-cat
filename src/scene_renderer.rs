@@ -756,6 +756,14 @@ mod shader_types {
     }
 
     #[derive(AsStd140)]
+    pub struct Material {
+        pub base_color: Vec3,
+        pub emissivity: Vec3,
+        pub roughness: f32,
+        pub metallic: f32,
+    }
+
+    #[derive(AsStd140)]
     pub struct Camera {
         pub view: Mat4,
         pub proj: Mat4,
