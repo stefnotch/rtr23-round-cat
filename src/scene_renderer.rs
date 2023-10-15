@@ -31,6 +31,7 @@ pub struct SceneRenderer {
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
+    material_descriptor_set_layout: vk::DescriptorSetLayout,
 
     scene_descriptor_set: vk::DescriptorSet,
     camera_descriptor_set: vk::DescriptorSet,
@@ -106,7 +107,13 @@ impl SceneRenderer {
                 .expect("Could not create render pass")
         };
 
-        let (pipeline, pipeline_layout, scene_descriptor_set_layout, camera_descriptor_set_layout) = {
+        let (
+            pipeline,
+            pipeline_layout,
+            scene_descriptor_set_layout,
+            camera_descriptor_set_layout,
+            material_descriptor_set_layout,
+        ) = {
             let mut vert_spv_file =
                 Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
             let mut frag_spv_file =
@@ -245,8 +252,33 @@ impl SceneRenderer {
                     .expect("Could not create scene descriptor set layout")
             };
 
-            let descriptor_set_layouts =
-                [scene_descriptor_set_layout, camera_descriptor_set_layout];
+            let material_descriptor_set_layout = {
+                let bindings = [
+                    vk::DescriptorSetLayoutBinding::builder()
+                        .binding(0)
+                        .descriptor_count(1)
+                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .build(),
+                    vk::DescriptorSetLayoutBinding::builder()
+                        .binding(1)
+                        .descriptor_count(1)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .build(),
+                ];
+
+                let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+                unsafe { device.create_descriptor_set_layout(&create_info, None) }
+                    .expect("Could not create material descriptor set layout")
+            };
+
+            let descriptor_set_layouts = [
+                scene_descriptor_set_layout,
+                camera_descriptor_set_layout,
+                material_descriptor_set_layout,
+            ];
 
             let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&descriptor_set_layouts)
@@ -293,6 +325,7 @@ impl SceneRenderer {
                 layout,
                 scene_descriptor_set_layout,
                 camera_descriptor_set_layout,
+                material_descriptor_set_layout,
             )
         };
 
@@ -465,6 +498,7 @@ impl SceneRenderer {
             camera_descriptor_set_layout,
             scene_descriptor_set,
             camera_descriptor_set,
+            material_descriptor_set_layout,
             context,
         }
     }
