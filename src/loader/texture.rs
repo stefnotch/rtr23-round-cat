@@ -9,7 +9,7 @@ pub struct LoadedTexture {
 
 pub struct LoadedImage {
     pub id: AssetId,
-    pub data: Box<dyn ImageData>,
+    pub data: BytesImageData,
 }
 
 impl Asset for LoadedImage {
@@ -17,13 +17,21 @@ impl Asset for LoadedImage {
         self.id
     }
 }
-
-pub trait ImageData: Sync + Send {
-    fn dimensions(&self) -> [u32; 2];
-    fn format(&self) -> &ImageFormat;
-    fn bytes(&self) -> &[u8];
+pub struct BytesImageData {
+    pub dimensions: (u32, u32),
+    pub format: ImageFormat,
+    pub bytes: Vec<u8>,
 }
 
+impl BytesImageData {
+    pub fn new(dimensions: (u32, u32), format: ImageFormat, bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            dimensions,
+            format,
+        }
+    }
+}
 #[allow(non_camel_case_types)]
 /// A list of the more common image formats that we actually support.
 pub enum ImageFormat {
