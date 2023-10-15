@@ -187,7 +187,7 @@ impl CatDemo {
         ));
 
         let scene = Self::setup(loaded_scene, context.clone(), context.queue, command_pool);
-        let time = crate::Time::new();
+        let time = Time::new();
         Self {
             window,
             context,

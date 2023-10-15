@@ -23,4 +23,4 @@ winit = { version = "0.28" }
 egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "default"] }
 
 [profile.dev.package.gltf]
-opt-level = 1
+opt-level = 2
