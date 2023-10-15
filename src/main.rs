@@ -90,7 +90,6 @@ impl CatDemo {
             Default::default(),
         );
         let input_map = InputMap::new();
-        let time = Time::new();
 
         let context = Arc::new(Context::new(event_loop, &window));
 
@@ -185,7 +184,7 @@ impl CatDemo {
         ));
 
         let scene = Self::setup(loaded_scene, context.clone(), context.queue, command_pool);
-
+        let time = Time::new();
         Self {
             window,
             context,
