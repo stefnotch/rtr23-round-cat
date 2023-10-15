@@ -599,6 +599,17 @@ impl SceneRenderer {
                 }
             };
             for primitive in &model.primitives {
+                // unsafe {
+                //     self.context.device.cmd_bind_descriptor_sets(
+                //         command_buffer,
+                //         vk::PipelineBindPoint::GRAPHICS,
+                //         self.pipeline_layout,
+                //         2,
+                //         todo!(),
+                //         &[0],
+                //     );
+                // }
+
                 unsafe {
                     self.context.device.cmd_bind_index_buffer(
                         command_buffer,

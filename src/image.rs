@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageSubresource, ImageSubresourceRange};
+use ash::vk::{self, ImageSubresourceRange};
 
 use crate::{buffer::Buffer, context::Context, find_memorytype_index};
 
@@ -9,6 +9,7 @@ pub struct Image {
     pub memory: vk::DeviceMemory,
     pub format: vk::Format,
     pub extent: vk::Extent3D,
+    pub layout: vk::ImageLayout,
 
     context: Arc<Context>,
 }
@@ -19,6 +20,7 @@ impl Image {
 
         let format = create_info.format;
         let extent = create_info.extent;
+        let layout = create_info.initial_layout;
 
         let image =
             unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
@@ -46,12 +48,13 @@ impl Image {
             memory,
             format,
             extent,
+            layout,
             context,
         }
     }
 
     pub fn copy_from_buffer_for_texture<T>(
-        &self,
+        &mut self,
         command_buffer: vk::CommandBuffer,
         buffer: &Buffer<T>,
     ) {
@@ -161,6 +164,8 @@ impl Image {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         );
+
+        self.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     }
 }
 

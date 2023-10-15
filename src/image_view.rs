@@ -7,7 +7,7 @@ use crate::{context::Context, image::Image};
 pub struct ImageView {
     pub imageview: vk::ImageView,
 
-    image: Arc<Image>,
+    pub image: Arc<Image>,
     context: Arc<Context>,
 }
 

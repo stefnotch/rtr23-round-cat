@@ -1,6 +1,7 @@
 mod buffer;
 mod camera;
 mod context;
+mod descriptor_set;
 mod image;
 mod image_view;
 mod input_map;
@@ -18,7 +19,7 @@ use buffer::Buffer;
 use gpu_allocator::vulkan::*;
 use image::Image;
 use image_view::ImageView;
-use loader::{Asset, AssetLoader, LoadedImage, LoadedMaterial, LoadedSampler};
+use loader::{Asset, AssetLoader, LoadedImage, LoadedSampler};
 use sampler::Sampler;
 use scene::{Material, Mesh, Model, Primitive, Scene, Texture};
 use scene_renderer::SceneRenderer;
@@ -87,7 +88,7 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene-local/duck.glb")
+            .load_scene("assets/scene-local/sponza/sponza.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
@@ -374,7 +375,7 @@ impl CatDemo {
                 .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .build();
-            let image = Image::new(context.clone(), &image_info);
+            let mut image = Image::new(context.clone(), &image_info);
 
             let image_data_buffer: Buffer<u8> = Buffer::new(
                 context.clone(),
@@ -526,6 +527,11 @@ impl CatDemo {
             .expect("Could not submit to queue");
 
         unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
+
+        println!("sampler count: {:?}", sampler_map.len());
+        println!("texture count: {:?}", texture_map.len());
+        println!("material count: {:?}", material_map.len());
+        println!("model count: {:?}", model_map.len());
 
         // *happy venti noises*
         unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
@@ -794,7 +800,7 @@ fn create_image(
         .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
         .initial_layout(vk::ImageLayout::UNDEFINED)
         .build();
-    let image = Image::new(context.clone(), &image_info);
+    let mut image = Image::new(context.clone(), &image_info);
 
     let image_data_buffer: Buffer<u8> = Buffer::new(
         context.clone(),

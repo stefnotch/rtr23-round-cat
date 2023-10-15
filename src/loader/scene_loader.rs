@@ -1,7 +1,6 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use gltf::{texture::Sampler, Gltf, Semantic, Texture};
-use ultraviolet::Vec3;
+use gltf::{texture::Sampler, Semantic, Texture};
 
 use crate::{scene::Vertex, transform::Transform};
 
