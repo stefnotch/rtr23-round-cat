@@ -3,7 +3,6 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 use ash::{util::read_spv, vk};
 use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
-use winit::dpi::PhysicalSize;
 
 use crate::{
     buffer::Buffer,
@@ -31,7 +30,7 @@ pub struct SceneRenderer {
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
-    material_descriptor_set_layout: vk::DescriptorSetLayout,
+    pub material_descriptor_set_layout: vk::DescriptorSetLayout,
 
     scene_descriptor_set: vk::DescriptorSet,
     camera_descriptor_set: vk::DescriptorSet,
@@ -511,7 +510,7 @@ impl SceneRenderer {
                     y: -1.0,
                     z: 0.0,
                 },
-                color: Vec3::new(0.0, 0.0, 0.0),
+                color: Vec3::new(1.0, 1.0, 1.0),
             },
         };
 
@@ -599,16 +598,16 @@ impl SceneRenderer {
                 }
             };
             for primitive in &model.primitives {
-                // unsafe {
-                //     self.context.device.cmd_bind_descriptor_sets(
-                //         command_buffer,
-                //         vk::PipelineBindPoint::GRAPHICS,
-                //         self.pipeline_layout,
-                //         2,
-                //         todo!(),
-                //         &[0],
-                //     );
-                // }
+                unsafe {
+                    self.context.device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.pipeline_layout,
+                        2,
+                        &[primitive.material.descriptor_set.descriptor_set],
+                        &[],
+                    );
+                }
 
                 unsafe {
                     self.context.device.cmd_bind_index_buffer(
@@ -768,6 +767,7 @@ impl Drop for SceneRenderer {
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
+        unsafe { device.destroy_descriptor_set_layout(self.material_descriptor_set_layout, None) };
 
         for &framebuffer in self.framebuffers.iter() {
             unsafe { device.destroy_framebuffer(framebuffer, None) };
@@ -779,7 +779,7 @@ impl Drop for SceneRenderer {
     }
 }
 
-mod shader_types {
+pub mod shader_types {
     use crevice::std140::AsStd140;
     use ultraviolet::{Mat4, Vec3};
 

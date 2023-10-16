@@ -1,5 +1,7 @@
 use ultraviolet::Vec3;
 
+use crate::{buffer::Buffer, descriptor_set::DescriptorSet, scene_renderer::shader_types};
+
 use super::Texture;
 
 pub struct Material {
@@ -8,4 +10,7 @@ pub struct Material {
     pub roughness_factor: f32,
     pub metallic_factor: f32,
     pub emissivity: Vec3,
+
+    pub descriptor_set: DescriptorSet,
+    pub descriptor_set_buffer: Buffer<shader_types::Std140Material>,
 }

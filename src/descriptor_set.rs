@@ -5,15 +5,19 @@ use ash::vk;
 use crate::{buffer::Buffer, context::Context, image_view::ImageView, sampler::Sampler};
 
 pub struct DescriptorSet {
-    descriptor_set: vk::DescriptorSet,
+    pub descriptor_set: vk::DescriptorSet,
 }
 
 impl DescriptorSet {
+    pub fn wrapper(descriptor_set: vk::DescriptorSet) -> Self {
+        Self { descriptor_set }
+    }
+
     pub fn new(
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout: vk::DescriptorSetLayout,
-        write_descriptor_sets: Vec<vk::WriteDescriptorSet>,
+        write_descriptor_sets: impl IntoIterator<Item = vk::WriteDescriptorSet>,
     ) -> Self {
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
@@ -23,7 +27,7 @@ impl DescriptorSet {
         let descriptor_set = unsafe {
             device
                 .allocate_descriptor_sets(&allocate_info)
-                .expect("Could not create scene descriptor_set")
+                .expect("Could not create descriptor set")
         }[0];
 
         let write_descriptor_sets: Vec<_> = write_descriptor_sets
@@ -43,17 +47,17 @@ impl DescriptorSet {
 pub struct WriteDescriptorSet;
 
 impl WriteDescriptorSet {
-    pub fn buffer<T>(binding: u32, buffer: Arc<Buffer<T>>) -> vk::WriteDescriptorSet {
+    pub fn buffer<T>(binding: u32, buffer: &Buffer<T>) -> vk::WriteDescriptorSet {
         let info = vk::DescriptorBufferInfo::builder()
             .buffer(buffer.buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE)
+            .range(std::mem::size_of::<T>() as u64)
             .build();
 
         vk::WriteDescriptorSet::builder()
             .dst_binding(binding)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&[info])
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .build()
     }
 
@@ -70,8 +74,8 @@ impl WriteDescriptorSet {
 
         vk::WriteDescriptorSet::builder()
             .dst_binding(binding)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&[info])
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .build()
     }
 }

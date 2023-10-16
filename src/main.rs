@@ -16,6 +16,7 @@ mod utility;
 
 use ash::vk::ImageUsageFlags;
 use buffer::Buffer;
+use crevice::std140::AsStd140;
 use gpu_allocator::vulkan::*;
 use image::Image;
 use image_view::ImageView;
@@ -41,6 +42,9 @@ use winit::event::{
 };
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
+
+use crate::descriptor_set::{DescriptorSet, WriteDescriptorSet};
+use crate::scene_renderer::shader_types;
 
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
@@ -131,11 +135,11 @@ impl CatDemo {
         let descriptor_set_pool = {
             let pool_sizes = [vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 3,
+                descriptor_count: 200,
             }];
 
             let create_info = vk::DescriptorPoolCreateInfo::builder()
-                .max_sets(3)
+                .max_sets(1000)
                 .pool_sizes(&pool_sizes);
 
             unsafe { device.create_descriptor_pool(&create_info, None) }
@@ -191,7 +195,14 @@ impl CatDemo {
             swapchain.surface_format,
         ));
 
-        let scene = Self::setup(loaded_scene, context.clone(), context.queue, command_pool);
+        let scene = Self::setup(
+            loaded_scene,
+            context.clone(),
+            descriptor_set_pool,
+            scene_renderer.material_descriptor_set_layout,
+            context.queue,
+            command_pool,
+        );
         let time = Time::new();
         Self {
             window,
@@ -333,6 +344,8 @@ impl CatDemo {
     fn setup(
         loaded_scene: loader::LoadedScene,
         context: Arc<Context>,
+        descriptor_pool: vk::DescriptorPool,
+        set_layout: vk::DescriptorSetLayout,
         queue: vk::Queue,
         command_pool: vk::CommandPool,
     ) -> Scene {
@@ -444,12 +457,75 @@ impl CatDemo {
                                 image_view: default_image_view.clone(),
                                 sampler: default_sampler.clone(),
                             });
+
+                        let material_buffer = Buffer::new(
+                            context.clone(),
+                            shader_types::Material::std140_size_static() as u64,
+                            vk::BufferUsageFlags::UNIFORM_BUFFER,
+                            vk::MemoryPropertyFlags::HOST_VISIBLE
+                                | vk::MemoryPropertyFlags::HOST_COHERENT,
+                        );
+
+                        let material = shader_types::Material {
+                            base_color: loaded_primitive.material.base_color,
+                            emissivity: loaded_primitive.material.emissivity,
+                            roughness: loaded_primitive.material.roughness_factor,
+                            metallic: loaded_primitive.material.metallic_factor,
+                        };
+                        material_buffer.copy_data(&material.as_std140());
+
+                        let descriptor_set = {
+                            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+                                .descriptor_pool(descriptor_pool)
+                                .set_layouts(std::slice::from_ref(&set_layout));
+
+                            let descriptor_set = unsafe {
+                                device
+                                    .allocate_descriptor_sets(&allocate_info)
+                                    .expect("Could not create descriptor set")
+                            }[0];
+
+                            let buffer_info = vk::DescriptorBufferInfo::builder()
+                                .buffer(material_buffer.buffer)
+                                .offset(0)
+                                .range(vk::WHOLE_SIZE)
+                                .build();
+
+                            let buffer_write_set = vk::WriteDescriptorSet::builder()
+                                .dst_set(descriptor_set)
+                                .dst_binding(0)
+                                .buffer_info(std::slice::from_ref(&buffer_info))
+                                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                                .build();
+
+                            let image_info = vk::DescriptorImageInfo::builder()
+                                .sampler(base_color_texture.sampler.sampler)
+                                .image_view(base_color_texture.image_view.imageview)
+                                .image_layout(base_color_texture.image_view.image.layout)
+                                .build();
+
+                            let image_write_set = vk::WriteDescriptorSet::builder()
+                                .dst_set(descriptor_set)
+                                .dst_binding(1)
+                                .image_info(std::slice::from_ref(&image_info))
+                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                                .build();
+
+                            let buffer_writes = [buffer_write_set, image_write_set];
+
+                            unsafe { device.update_descriptor_sets(&buffer_writes, &[]) };
+
+                            descriptor_set
+                        };
+
                         Arc::new(Material {
                             base_color: loaded_primitive.material.base_color,
-                            base_color_texture,
+                            base_color_texture: base_color_texture.clone(),
                             roughness_factor: loaded_primitive.material.roughness_factor,
                             metallic_factor: loaded_primitive.material.metallic_factor,
                             emissivity: loaded_primitive.material.emissivity,
+                            descriptor_set: DescriptorSet::wrapper(descriptor_set),
+                            descriptor_set_buffer: material_buffer,
                         })
                     })
                     .clone();

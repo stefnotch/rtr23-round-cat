@@ -117,7 +117,6 @@ impl<T> Buffer<T> {
 impl<T> Drop for Buffer<T> {
     fn drop(&mut self) {
         let device = &self.context.device;
-
         unsafe { device.destroy_buffer(self.buffer, None) };
         unsafe { device.free_memory(self.memory, None) };
     }
