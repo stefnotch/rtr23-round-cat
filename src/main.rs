@@ -385,7 +385,11 @@ impl CatDemo {
                 .mip_levels(1)
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
-                .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
+                .usage(
+                    ImageUsageFlags::SAMPLED
+                        | ImageUsageFlags::TRANSFER_DST
+                        | ImageUsageFlags::TRANSFER_SRC,
+                )
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .build();
             let mut image = Image::new(context.clone(), &image_info);
@@ -870,10 +874,17 @@ fn create_image(
             height: loaded_image.data.dimensions.1,
             depth: 1,
         })
-        .mip_levels(1)
+        .mip_levels(Image::max_mip_levels(vk::Extent2D {
+            width: loaded_image.data.dimensions.0,
+            height: loaded_image.data.dimensions.1,
+        }))
         .array_layers(1)
         .samples(vk::SampleCountFlags::TYPE_1)
-        .usage(ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_DST)
+        .usage(
+            ImageUsageFlags::SAMPLED
+                | ImageUsageFlags::TRANSFER_DST
+                | ImageUsageFlags::TRANSFER_SRC,
+        )
         .initial_layout(vk::ImageLayout::UNDEFINED)
         .build();
     let mut image = Image::new(context.clone(), &image_info);

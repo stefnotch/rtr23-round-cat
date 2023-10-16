@@ -29,7 +29,7 @@ impl ImageView {
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask,
                 base_mip_level: 0,
-                level_count: 1,
+                level_count: image.mip_levels,
                 base_array_layer: 0,
                 layer_count: 1,
             })
