@@ -126,7 +126,7 @@ impl Image {
                     vk::DependencyFlags::empty(),
                     &[],
                     &[],
-                    &[image_memory_barrier],
+                    std::slice::from_ref(&image_memory_barrier),
                 );
             }
         }
@@ -162,7 +162,7 @@ impl Image {
                 buffer.buffer,
                 self.image,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[buffer_image_copy],
+                std::slice::from_ref(&buffer_image_copy),
             )
         };
 
@@ -211,7 +211,7 @@ impl Image {
                     vk::DependencyFlags::empty(),
                     &[],
                     &[],
-                    &[barrier],
+                    std::slice::from_ref(&barrier),
                 )
             };
 
@@ -253,7 +253,7 @@ impl Image {
                     vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                     self.image,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[blit],
+                    std::slice::from_ref(&blit),
                     vk::Filter::LINEAR,
                 )
             }
@@ -271,7 +271,7 @@ impl Image {
                     vk::DependencyFlags::empty(),
                     &[],
                     &[],
-                    &[barrier],
+                    std::slice::from_ref(&barrier),
                 )
             };
 
@@ -298,7 +298,7 @@ impl Image {
                 vk::DependencyFlags::empty(),
                 &[],
                 &[],
-                &[barrier],
+                std::slice::from_ref(&barrier),
             )
         };
 

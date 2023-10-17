@@ -570,11 +570,13 @@ impl CatDemo {
 
         // submit
         let submit_info = vk::SubmitInfo::builder()
-            .command_buffers(&[setup_command_buffer])
+            .command_buffers(std::slice::from_ref(&setup_command_buffer))
             .build();
 
-        unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
-            .expect("Could not submit to queue");
+        unsafe {
+            device.queue_submit(queue, std::slice::from_ref(&submit_info), vk::Fence::null())
+        }
+        .expect("Could not submit to queue");
 
         unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
 
@@ -584,7 +586,9 @@ impl CatDemo {
         println!("model count: {:?}", model_map.len());
 
         // *happy venti noises*
-        unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
+        unsafe {
+            device.free_command_buffers(command_pool, std::slice::from_ref(&setup_command_buffer))
+        };
 
         scene
     }
@@ -603,9 +607,11 @@ impl CatDemo {
 
         // wait for fence
         unsafe {
-            self.context
-                .device
-                .wait_for_fences(&[self.draw_fence], true, std::u64::MAX)
+            self.context.device.wait_for_fences(
+                std::slice::from_ref(&self.draw_fence),
+                true,
+                std::u64::MAX,
+            )
         }
         .expect("Could not wait for fences");
 
@@ -631,8 +637,12 @@ impl CatDemo {
         }
 
         // reset fence
-        unsafe { self.context.device.reset_fences(&[self.draw_fence]) }
-            .expect("Could not reset fences");
+        unsafe {
+            self.context
+                .device
+                .reset_fences(std::slice::from_ref(&self.draw_fence))
+        }
+        .expect("Could not reset fences");
 
         let acquire_result = unsafe {
             self.swapchain.swapchain_loader.acquire_next_image(
@@ -684,16 +694,20 @@ impl CatDemo {
 
         // submit
         let submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(&[self.present_complete_semaphore])
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            .command_buffers(&[command_buffer])
-            .signal_semaphores(&[self.rendering_complete_semaphore])
+            .wait_semaphores(std::slice::from_ref(&self.present_complete_semaphore))
+            .wait_dst_stage_mask(std::slice::from_ref(
+                &vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ))
+            .command_buffers(std::slice::from_ref(&command_buffer))
+            .signal_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
             .build();
 
         unsafe {
-            self.context
-                .device
-                .queue_submit(self.context.queue, &[submit_info], self.draw_fence)
+            self.context.device.queue_submit(
+                self.context.queue,
+                std::slice::from_ref(&submit_info),
+                self.draw_fence,
+            )
         }
         .expect("Could not submit to queue");
 
