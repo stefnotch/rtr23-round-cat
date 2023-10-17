@@ -17,13 +17,16 @@ impl Asset for LoadedImage {
         self.id
     }
 }
+
 pub struct BytesImageData {
     pub dimensions: (u32, u32),
     pub format: ImageFormat,
+    pub color_space: ColorSpace,
     pub bytes: Vec<u8>,
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// A list of the more common image formats that we actually support.
 pub enum ImageFormat {
     // TODO: Where are the sRGB formats?
@@ -35,6 +38,12 @@ pub enum ImageFormat {
     R16G16_UNORM,
     R16G16B16A16_UNORM,
     R32G32B32A32_SFLOAT,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ColorSpace {
+    Linear,
+    SRGB,
 }
 
 pub struct LoadedSampler {

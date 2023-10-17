@@ -9,7 +9,8 @@ use super::{
         AddressMode, BytesImageData, Filter, ImageFormat, LoadedImage, LoadedSampler,
         LoadedTexture, MipmapMode, SamplerInfo,
     },
-    AssetId, AssetLoader, LoadedMaterial, LoadedMesh, LoadedModel, LoadedPrimitive, LoadedScene,
+    AssetId, AssetLoader, ColorSpace, LoadedMaterial, LoadedMesh, LoadedModel, LoadedPrimitive,
+    LoadedScene,
 };
 
 struct SceneLoadingData {
@@ -154,7 +155,7 @@ impl AssetLoader {
             };
             let base_color_texture = material_pbr.base_color_texture().map(|info| {
                 let sampler = self.load_sampler(loading_data, info.texture().sampler());
-                let image = self.load_images(loading_data, info.texture());
+                let image = self.load_images(loading_data, info.texture(), ColorSpace::SRGB);
 
                 LoadedTexture { image, sampler }
             });
@@ -239,6 +240,7 @@ impl AssetLoader {
         &mut self,
         loading_data: &mut SceneLoadingData,
         texture: Texture,
+        color_space: ColorSpace,
     ) -> Arc<LoadedImage> {
         let texture_index = texture.source().index();
         let texture_key = ImageKey {
@@ -264,6 +266,7 @@ impl AssetLoader {
                     data: BytesImageData {
                         dimensions: (image.width, image.height),
                         format,
+                        color_space,
                         bytes,
                     },
                 })

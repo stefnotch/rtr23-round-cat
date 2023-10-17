@@ -854,21 +854,50 @@ fn create_image(
     setup_command_buffer: vk::CommandBuffer,
     image_data_buffers: &mut Vec<Buffer<u8>>,
 ) -> Arc<ImageView> {
-    fn convert_format(format: &loader::ImageFormat) -> vk::Format {
+    fn convert_format(format: (loader::ImageFormat, loader::ColorSpace)) -> vk::Format {
         match format {
-            loader::ImageFormat::R8_UNORM => vk::Format::R8_UNORM,
-            loader::ImageFormat::R8G8_UNORM => vk::Format::R8G8_UNORM,
-            loader::ImageFormat::R8G8B8A8_UNORM => vk::Format::R8G8B8A8_UNORM,
-            loader::ImageFormat::R16_UNORM => vk::Format::R16_UNORM,
-            loader::ImageFormat::R16G16_UNORM => vk::Format::R16G16_UNORM,
-            loader::ImageFormat::R16G16B16A16_UNORM => vk::Format::R16G16B16A16_UNORM,
-            loader::ImageFormat::R32G32B32A32_SFLOAT => vk::Format::R32G32B32A32_SFLOAT,
+            (loader::ImageFormat::R8_UNORM, loader::ColorSpace::Linear) => vk::Format::R8_UNORM,
+            (loader::ImageFormat::R8G8_UNORM, loader::ColorSpace::Linear) => vk::Format::R8G8_UNORM,
+            (loader::ImageFormat::R8G8B8A8_UNORM, loader::ColorSpace::Linear) => {
+                vk::Format::R8G8B8A8_UNORM
+            }
+            (loader::ImageFormat::R16_UNORM, loader::ColorSpace::Linear) => vk::Format::R16_UNORM,
+            (loader::ImageFormat::R16G16_UNORM, loader::ColorSpace::Linear) => {
+                vk::Format::R16G16_UNORM
+            }
+            (loader::ImageFormat::R16G16B16A16_UNORM, loader::ColorSpace::Linear) => {
+                vk::Format::R16G16B16A16_UNORM
+            }
+            (loader::ImageFormat::R32G32B32A32_SFLOAT, loader::ColorSpace::Linear) => {
+                vk::Format::R32G32B32A32_SFLOAT
+            }
+
+            (loader::ImageFormat::R8_UNORM, loader::ColorSpace::SRGB) => vk::Format::R8_SRGB,
+            (loader::ImageFormat::R8G8_UNORM, loader::ColorSpace::SRGB) => vk::Format::R8G8_SRGB,
+            (loader::ImageFormat::R8G8B8A8_UNORM, loader::ColorSpace::SRGB) => {
+                vk::Format::R8G8B8A8_SRGB
+            }
+            (loader::ImageFormat::R16_UNORM, loader::ColorSpace::SRGB) => {
+                panic!("Unsupported texture format")
+            }
+            (loader::ImageFormat::R16G16_UNORM, loader::ColorSpace::SRGB) => {
+                panic!("Unsupported texture format")
+            }
+            (loader::ImageFormat::R16G16B16A16_UNORM, loader::ColorSpace::SRGB) => {
+                panic!("Unsupported texture format")
+            }
+            (loader::ImageFormat::R32G32B32A32_SFLOAT, loader::ColorSpace::SRGB) => {
+                panic!("Unsupported texture format")
+            }
         }
     }
 
     let image_info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::TYPE_2D)
-        .format(convert_format(&loaded_image.data.format))
+        .format(convert_format((
+            loaded_image.data.format,
+            loaded_image.data.color_space,
+        )))
         .extent(vk::Extent3D {
             width: loaded_image.data.dimensions.0,
             height: loaded_image.data.dimensions.1,
