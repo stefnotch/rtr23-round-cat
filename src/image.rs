@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageSubresourceRange, Offset2D};
+use ash::vk::{self, ImageSubresourceRange};
 
 use crate::{buffer::Buffer, context::Context, find_memorytype_index};
 
@@ -64,8 +64,6 @@ impl Image {
     ) {
         // assuming 2D images
         let num_levels = self.mip_levels;
-
-        // TODO: mipmapping
 
         fn image_layout_transition(
             device: &ash::Device,
