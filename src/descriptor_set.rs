@@ -9,15 +9,11 @@ pub struct DescriptorSet {
 }
 
 impl DescriptorSet {
-    pub fn wrapper(descriptor_set: vk::DescriptorSet) -> Self {
-        Self { descriptor_set }
-    }
-
     pub fn new(
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout: vk::DescriptorSetLayout,
-        write_descriptor_sets: impl IntoIterator<Item = vk::WriteDescriptorSet>,
+        write_descriptor_sets: Vec<WriteDescriptorSet>,
     ) -> Self {
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
@@ -30,11 +26,23 @@ impl DescriptorSet {
                 .expect("Could not create descriptor set")
         }[0];
 
-        let write_descriptor_sets: Vec<_> = write_descriptor_sets
-            .into_iter()
-            .map(|mut write| {
-                write.dst_set = descriptor_set;
-                write
+        let write_descriptor_sets: Vec<vk::WriteDescriptorSet> = write_descriptor_sets
+            .iter()
+            .map(|write| {
+                let mut vk_write = vk::WriteDescriptorSet::builder()
+                    .dst_binding(write.binding)
+                    .descriptor_type(write.info.descriptor_type())
+                    .dst_set(descriptor_set);
+
+                match &write.info {
+                    DescriptorInfo::Buffer(info) => {
+                        vk_write = vk_write.buffer_info(std::slice::from_ref(info))
+                    }
+                    DescriptorInfo::Image(info) => {
+                        vk_write = vk_write.image_info(std::slice::from_ref(info))
+                    }
+                }
+                vk_write.build()
             })
             .collect();
 
@@ -44,38 +52,53 @@ impl DescriptorSet {
     }
 }
 
-pub struct WriteDescriptorSet;
+pub struct WriteDescriptorSet {
+    binding: u32,
+    info: DescriptorInfo,
+}
+
+pub enum DescriptorInfo {
+    Buffer(vk::DescriptorBufferInfo),
+    Image(vk::DescriptorImageInfo),
+}
+
+impl DescriptorInfo {
+    pub fn descriptor_type(&self) -> vk::DescriptorType {
+        match self {
+            DescriptorInfo::Buffer(_) => vk::DescriptorType::UNIFORM_BUFFER,
+            DescriptorInfo::Image(_) => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        }
+    }
+}
 
 impl WriteDescriptorSet {
-    pub fn buffer<T>(binding: u32, buffer: &Buffer<T>) -> vk::WriteDescriptorSet {
+    pub fn buffer<T>(binding: u32, buffer: &Buffer<T>) -> WriteDescriptorSet {
         let info = vk::DescriptorBufferInfo::builder()
             .buffer(buffer.buffer)
             .offset(0)
-            .range(std::mem::size_of::<T>() as u64)
+            .range(vk::WHOLE_SIZE)
             .build();
 
-        vk::WriteDescriptorSet::builder()
-            .dst_binding(binding)
-            .buffer_info(&[info])
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .build()
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::Buffer(info),
+        }
     }
 
     pub fn image_view_sampler(
         binding: u32,
-        imageview: Arc<ImageView>,
+        image_view: Arc<ImageView>,
         sampler: Arc<Sampler>,
-    ) -> vk::WriteDescriptorSet {
+    ) -> WriteDescriptorSet {
         let info = vk::DescriptorImageInfo::builder()
             .sampler(sampler.sampler)
-            .image_view(imageview.imageview)
-            .image_layout(imageview.image.layout)
+            .image_view(image_view.image_view)
+            .image_layout(image_view.image.layout)
             .build();
 
-        vk::WriteDescriptorSet::builder()
-            .dst_binding(binding)
-            .image_info(&[info])
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .build()
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::Image(info),
+        }
     }
 }

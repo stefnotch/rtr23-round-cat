@@ -22,8 +22,9 @@ pub struct SceneRenderer {
     framebuffers: Vec<vk::Framebuffer>,
 
     depth_buffer_image: vk::Image,
-    depth_buffer_imageview: vk::ImageView,
     depth_buffer_image_memory: vk::DeviceMemory,
+    
+    depth_buffer_imageview: vk::ImageView,
 
     scene_descriptor_buffer: Buffer<shader_types::Std140Scene>,
     camera_descriptor_buffer: Buffer<shader_types::Std140Camera>,
