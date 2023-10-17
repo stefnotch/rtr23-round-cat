@@ -614,6 +614,13 @@ impl CatDemo {
             )
         }
         .expect("Could not wait for fences");
+        // reset fence
+        unsafe {
+            self.context
+                .device
+                .reset_fences(std::slice::from_ref(&self.draw_fence))
+        }
+        .expect("Could not reset fences");
 
         let viewport = vk::Viewport {
             x: 0.0,
@@ -635,14 +642,6 @@ impl CatDemo {
             self.scene_renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
-
-        // reset fence
-        unsafe {
-            self.context
-                .device
-                .reset_fences(std::slice::from_ref(&self.draw_fence))
-        }
-        .expect("Could not reset fences");
 
         let acquire_result = unsafe {
             self.swapchain.swapchain_loader.acquire_next_image(
@@ -667,7 +666,15 @@ impl CatDemo {
             _ => panic!("Could not accquire next image"),
         };
 
+        self.scene_renderer.update(&self.camera);
+
         let command_buffer = self.command_buffers[present_index as usize];
+        unsafe {
+            self.context
+                .device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+        }
+        .expect("Could not reset command buffer");
 
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -789,7 +796,6 @@ impl CatDemo {
     fn update(&mut self) {
         self.time.update();
         self.update_camera();
-        self.scene_renderer.update(&self.camera);
     }
 }
 
