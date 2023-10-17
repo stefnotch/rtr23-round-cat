@@ -478,49 +478,19 @@ impl CatDemo {
                         };
                         material_buffer.copy_data(&material.as_std140());
 
-                        let descriptor_set = {
-                            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                                .descriptor_pool(descriptor_pool)
-                                .set_layouts(std::slice::from_ref(&set_layout));
-
-                            let descriptor_set = unsafe {
-                                device
-                                    .allocate_descriptor_sets(&allocate_info)
-                                    .expect("Could not create descriptor set")
-                            }[0];
-
-                            let buffer_info = vk::DescriptorBufferInfo::builder()
-                                .buffer(material_buffer.buffer)
-                                .offset(0)
-                                .range(vk::WHOLE_SIZE)
-                                .build();
-
-                            let buffer_write_set = vk::WriteDescriptorSet::builder()
-                                .dst_set(descriptor_set)
-                                .dst_binding(0)
-                                .buffer_info(std::slice::from_ref(&buffer_info))
-                                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                                .build();
-
-                            let image_info = vk::DescriptorImageInfo::builder()
-                                .sampler(base_color_texture.sampler.sampler)
-                                .image_view(base_color_texture.image_view.imageview)
-                                .image_layout(base_color_texture.image_view.image.layout)
-                                .build();
-
-                            let image_write_set = vk::WriteDescriptorSet::builder()
-                                .dst_set(descriptor_set)
-                                .dst_binding(1)
-                                .image_info(std::slice::from_ref(&image_info))
-                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                                .build();
-
-                            let buffer_writes = [buffer_write_set, image_write_set];
-
-                            unsafe { device.update_descriptor_sets(&buffer_writes, &[]) };
-
-                            descriptor_set
-                        };
+                        let descriptor_set = DescriptorSet::new(
+                            context.clone(),
+                            descriptor_pool,
+                            set_layout,
+                            vec![
+                                WriteDescriptorSet::buffer(0, &material_buffer),
+                                WriteDescriptorSet::image_view_sampler(
+                                    1,
+                                    base_color_texture.image_view.clone(),
+                                    base_color_texture.sampler.clone(),
+                                ),
+                            ],
+                        );
 
                         Arc::new(Material {
                             base_color: loaded_primitive.material.base_color,
@@ -528,7 +498,7 @@ impl CatDemo {
                             roughness_factor: loaded_primitive.material.roughness_factor,
                             metallic_factor: loaded_primitive.material.metallic_factor,
                             emissivity: loaded_primitive.material.emissivity,
-                            descriptor_set: DescriptorSet::wrapper(descriptor_set),
+                            descriptor_set: descriptor_set,
                             descriptor_set_buffer: material_buffer,
                         })
                     })
