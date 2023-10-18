@@ -251,11 +251,6 @@ pub fn setup(
 
     unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
 
-    println!("sampler count: {:?}", sampler_map.len());
-    println!("texture count: {:?}", texture_map.len());
-    println!("material count: {:?}", material_map.len());
-    println!("model count: {:?}", model_map.len());
-
     // *happy venti noises*
     unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
 

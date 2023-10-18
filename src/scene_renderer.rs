@@ -23,7 +23,7 @@ pub struct SceneRenderer {
 
     depth_buffer_image: vk::Image,
     depth_buffer_image_memory: vk::DeviceMemory,
-    
+
     depth_buffer_imageview: vk::ImageView,
 
     scene_descriptor_buffer: Buffer<shader_types::Std140Scene>,
@@ -31,7 +31,7 @@ pub struct SceneRenderer {
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
-    pub material_descriptor_set_layout: vk::DescriptorSetLayout,
+    material_descriptor_set_layout: vk::DescriptorSetLayout,
 
     scene_descriptor_set: vk::DescriptorSet,
     camera_descriptor_set: vk::DescriptorSet,
@@ -501,6 +501,10 @@ impl SceneRenderer {
             material_descriptor_set_layout,
             context,
         }
+    }
+
+    pub fn material_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.material_descriptor_set_layout
     }
 
     pub fn update(&self, camera: &Camera) {

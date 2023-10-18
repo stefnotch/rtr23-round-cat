@@ -192,7 +192,7 @@ impl CatDemo {
             loaded_scene,
             context.clone(),
             descriptor_set_pool,
-            scene_renderer.material_descriptor_set_layout,
+            scene_renderer.material_descriptor_set_layout(),
             context.queue,
             command_pool,
         );
