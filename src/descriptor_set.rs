@@ -74,7 +74,7 @@ impl DescriptorInfo {
 impl WriteDescriptorSet {
     pub fn buffer<T>(binding: u32, buffer: &Buffer<T>) -> WriteDescriptorSet {
         let info = vk::DescriptorBufferInfo::builder()
-            .buffer(buffer.buffer)
+            .buffer(buffer.inner)
             .offset(0)
             .range(vk::WHOLE_SIZE)
             .build();
@@ -91,8 +91,8 @@ impl WriteDescriptorSet {
         sampler: Arc<Sampler>,
     ) -> WriteDescriptorSet {
         let info = vk::DescriptorImageInfo::builder()
-            .sampler(sampler.sampler)
-            .image_view(image_view.image_view)
+            .sampler(sampler.inner)
+            .image_view(image_view.inner)
             .image_layout(image_view.image.layout)
             .build();
 

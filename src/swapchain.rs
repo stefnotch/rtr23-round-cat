@@ -6,8 +6,8 @@ use winit::dpi::PhysicalSize;
 use crate::context::Context;
 
 pub struct SwapchainContainer {
-    pub swapchain_loader: ash::extensions::khr::Swapchain,
-    pub swapchain: vk::SwapchainKHR,
+    pub loader: ash::extensions::khr::Swapchain,
+    pub inner: vk::SwapchainKHR,
 
     pub images: Vec<vk::Image>,
     pub imageviews: Vec<vk::ImageView>,
@@ -127,8 +127,8 @@ impl SwapchainContainer {
             .collect::<Vec<_>>();
 
         Self {
-            swapchain_loader,
-            swapchain,
+            loader: swapchain_loader,
+            inner: swapchain,
             images,
             format: image_format.format,
             extent: swapchain_extent,
@@ -188,12 +188,12 @@ impl SwapchainContainer {
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(self.present_mode)
             .clipped(true)
-            .old_swapchain(self.swapchain);
+            .old_swapchain(self.inner);
 
-        let swapchain = unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }
+        let swapchain = unsafe { self.loader.create_swapchain(&create_info, None) }
             .expect("Could not recreate swapchain");
 
-        let images = unsafe { self.swapchain_loader.get_swapchain_images(swapchain) }
+        let images = unsafe { self.loader.get_swapchain_images(swapchain) }
             .expect("Could not get swapchain images");
 
         let imageviews = images
@@ -226,12 +226,9 @@ impl SwapchainContainer {
         for &imageview in self.imageviews.iter() {
             unsafe { device.destroy_image_view(imageview, None) };
         }
-        unsafe {
-            self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None)
-        };
+        unsafe { self.loader.destroy_swapchain(self.inner, None) };
 
-        self.swapchain = swapchain;
+        self.inner = swapchain;
         self.extent = swapchain_extent;
         self.images = images;
         self.imageviews = imageviews;
@@ -243,9 +240,6 @@ impl Drop for SwapchainContainer {
         for &imageview in self.imageviews.iter() {
             unsafe { self.context.device.destroy_image_view(imageview, None) };
         }
-        unsafe {
-            self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None)
-        };
+        unsafe { self.loader.destroy_swapchain(self.inner, None) };
     }
 }

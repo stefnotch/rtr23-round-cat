@@ -183,8 +183,8 @@ impl CatDemo {
             allocator.clone(),
             context.queue_family_index,
             context.queue,
-            swapchain.swapchain_loader.clone(),
-            swapchain.swapchain,
+            swapchain.loader.clone(),
+            swapchain.inner,
             swapchain.surface_format,
         ));
 
@@ -372,7 +372,7 @@ impl CatDemo {
             self.egui_integration.update_swapchain(
                 window_size.width,
                 window_size.height,
-                self.swapchain.swapchain,
+                self.swapchain.inner,
                 self.swapchain.surface_format,
             );
             self.scene_renderer.resize(&self.swapchain);
@@ -380,8 +380,8 @@ impl CatDemo {
         }
 
         let acquire_result = unsafe {
-            self.swapchain.swapchain_loader.acquire_next_image(
-                self.swapchain.swapchain,
+            self.swapchain.loader.acquire_next_image(
+                self.swapchain.inner,
                 std::u64::MAX,
                 self.present_complete_semaphore,
                 vk::Fence::null(),
@@ -444,12 +444,12 @@ impl CatDemo {
 
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
-            .swapchains(std::slice::from_ref(&self.swapchain.swapchain))
+            .swapchains(std::slice::from_ref(&self.swapchain.inner))
             .image_indices(std::slice::from_ref(&present_index));
 
         let result = unsafe {
             self.swapchain
-                .swapchain_loader
+                .loader
                 .queue_present(self.context.queue, &present_info)
         };
         match result {
