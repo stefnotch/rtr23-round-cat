@@ -8,6 +8,7 @@ use crate::{
     buffer::Buffer,
     camera::Camera,
     context::Context,
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     find_memorytype_index,
     scene::{Scene, Vertex},
     swapchain::SwapchainContainer,
@@ -33,8 +34,8 @@ pub struct SceneRenderer {
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
     material_descriptor_set_layout: vk::DescriptorSetLayout,
 
-    scene_descriptor_set: vk::DescriptorSet,
-    camera_descriptor_set: vk::DescriptorSet,
+    scene_descriptor_set: DescriptorSet,
+    camera_descriptor_set: DescriptorSet,
 
     context: Arc<Context>,
 }
@@ -428,61 +429,19 @@ impl SceneRenderer {
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
-        let scene_descriptor_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_set_pool)
-                .set_layouts(std::slice::from_ref(&scene_descriptor_set_layout));
+        let scene_descriptor_set = DescriptorSet::new(
+            context.clone(),
+            descriptor_set_pool,
+            scene_descriptor_set_layout,
+            &[WriteDescriptorSet::buffer(0, &scene_descriptor_buffer)],
+        );
 
-            let set = unsafe {
-                device
-                    .allocate_descriptor_sets(&allocate_info)
-                    .expect("Could not create scene descriptor_set")
-            }[0];
-
-            let buffer_info = vk::DescriptorBufferInfo {
-                buffer: *scene_descriptor_buffer,
-                offset: 0,
-                range: std::mem::size_of::<shader_types::Scene>() as u64,
-            };
-
-            let write_set = vk::WriteDescriptorSet::builder()
-                .dst_set(set)
-                .dst_binding(0)
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER);
-
-            unsafe { device.update_descriptor_sets(std::slice::from_ref(&write_set), &[]) };
-
-            set
-        };
-
-        let camera_descriptor_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_set_pool)
-                .set_layouts(std::slice::from_ref(&camera_descriptor_set_layout));
-
-            let set = unsafe {
-                device
-                    .allocate_descriptor_sets(&allocate_info)
-                    .expect("Could not create camera descriptor_set")
-            }[0];
-
-            let buffer_info = vk::DescriptorBufferInfo {
-                buffer: *camera_descriptor_buffer,
-                offset: 0,
-                range: std::mem::size_of::<shader_types::Camera>() as u64,
-            };
-
-            let write_set = vk::WriteDescriptorSet::builder()
-                .dst_set(set)
-                .dst_binding(0)
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER);
-
-            unsafe { device.update_descriptor_sets(std::slice::from_ref(&write_set), &[]) };
-
-            set
-        };
+        let camera_descriptor_set = DescriptorSet::new(
+            context.clone(),
+            descriptor_set_pool,
+            camera_descriptor_set_layout,
+            &[WriteDescriptorSet::buffer(0, &camera_descriptor_buffer)],
+        );
 
         Self {
             pipeline_layout,
@@ -581,7 +540,10 @@ impl SceneRenderer {
                 .cmd_set_viewport(command_buffer, 0, std::slice::from_ref(&viewport))
         };
 
-        let descriptor_sets = [self.scene_descriptor_set, self.camera_descriptor_set];
+        let descriptor_sets = [
+            self.scene_descriptor_set.descriptor_set,
+            self.camera_descriptor_set.descriptor_set,
+        ];
 
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(

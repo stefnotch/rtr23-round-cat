@@ -13,7 +13,7 @@ impl DescriptorSet {
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout: vk::DescriptorSetLayout,
-        write_descriptor_sets: Vec<WriteDescriptorSet>,
+        write_descriptor_sets: &[WriteDescriptorSet],
     ) -> Self {
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()

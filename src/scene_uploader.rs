@@ -156,7 +156,7 @@ pub fn setup(
                         context.clone(),
                         descriptor_pool,
                         set_layout,
-                        vec![
+                        &[
                             WriteDescriptorSet::buffer(0, &material_buffer),
                             WriteDescriptorSet::image_view_sampler(
                                 1,
