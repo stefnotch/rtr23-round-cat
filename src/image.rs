@@ -64,81 +64,36 @@ impl Image {
     ) {
         // assuming 2D images
         let num_levels = self.mip_levels;
-
-        fn image_layout_transition(
-            device: &ash::Device,
-            command_buffer: vk::CommandBuffer,
-            image: vk::Image,
-            old_layout: vk::ImageLayout,
-            new_layout: vk::ImageLayout,
-            num_levels: u32,
-        ) {
-            let mut image_memory_barrier = vk::ImageMemoryBarrier::builder()
-                .old_layout(old_layout)
-                .new_layout(new_layout)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(image)
-                .subresource_range(ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: num_levels, // mip levels
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
-
-            let (src_stage_mask, dst_stage_mask) = match (old_layout, new_layout) {
-                (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => {
-                    image_memory_barrier = image_memory_barrier
-                        .src_access_mask(vk::AccessFlags::empty())
-                        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
-
-                    (
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::TRANSFER,
-                    )
-                }
-                (
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                ) => {
-                    image_memory_barrier = image_memory_barrier
-                        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                        .dst_access_mask(vk::AccessFlags::SHADER_READ);
-
-                    (
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    )
-                }
-                _ => panic!("unsupported layout transition"),
-            };
-
-            let image_memory_barrier = image_memory_barrier.build();
-
-            unsafe {
-                device.cmd_pipeline_barrier(
-                    command_buffer,
-                    src_stage_mask,
-                    dst_stage_mask,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&image_memory_barrier),
-                );
-            }
-        }
-
         let device = &self.context.device;
 
-        image_layout_transition(
-            device,
-            command_buffer,
-            self.inner,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            num_levels,
-        );
+        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(self.inner)
+            .subresource_range(ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: num_levels, // mip levels
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .build();
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                std::slice::from_ref(&image_memory_barrier),
+            );
+        }
 
         let buffer_image_copy = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -163,15 +118,6 @@ impl Image {
                 std::slice::from_ref(&buffer_image_copy),
             )
         };
-
-        // image_layout_transition(
-        //     device,
-        //     command_buffer,
-        //     self.image,
-        //     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        //     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        //     num_levels,
-        // );
 
         let format_properties = unsafe {
             self.context
