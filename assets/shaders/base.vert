@@ -22,6 +22,15 @@ layout(set = 1, binding = 0) uniform Camera {
     mat4 proj;
 } camera;
 
+layout(set = 2, binding = 0) uniform Material {
+    vec3 baseColor;
+    vec3 emissivity;
+    float roughness;
+    float metallic;
+} material;
+
+layout(set = 2, binding = 1) uniform sampler2D baseColorTexture;
+
 layout(push_constant) uniform Entity {
     mat4 model;
     mat4 normalMatrix;

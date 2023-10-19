@@ -1,21 +1,24 @@
 mod buffer;
 mod camera;
 mod context;
+mod descriptor_set;
+mod image;
+mod image_view;
 mod input_map;
 mod loader;
+mod sampler;
 mod scene;
 mod scene_renderer;
+mod scene_uploader;
 mod swapchain;
 mod time;
 mod transform;
 mod utility;
 
-use buffer::Buffer;
 use gpu_allocator::vulkan::*;
-use loader::{Asset, AssetLoader};
-use scene::{Material, Mesh, Model, Primitive, Scene};
+use loader::AssetLoader;
+use scene::Scene;
 use scene_renderer::SceneRenderer;
-use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
@@ -53,7 +56,9 @@ struct CatDemo {
     command_buffers: Vec<vk::CommandBuffer>,
     should_recreate_swapchain: bool,
 
+    /// wait semaphore
     present_complete_semaphore: vk::Semaphore,
+    /// signal semaphore
     rendering_complete_semaphore: vk::Semaphore,
     draw_fence: vk::Fence,
 
@@ -80,7 +85,7 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene-local/duck.glb")
+            .load_scene("assets/scene-local/sponza/sponza.glb")
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
@@ -123,11 +128,11 @@ impl CatDemo {
         let descriptor_set_pool = {
             let pool_sizes = [vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 3,
+                descriptor_count: 200,
             }];
 
             let create_info = vk::DescriptorPoolCreateInfo::builder()
-                .max_sets(3)
+                .max_sets(1000)
                 .pool_sizes(&pool_sizes);
 
             unsafe { device.create_descriptor_pool(&create_info, None) }
@@ -178,12 +183,19 @@ impl CatDemo {
             allocator.clone(),
             context.queue_family_index,
             context.queue,
-            swapchain.swapchain_loader.clone(),
-            swapchain.swapchain,
+            swapchain.loader.clone(),
+            swapchain.inner,
             swapchain.surface_format,
         ));
 
-        let scene = Self::setup(loaded_scene, context.clone(), context.queue, command_pool);
+        let scene = scene_uploader::setup(
+            loaded_scene,
+            context.clone(),
+            descriptor_set_pool,
+            scene_renderer.material_descriptor_set_layout(),
+            context.queue,
+            command_pool,
+        );
         let time = Time::new();
         Self {
             window,
@@ -322,125 +334,6 @@ impl CatDemo {
         });
     }
 
-    fn setup(
-        loaded_scene: loader::LoadedScene,
-        context: Arc<Context>,
-        queue: vk::Queue,
-        command_pool: vk::CommandPool,
-    ) -> Scene {
-        let device = &context.device;
-        let setup_command_buffer = {
-            let allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .command_buffer_count(1)
-                .command_pool(command_pool)
-                .level(vk::CommandBufferLevel::PRIMARY);
-
-            unsafe { device.allocate_command_buffers(&allocate_info) }
-                .expect("Could not allocate command buffers")[0]
-        };
-
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-        unsafe { device.begin_command_buffer(setup_command_buffer, &begin_info) }
-            .expect("Could not begin command buffer");
-
-        //let mut material_map = HashMap::new();
-        let mut model_map = HashMap::new();
-
-        let mut staging_vertex_buffers = vec![];
-        let mut staging_index_buffers = vec![];
-
-        let mut scene = Scene { models: vec![] };
-        for loaded_model in loaded_scene.models {
-            let mut model = Model {
-                transform: loaded_model.transform,
-                primitives: vec![],
-            };
-
-            for loaded_primitive in loaded_model.primitives {
-                let material = Arc::new(Material {}); // TODO: materialz
-                let mesh = model_map
-                    .entry(loaded_primitive.mesh.id())
-                    .or_insert_with(|| {
-                        let vertex_buffer = {
-                            let vertices = &loaded_primitive.mesh.vertices;
-                            let staging_buffer = Buffer::new(
-                                context.clone(),
-                                vertices.get_vec_size(),
-                                vk::BufferUsageFlags::TRANSFER_SRC,
-                                vk::MemoryPropertyFlags::HOST_VISIBLE
-                                    | vk::MemoryPropertyFlags::HOST_COHERENT,
-                            );
-                            staging_buffer.copy_data(vertices);
-
-                            let buffer = Buffer::new(
-                                context.clone(),
-                                vertices.get_vec_size(),
-                                vk::BufferUsageFlags::TRANSFER_DST
-                                    | vk::BufferUsageFlags::VERTEX_BUFFER,
-                                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                            );
-                            buffer.copy_from(setup_command_buffer, &staging_buffer);
-                            staging_vertex_buffers.push(staging_buffer);
-                            buffer
-                        };
-
-                        let index_buffer = {
-                            let indices = &loaded_primitive.mesh.indices;
-                            let staging_buffer = Buffer::new(
-                                context.clone(),
-                                indices.get_vec_size(),
-                                vk::BufferUsageFlags::TRANSFER_SRC,
-                                vk::MemoryPropertyFlags::HOST_VISIBLE
-                                    | vk::MemoryPropertyFlags::HOST_COHERENT,
-                            );
-                            staging_buffer.copy_data(indices);
-
-                            let buffer = Buffer::new(
-                                context.clone(),
-                                indices.get_vec_size(),
-                                vk::BufferUsageFlags::TRANSFER_DST
-                                    | vk::BufferUsageFlags::INDEX_BUFFER,
-                                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                            );
-                            buffer.copy_from(setup_command_buffer, &staging_buffer);
-                            staging_index_buffers.push(staging_buffer);
-                            buffer
-                        };
-
-                        Arc::new(Mesh {
-                            index_buffer,
-                            vertex_buffer,
-                            num_indices: loaded_primitive.mesh.indices.len() as u32,
-                        })
-                    })
-                    .clone();
-                let primitive = Primitive { material, mesh };
-                model.primitives.push(primitive)
-            }
-            scene.models.push(model);
-        }
-
-        unsafe { device.end_command_buffer(setup_command_buffer) }
-            .expect("Could not end command buffer");
-
-        // submit
-        let submit_info = vk::SubmitInfo::builder()
-            .command_buffers(&[setup_command_buffer])
-            .build();
-
-        unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
-            .expect("Could not submit to queue");
-
-        unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
-
-        // *happy venti noises*
-        unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
-
-        scene
-    }
-
     fn update_camera(&mut self) {
         self.freecam_controller
             .update(&self.input_map, self.time.delta_seconds());
@@ -455,11 +348,20 @@ impl CatDemo {
 
         // wait for fence
         unsafe {
-            self.context
-                .device
-                .wait_for_fences(&[self.draw_fence], true, std::u64::MAX)
+            self.context.device.wait_for_fences(
+                std::slice::from_ref(&self.draw_fence),
+                true,
+                std::u64::MAX,
+            )
         }
         .expect("Could not wait for fences");
+        // reset fence
+        unsafe {
+            self.context
+                .device
+                .reset_fences(std::slice::from_ref(&self.draw_fence))
+        }
+        .expect("Could not reset fences");
 
         let viewport = vk::Viewport {
             x: 0.0,
@@ -475,20 +377,16 @@ impl CatDemo {
             self.egui_integration.update_swapchain(
                 window_size.width,
                 window_size.height,
-                self.swapchain.swapchain,
+                self.swapchain.inner,
                 self.swapchain.surface_format,
             );
             self.scene_renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
 
-        // reset fence
-        unsafe { self.context.device.reset_fences(&[self.draw_fence]) }
-            .expect("Could not reset fences");
-
         let acquire_result = unsafe {
-            self.swapchain.swapchain_loader.acquire_next_image(
-                self.swapchain.swapchain,
+            self.swapchain.loader.acquire_next_image(
+                self.swapchain.inner,
                 std::u64::MAX,
                 self.present_complete_semaphore,
                 vk::Fence::null(),
@@ -509,7 +407,15 @@ impl CatDemo {
             _ => panic!("Could not accquire next image"),
         };
 
+        self.scene_renderer.update(&self.camera);
+
         let command_buffer = self.command_buffers[present_index as usize];
+        unsafe {
+            self.context
+                .device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+        }
+        .expect("Could not reset command buffer");
 
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -536,27 +442,31 @@ impl CatDemo {
 
         // submit
         let submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(&[self.present_complete_semaphore])
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            .command_buffers(&[command_buffer])
-            .signal_semaphores(&[self.rendering_complete_semaphore])
+            .wait_semaphores(std::slice::from_ref(&self.present_complete_semaphore))
+            .wait_dst_stage_mask(std::slice::from_ref(
+                &vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ))
+            .command_buffers(std::slice::from_ref(&command_buffer))
+            .signal_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
             .build();
 
         unsafe {
-            self.context
-                .device
-                .queue_submit(self.context.queue, &[submit_info], self.draw_fence)
+            self.context.device.queue_submit(
+                self.context.queue,
+                std::slice::from_ref(&submit_info),
+                self.draw_fence,
+            )
         }
         .expect("Could not submit to queue");
 
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
-            .swapchains(std::slice::from_ref(&self.swapchain.swapchain))
+            .swapchains(std::slice::from_ref(&self.swapchain.inner))
             .image_indices(std::slice::from_ref(&present_index));
 
         let result = unsafe {
             self.swapchain
-                .swapchain_loader
+                .loader
                 .queue_present(self.context.queue, &present_info)
         };
         match result {
@@ -627,7 +537,6 @@ impl CatDemo {
     fn update(&mut self) {
         self.time.update();
         self.update_camera();
-        self.scene_renderer.update(&self.camera);
     }
 }
 
@@ -669,14 +578,4 @@ pub fn find_memorytype_index(
                 && memory_type.property_flags & flags == flags
         })
         .map(|(index, _memory_type)| index as u32)
-}
-
-trait GetVecSize {
-    fn get_vec_size(&self) -> u64;
-}
-
-impl<T> GetVecSize for Vec<T> {
-    fn get_vec_size(&self) -> u64 {
-        std::mem::size_of::<T>() as u64 * self.len() as u64
-    }
 }

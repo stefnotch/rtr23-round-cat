@@ -1,9 +1,11 @@
 mod material;
 mod mesh;
+mod texture;
 mod vertex;
 
 pub use material::*;
 pub use mesh::*;
+pub use texture::*;
 pub use vertex::*;
 
 use crate::transform::Transform;

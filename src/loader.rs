@@ -4,12 +4,14 @@ mod mesh;
 mod model;
 mod scene;
 mod scene_loader;
+mod texture;
 
 pub use asset::*;
 pub use material::*;
 pub use mesh::*;
 pub use model::*;
 pub use scene::*;
+pub use texture::*;
 use ultraviolet::{Rotor3, Vec3};
 
 use crate::transform::Transform;
@@ -17,6 +19,8 @@ use crate::transform::Transform;
 pub struct AssetLoader {
     pub materials: Assets<LoadedMaterial>,
     pub meshes: Assets<LoadedMesh>,
+    pub images: Assets<LoadedImage>,
+    pub samplers: Assets<LoadedSampler>,
     pub id_generator: AssetIdGenerator,
 }
 
@@ -25,6 +29,8 @@ impl AssetLoader {
         Self {
             materials: Assets::new(),
             meshes: Assets::new(),
+            images: Assets::new(),
+            samplers: Assets::new(),
             id_generator: AssetIdGenerator::new(),
         }
     }

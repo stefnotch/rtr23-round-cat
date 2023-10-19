@@ -27,7 +27,7 @@ impl<T> IntoSlice<T> for Vec<T> {
 }
 
 pub struct Buffer<T> {
-    pub buffer: vk::Buffer,
+    pub inner: vk::Buffer,
     pub usage: vk::BufferUsageFlags,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
@@ -73,7 +73,7 @@ impl<T> Buffer<T> {
             .expect("Could not bind buffer memory for buffer");
 
         Self {
-            buffer,
+            inner: buffer,
             usage,
             memory,
             size: buffer_memory_requirements.size,
@@ -106,8 +106,8 @@ impl<T> Buffer<T> {
         unsafe {
             self.context.device.cmd_copy_buffer(
                 command_buffer,
-                other.buffer,
-                self.buffer,
+                other.inner,
+                self.inner,
                 &[buffer_copy_info.build()],
             )
         }
@@ -117,8 +117,7 @@ impl<T> Buffer<T> {
 impl<T> Drop for Buffer<T> {
     fn drop(&mut self) {
         let device = &self.context.device;
-
-        unsafe { device.destroy_buffer(self.buffer, None) };
+        unsafe { device.destroy_buffer(self.inner, None) };
         unsafe { device.free_memory(self.memory, None) };
     }
 }
@@ -127,6 +126,6 @@ impl<T> Deref for Buffer<T> {
     type Target = vk::Buffer;
 
     fn deref(&self) -> &Self::Target {
-        &self.buffer
+        &self.inner
     }
 }

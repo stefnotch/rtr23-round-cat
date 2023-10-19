@@ -21,12 +21,17 @@ layout(set = 1, binding = 0) uniform Camera {
     vec3 position;
 } camera;
 
-layout(set = 2, binding = 0) uniform Entity {
-    mat4 model;
-    mat4 normalMatrix;
-} entity;
+layout(set = 2, binding = 0) uniform Material {
+    vec3 baseColor;
+    vec3 emissivity;
+    float roughness;
+    float metallic;
+} material;
 
+layout(set = 2, binding = 1) uniform sampler2D baseColorTexture;
 void main() {
+    vec3 albedo = texture(baseColorTexture, v_uv).rgb * material.baseColor;
+
     // in world space
     vec3 worldPos = v_position;
 
@@ -40,5 +45,5 @@ void main() {
 
     vec3 lightIntensity = scene.directionalLight.color * diffuse;
 
-    fragColor = vec4(lightIntensity, 1.0);
+    fragColor = vec4(albedo * lightIntensity, 1.0);
 }
