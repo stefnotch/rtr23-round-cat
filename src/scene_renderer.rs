@@ -1,6 +1,9 @@
 use std::{ffi::CStr, io::Cursor, sync::Arc};
 
-use ash::{util::read_spv, vk};
+use ash::{
+    util::read_spv,
+    vk::{self, ImageAspectFlags},
+};
 use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
 
@@ -8,7 +11,9 @@ use crate::{
     buffer::Buffer,
     camera::Camera,
     context::Context,
-    find_memorytype_index,
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
+    image::Image,
+    image_view::ImageView,
     scene::{Scene, Vertex},
     swapchain::SwapchainContainer,
 };
@@ -21,20 +26,18 @@ pub struct SceneRenderer {
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
 
-    depth_buffer_image: vk::Image,
-    depth_buffer_image_memory: vk::DeviceMemory,
-
-    depth_buffer_imageview: vk::ImageView,
+    depth_buffer_image: Arc<Image>,
+    depth_buffer_imageview: ImageView,
 
     scene_descriptor_buffer: Buffer<shader_types::Std140Scene>,
     camera_descriptor_buffer: Buffer<shader_types::Std140Camera>,
 
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
     camera_descriptor_set_layout: vk::DescriptorSetLayout,
-    pub material_descriptor_set_layout: vk::DescriptorSetLayout,
+    material_descriptor_set_layout: vk::DescriptorSetLayout,
 
-    scene_descriptor_set: vk::DescriptorSet,
-    camera_descriptor_set: vk::DescriptorSet,
+    scene_descriptor_set: DescriptorSet,
+    camera_descriptor_set: DescriptorSet,
 
     context: Arc<Context>,
 }
@@ -331,7 +334,7 @@ impl SceneRenderer {
             )
         };
 
-        let (depth_buffer_image, depth_buffer_image_memory) = {
+        let depth_buffer_image = {
             let create_info = vk::ImageCreateInfo::builder()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(vk::Extent3D {
@@ -348,60 +351,21 @@ impl SceneRenderer {
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let image =
-                unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
-
-            let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
-
-            let image_memorytype_index = find_memorytype_index(
-                &memory_requirements,
-                &context.device_memory_properties,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )
-            .expect("Could not find memorytype for buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(memory_requirements.size)
-                .memory_type_index(image_memorytype_index);
-
-            let memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for image");
-
-            unsafe { device.bind_image_memory(image, memory, 0) }
-                .expect("Could not bind image memory");
-
-            (image, memory)
+            Arc::new(Image::new(context.clone(), &create_info))
         };
 
-        let depth_buffer_imageview = {
-            let create_info = vk::ImageViewCreateInfo::builder()
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::D32_SFLOAT)
-                .components(vk::ComponentMapping {
-                    r: vk::ComponentSwizzle::IDENTITY,
-                    g: vk::ComponentSwizzle::IDENTITY,
-                    b: vk::ComponentSwizzle::IDENTITY,
-                    a: vk::ComponentSwizzle::IDENTITY,
-                })
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
-                .image(depth_buffer_image);
-
-            unsafe { context.device.create_image_view(&create_info, None) }
-                .expect("Could not create image view")
-        };
+        let depth_buffer_imageview = ImageView::new_default(
+            context.clone(),
+            depth_buffer_image.clone(),
+            ImageAspectFlags::DEPTH,
+        );
 
         let framebuffers = {
             swapchain
                 .imageviews
                 .iter()
                 .map(|swapchain_image_view| {
-                    let image_views = [swapchain_image_view.clone(), depth_buffer_imageview];
+                    let image_views = [swapchain_image_view.clone(), depth_buffer_imageview.inner];
 
                     let create_info = vk::FramebufferCreateInfo::builder()
                         .render_pass(render_pass)
@@ -430,61 +394,19 @@ impl SceneRenderer {
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
-        let scene_descriptor_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_set_pool)
-                .set_layouts(std::slice::from_ref(&scene_descriptor_set_layout));
+        let scene_descriptor_set = DescriptorSet::new(
+            context.clone(),
+            descriptor_set_pool,
+            scene_descriptor_set_layout,
+            &[WriteDescriptorSet::buffer(0, &scene_descriptor_buffer)],
+        );
 
-            let set = unsafe {
-                device
-                    .allocate_descriptor_sets(&allocate_info)
-                    .expect("Could not create scene descriptor_set")
-            }[0];
-
-            let buffer_info = vk::DescriptorBufferInfo {
-                buffer: *scene_descriptor_buffer,
-                offset: 0,
-                range: std::mem::size_of::<shader_types::Scene>() as u64,
-            };
-
-            let write_set = vk::WriteDescriptorSet::builder()
-                .dst_set(set)
-                .dst_binding(0)
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER);
-
-            unsafe { device.update_descriptor_sets(std::slice::from_ref(&write_set), &[]) };
-
-            set
-        };
-
-        let camera_descriptor_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_set_pool)
-                .set_layouts(std::slice::from_ref(&camera_descriptor_set_layout));
-
-            let set = unsafe {
-                device
-                    .allocate_descriptor_sets(&allocate_info)
-                    .expect("Could not create camera descriptor_set")
-            }[0];
-
-            let buffer_info = vk::DescriptorBufferInfo {
-                buffer: *camera_descriptor_buffer,
-                offset: 0,
-                range: std::mem::size_of::<shader_types::Camera>() as u64,
-            };
-
-            let write_set = vk::WriteDescriptorSet::builder()
-                .dst_set(set)
-                .dst_binding(0)
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER);
-
-            unsafe { device.update_descriptor_sets(std::slice::from_ref(&write_set), &[]) };
-
-            set
-        };
+        let camera_descriptor_set = DescriptorSet::new(
+            context.clone(),
+            descriptor_set_pool,
+            camera_descriptor_set_layout,
+            &[WriteDescriptorSet::buffer(0, &camera_descriptor_buffer)],
+        );
 
         Self {
             pipeline_layout,
@@ -493,7 +415,6 @@ impl SceneRenderer {
             framebuffers,
             depth_buffer_image,
             depth_buffer_imageview,
-            depth_buffer_image_memory,
             scene_descriptor_buffer,
             camera_descriptor_buffer,
             scene_descriptor_set_layout,
@@ -503,6 +424,10 @@ impl SceneRenderer {
             material_descriptor_set_layout,
             context,
         }
+    }
+
+    pub fn material_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.material_descriptor_set_layout
     }
 
     pub fn update(&self, camera: &Camera) {
@@ -579,7 +504,10 @@ impl SceneRenderer {
                 .cmd_set_viewport(command_buffer, 0, std::slice::from_ref(&viewport))
         };
 
-        let descriptor_sets = [self.scene_descriptor_set, self.camera_descriptor_set];
+        let descriptor_sets = [
+            self.scene_descriptor_set.descriptor_set,
+            self.camera_descriptor_set.descriptor_set,
+        ];
 
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(
@@ -664,7 +592,8 @@ impl SceneRenderer {
         for &framebuffer in self.framebuffers.iter() {
             unsafe { device.destroy_framebuffer(framebuffer, None) };
         }
-        let (depth_buffer_image, depth_buffer_image_memory) = {
+
+        let depth_buffer_image = {
             let create_info = vk::ImageCreateInfo::builder()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(vk::Extent3D {
@@ -681,60 +610,21 @@ impl SceneRenderer {
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let image =
-                unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
-
-            let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
-
-            let image_memorytype_index = find_memorytype_index(
-                &memory_requirements,
-                &self.context.device_memory_properties,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )
-            .expect("Could not find memorytype for buffer");
-
-            let allocate_info = vk::MemoryAllocateInfo::builder()
-                .allocation_size(memory_requirements.size)
-                .memory_type_index(image_memorytype_index);
-
-            let memory = unsafe { device.allocate_memory(&allocate_info, None) }
-                .expect("Could not allocate memory for image");
-
-            unsafe { device.bind_image_memory(image, memory, 0) }
-                .expect("Could not bind image memory");
-
-            (image, memory)
+            Arc::new(Image::new(self.context.clone(), &create_info))
         };
 
-        let depth_buffer_imageview = {
-            let create_info = vk::ImageViewCreateInfo::builder()
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::D32_SFLOAT)
-                .components(vk::ComponentMapping {
-                    r: vk::ComponentSwizzle::IDENTITY,
-                    g: vk::ComponentSwizzle::IDENTITY,
-                    b: vk::ComponentSwizzle::IDENTITY,
-                    a: vk::ComponentSwizzle::IDENTITY,
-                })
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
-                .image(depth_buffer_image);
-
-            unsafe { self.context.device.create_image_view(&create_info, None) }
-                .expect("Could not create image view")
-        };
+        let depth_buffer_imageview = ImageView::new_default(
+            self.context.clone(),
+            depth_buffer_image.clone(),
+            ImageAspectFlags::DEPTH,
+        );
 
         let framebuffers = {
             swapchain
                 .imageviews
                 .iter()
                 .map(|swapchain_image_view| {
-                    let image_views = [swapchain_image_view.clone(), depth_buffer_imageview];
+                    let image_views = [swapchain_image_view.clone(), depth_buffer_imageview.inner];
                     let create_info = vk::FramebufferCreateInfo::builder()
                         .render_pass(render_pass)
                         .attachments(&image_views)
@@ -748,14 +638,8 @@ impl SceneRenderer {
                 .collect::<Vec<_>>()
         };
 
-        // destroy old image, imageview and free memory
-        unsafe { device.destroy_image(self.depth_buffer_image, None) };
-        unsafe { device.destroy_image_view(self.depth_buffer_imageview, None) };
-        unsafe { device.free_memory(self.depth_buffer_image_memory, None) }
-
         self.depth_buffer_image = depth_buffer_image;
         self.depth_buffer_imageview = depth_buffer_imageview;
-        self.depth_buffer_image_memory = depth_buffer_image_memory;
 
         self.framebuffers = framebuffers;
     }
@@ -764,10 +648,6 @@ impl SceneRenderer {
 impl Drop for SceneRenderer {
     fn drop(&mut self) {
         let device = &self.context.device;
-
-        unsafe { device.destroy_image(self.depth_buffer_image, None) };
-        unsafe { device.destroy_image_view(self.depth_buffer_imageview, None) };
-        unsafe { device.free_memory(self.depth_buffer_image_memory, None) };
 
         unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
         unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };

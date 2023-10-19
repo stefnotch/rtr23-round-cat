@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{context::Context, image::Image};
 
 pub struct ImageView {
-    pub image_view: vk::ImageView,
+    pub inner: vk::ImageView,
 
     pub image: Arc<Image>,
     context: Arc<Context>,
@@ -33,13 +33,13 @@ impl ImageView {
                 base_array_layer: 0,
                 layer_count: 1,
             })
-            .image(image.image);
+            .image(image.inner);
 
         let imageview = unsafe { context.device.create_image_view(&create_info, None) }
             .expect("Could not create image view");
 
         Self {
-            image_view: imageview,
+            inner: imageview,
             image,
             context,
         }
@@ -48,10 +48,6 @@ impl ImageView {
 
 impl Drop for ImageView {
     fn drop(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_image_view(self.image_view, None)
-        };
+        unsafe { self.context.device.destroy_image_view(self.inner, None) };
     }
 }

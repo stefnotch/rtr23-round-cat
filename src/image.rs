@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageSubresourceRange, Offset2D};
+use ash::vk::{self, ImageSubresourceRange};
 
 use crate::{buffer::Buffer, context::Context, find_memorytype_index};
 
 pub struct Image {
-    pub image: vk::Image,
+    pub inner: vk::Image,
     pub memory: vk::DeviceMemory,
 
     pub format: vk::Format,
@@ -47,7 +47,7 @@ impl Image {
         unsafe { device.bind_image_memory(image, memory, 0) }.expect("Could not bind image memory");
 
         Self {
-            image,
+            inner: image,
             memory,
             format,
             extent,
@@ -64,8 +64,6 @@ impl Image {
     ) {
         // assuming 2D images
         let num_levels = self.mip_levels;
-
-        // TODO: mipmapping
 
         fn image_layout_transition(
             device: &ash::Device,
@@ -136,7 +134,7 @@ impl Image {
         image_layout_transition(
             device,
             command_buffer,
-            self.image,
+            self.inner,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             num_levels,
@@ -159,8 +157,8 @@ impl Image {
         unsafe {
             self.context.device.cmd_copy_buffer_to_image(
                 command_buffer,
-                buffer.buffer,
-                self.image,
+                buffer.inner,
+                self.inner,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 std::slice::from_ref(&buffer_image_copy),
             )
@@ -175,10 +173,21 @@ impl Image {
         //     num_levels,
         // );
 
-        // TODO: check if image format supports linear blitting
+        let format_properties = unsafe {
+            self.context
+                .instance
+                .get_physical_device_format_properties(self.context.physical_device, self.format)
+        };
+
+        if !format_properties
+            .optimal_tiling_features
+            .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
+        {
+            panic!("texture format does not support linear blitting");
+        }
 
         let mut barrier = vk::ImageMemoryBarrier::builder()
-            .image(self.image)
+            .image(self.inner)
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .subresource_range(ImageSubresourceRange {
@@ -249,9 +258,9 @@ impl Image {
             unsafe {
                 device.cmd_blit_image(
                     command_buffer,
-                    self.image,
+                    self.inner,
                     vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    self.image,
+                    self.inner,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                     std::slice::from_ref(&blit),
                     vk::Filter::LINEAR,
@@ -315,7 +324,7 @@ impl Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        unsafe { self.context.device.destroy_image(self.image, None) };
+        unsafe { self.context.device.destroy_image(self.inner, None) };
         unsafe { self.context.device.free_memory(self.memory, None) };
     }
 }
