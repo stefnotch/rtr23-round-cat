@@ -348,15 +348,20 @@ impl CatDemo {
 
         // wait for fence
         unsafe {
-            self.context
-                .device
-                .wait_for_fences(&[self.draw_fence], true, std::u64::MAX)
+            self.context.device.wait_for_fences(
+                std::slice::from_ref(&self.draw_fence),
+                true,
+                std::u64::MAX,
+            )
         }
         .expect("Could not wait for fences");
-
         // reset fence
-        unsafe { self.context.device.reset_fences(&[self.draw_fence]) }
-            .expect("Could not reset fences");
+        unsafe {
+            self.context
+                .device
+                .reset_fences(std::slice::from_ref(&self.draw_fence))
+        }
+        .expect("Could not reset fences");
 
         let viewport = vk::Viewport {
             x: 0.0,
@@ -402,7 +407,15 @@ impl CatDemo {
             _ => panic!("Could not accquire next image"),
         };
 
+        self.scene_renderer.update(&self.camera);
+
         let command_buffer = self.command_buffers[present_index as usize];
+        unsafe {
+            self.context
+                .device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+        }
+        .expect("Could not reset command buffer");
 
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -429,16 +442,20 @@ impl CatDemo {
 
         // submit
         let submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(&[self.present_complete_semaphore])
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            .command_buffers(&[command_buffer])
-            .signal_semaphores(&[self.rendering_complete_semaphore])
+            .wait_semaphores(std::slice::from_ref(&self.present_complete_semaphore))
+            .wait_dst_stage_mask(std::slice::from_ref(
+                &vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ))
+            .command_buffers(std::slice::from_ref(&command_buffer))
+            .signal_semaphores(std::slice::from_ref(&self.rendering_complete_semaphore))
             .build();
 
         unsafe {
-            self.context
-                .device
-                .queue_submit(self.context.queue, &[submit_info], self.draw_fence)
+            self.context.device.queue_submit(
+                self.context.queue,
+                std::slice::from_ref(&submit_info),
+                self.draw_fence,
+            )
         }
         .expect("Could not submit to queue");
 
@@ -520,7 +537,6 @@ impl CatDemo {
     fn update(&mut self) {
         self.time.update();
         self.update_camera();
-        self.scene_renderer.update(&self.camera);
     }
 }
 

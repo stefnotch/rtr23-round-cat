@@ -283,13 +283,15 @@ impl SceneRenderer {
                 material_descriptor_set_layout,
             ];
 
+            let push_constants_ranges = vk::PushConstantRange {
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                offset: 0,
+                size: std::mem::size_of::<shader_types::Entity>() as u32,
+            };
+
             let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&descriptor_set_layouts)
-                .push_constant_ranges(&[vk::PushConstantRange {
-                    stage_flags: vk::ShaderStageFlags::VERTEX,
-                    offset: 0,
-                    size: std::mem::size_of::<shader_types::Entity>() as u32,
-                }])
+                .push_constant_ranges(std::slice::from_ref(&push_constants_ranges))
                 .build();
 
             let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
@@ -533,7 +535,7 @@ impl SceneRenderer {
                         vk::PipelineBindPoint::GRAPHICS,
                         self.pipeline_layout,
                         2,
-                        &[primitive.material.descriptor_set.descriptor_set],
+                        std::slice::from_ref(&primitive.material.descriptor_set.descriptor_set),
                         &[],
                     );
                 }
@@ -547,12 +549,13 @@ impl SceneRenderer {
                     )
                 };
 
+                let vertex_buffer_offsets = vec![0];
                 unsafe {
                     self.context.device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
                         std::slice::from_ref(&*primitive.mesh.vertex_buffer),
-                        &[0],
+                        vertex_buffer_offsets.as_slice(),
                     )
                 }
 
