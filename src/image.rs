@@ -173,7 +173,18 @@ impl Image {
         //     num_levels,
         // );
 
-        // TODO: check if image format supports linear blitting
+        let format_properties = unsafe {
+            self.context
+                .instance
+                .get_physical_device_format_properties(self.context.physical_device, self.format)
+        };
+
+        if !format_properties
+            .optimal_tiling_features
+            .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
+        {
+            panic!("texture format does not support linear blitting");
+        }
 
         let mut barrier = vk::ImageMemoryBarrier::builder()
             .image(self.inner)
