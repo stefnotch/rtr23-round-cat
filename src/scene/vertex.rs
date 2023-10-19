@@ -8,6 +8,7 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub tangent: [f32; 4],
 }
 
 impl Vertex {
@@ -19,7 +20,7 @@ impl Vertex {
         }]
     }
 
-    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
+    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
         [
             vk::VertexInputAttributeDescription {
                 location: 0,
@@ -38,6 +39,12 @@ impl Vertex {
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
                 offset: offset_of!(Self, uv) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 3,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: offset_of!(Self, tangent) as u32,
             },
         ]
     }

@@ -3,10 +3,13 @@
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 normal;
 layout (location = 2) in vec2 uv;
+layout (location = 3) in vec4 tangent;
 
 layout (location = 0) out vec3 v_position;
 layout (location = 1) out vec3 v_normal;
 layout (location = 2) out vec2 v_uv;
+layout (location = 3) out vec4 v_tangent;
+
 
 struct DirectionalLight {
     vec3 direction;
@@ -31,6 +34,8 @@ layout(set = 2, binding = 0) uniform Material {
 
 layout(set = 2, binding = 1) uniform sampler2D baseColorTexture;
 
+layout(set = 2, binding = 2) uniform sampler2D normalMapTexture;
+
 layout(push_constant) uniform Entity {
     mat4 model;
     mat4 normalMatrix;
@@ -49,4 +54,5 @@ void main() {
     v_position = position;
     v_normal = normal;
     v_uv = uv;
+    v_tangent = tangent;
 }

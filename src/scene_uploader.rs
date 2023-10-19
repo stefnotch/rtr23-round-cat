@@ -136,6 +136,42 @@ pub fn setup(
                             sampler: default_sampler.clone(),
                         });
 
+                    let normal_texture = loaded_primitive
+                        .material
+                        .as_ref()
+                        .normal_texture
+                        .as_ref()
+                        .map(|v| {
+                            // TODO: remove code duplication
+                            let image_view = texture_map
+                                .entry(v.image.id())
+                                .or_insert_with(|| {
+                                    // TODO: dont create mipmapping for normal maps
+                                    create_image(
+                                        v.image.clone(),
+                                        context.clone(),
+                                        setup_command_buffer,
+                                        &mut image_data_buffers,
+                                    )
+                                })
+                                .clone();
+                            let sampler = sampler_map
+                                .entry(v.sampler.id())
+                                .or_insert_with(|| {
+                                    create_sampler(v.sampler.clone(), context.clone())
+                                })
+                                .clone();
+                            Texture {
+                                image_view,
+                                sampler,
+                            }
+                        })
+                        .unwrap_or_else(|| Texture {
+                            // TODO: wrong image, default normal map should be a 1x1 purple image (128, 128, 255)
+                            image_view: default_image_view.clone(),
+                            sampler: default_sampler.clone(),
+                        });
+
                     let material_buffer = Buffer::new(
                         context.clone(),
                         shader_types::Material::std140_size_static() as u64,
@@ -163,12 +199,18 @@ pub fn setup(
                                 base_color_texture.image_view.clone(),
                                 base_color_texture.sampler.clone(),
                             ),
+                            WriteDescriptorSet::image_view_sampler(
+                                2,
+                                normal_texture.image_view.clone(),
+                                normal_texture.sampler.clone(),
+                            ),
                         ],
                     );
 
                     Arc::new(Material {
                         base_color: loaded_primitive.material.base_color,
                         base_color_texture: base_color_texture.clone(),
+                        normal_texture: normal_texture.clone(),
                         roughness_factor: loaded_primitive.material.roughness_factor,
                         metallic_factor: loaded_primitive.material.metallic_factor,
                         emissivity: loaded_primitive.material.emissivity,
