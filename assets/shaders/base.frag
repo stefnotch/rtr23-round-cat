@@ -53,7 +53,7 @@ void main() {
     // in world space
     vec3 l = -normalize(scene.directionalLight.direction);
 
-    float diffuse = max(dot(n, l), 0.1);
+    float diffuse = max(dot(n, l), 0.05);
 
     vec3 lightIntensity = scene.directionalLight.color * diffuse;
 
