@@ -47,7 +47,7 @@ pub fn setup(
             .expect("Could not create sampler");
         Arc::new(Sampler::new(sampler, context.clone()))
     };
-    let default_image_view = {
+    let (default_base_color_image_view, default_normal_map_image_view) = {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk::Format::R8G8B8A8_UNORM)
@@ -66,6 +66,9 @@ pub fn setup(
             )
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .build();
+
+        // default base color should be a 1x1 white image (255, 255, 255)
+        let base_color = {
         let mut image = Image::new(context.clone(), &image_info);
 
         let image_data_buffer: Buffer<u8> = Buffer::new(
@@ -84,6 +87,31 @@ pub fn setup(
             vk::ImageAspectFlags::COLOR,
         ))
     };
+
+        // default normal map should be a 1x1 purple image (128, 128, 255)
+        let normal_map = {
+            let mut image = Image::new(context.clone(), &image_info);
+
+            let image_data_buffer: Buffer<u8> = Buffer::new(
+                context.clone(),
+                4, // A single 32 bit pixels = 4 bytes
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            image_data_buffer.copy_data(&vec![0x80u8, 0x80, 0xFF, 0xFF]);
+            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image_data_buffers.push(image_data_buffer);
+
+            Arc::new(ImageView::new_default(
+                context.clone(),
+                Arc::new(image),
+                vk::ImageAspectFlags::COLOR,
+            ))
+        };
+
+        (base_color, normal_map)
+    };
+
     let mut sampler_map = HashMap::new();
     let mut texture_map = HashMap::new();
     let mut material_map = HashMap::new();
@@ -132,7 +160,7 @@ pub fn setup(
                             }
                         })
                         .unwrap_or_else(|| Texture {
-                            image_view: default_image_view.clone(),
+                            image_view: default_base_color_image_view.clone(),
                             sampler: default_sampler.clone(),
                         });
 
@@ -167,8 +195,7 @@ pub fn setup(
                             }
                         })
                         .unwrap_or_else(|| Texture {
-                            // TODO: wrong image, default normal map should be a 1x1 purple image (128, 128, 255)
-                            image_view: default_image_view.clone(),
+                            image_view: default_normal_map_image_view.clone(),
                             sampler: default_sampler.clone(),
                         });
 
