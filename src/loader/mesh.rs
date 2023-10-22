@@ -86,6 +86,8 @@ impl LoadedMesh {
                         position: positions[*pos_index].into(),
                         normal: face.normal.into(),
                         uv: uvs_face[i].into(),
+                        // TODO: calculate actual tangent
+                        tangent: [0.0; 4],
                     })
             })
             .collect();

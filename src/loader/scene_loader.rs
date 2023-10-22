@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use gltf::{texture::Sampler, Semantic, Texture};
+use gltf::{accessor::Iter, texture::Sampler, Semantic, Texture};
 
 use crate::{scene::Vertex, transform::Transform};
 
@@ -160,6 +160,13 @@ impl AssetLoader {
                 LoadedTexture { image, sampler }
             });
 
+            let normal_texture = material.normal_texture().map(|normal_texture| {
+                let image =
+                    self.load_images(loading_data, normal_texture.texture(), ColorSpace::Linear);
+                let sampler = self.load_sampler(loading_data, normal_texture.texture().sampler());
+                LoadedTexture { image, sampler }
+            });
+
             let roughness_factor = material_pbr.roughness_factor();
             let metallic_factor = material_pbr.metallic_factor();
             let material = Arc::new(LoadedMaterial {
@@ -169,6 +176,7 @@ impl AssetLoader {
                 roughness_factor,
                 metallic_factor,
                 emissivity,
+                normal_texture,
             });
 
             self.materials.assets.insert(id, material.clone());
@@ -210,15 +218,25 @@ impl AssetLoader {
                     } else {
                         Box::new(std::iter::repeat([0.0f32, 0.0f32]))
                     };
+                let tangents: Box<dyn Iterator<Item = _>> =
+                    if let Some(Iter::Standard(tangents)) = reader.read_tangents() {
+                        Box::new(tangents)
+                    } else {
+                        // TODO: calculate tangents if they are not provided in the gltf model
+                        Box::new(std::iter::repeat([0.0f32; 4]))
+                    };
 
                 let mut vertices = vec![];
 
                 // zippy zip https://stackoverflow.com/a/71494478/3492994
-                for (position, (normal, tex_coord)) in positions.zip(normals.zip(tex_coords)) {
+                for (position, (normal, (tex_coord, tangent))) in
+                    positions.zip(normals.zip(tex_coords.zip(tangents)))
+                {
                     vertices.push(Vertex {
                         position,
                         normal,
                         uv: tex_coord,
+                        tangent,
                     });
                 }
 

@@ -47,7 +47,7 @@ pub fn setup(
             .expect("Could not create sampler");
         Arc::new(Sampler::new(sampler, context.clone()))
     };
-    let default_image_view = {
+    let (default_base_color_image_view, default_normal_map_image_view) = {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk::Format::R8G8B8A8_UNORM)
@@ -66,24 +66,52 @@ pub fn setup(
             )
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .build();
-        let mut image = Image::new(context.clone(), &image_info);
 
-        let image_data_buffer: Buffer<u8> = Buffer::new(
-            context.clone(),
-            4, // A single 32 bit pixels = 4 bytes
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
-        image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
-        image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
-        image_data_buffers.push(image_data_buffer);
+        // default base color should be a 1x1 white image (255, 255, 255)
+        let base_color = {
+            let mut image = Image::new(context.clone(), &image_info);
 
-        Arc::new(ImageView::new_default(
-            context.clone(),
-            Arc::new(image),
-            vk::ImageAspectFlags::COLOR,
-        ))
+            let image_data_buffer: Buffer<u8> = Buffer::new(
+                context.clone(),
+                4, // A single 32 bit pixels = 4 bytes
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
+            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image_data_buffers.push(image_data_buffer);
+
+            Arc::new(ImageView::new_default(
+                context.clone(),
+                Arc::new(image),
+                vk::ImageAspectFlags::COLOR,
+            ))
+        };
+
+        // default normal map should be a 1x1 purple image (128, 128, 255)
+        let normal_map = {
+            let mut image = Image::new(context.clone(), &image_info);
+
+            let image_data_buffer: Buffer<u8> = Buffer::new(
+                context.clone(),
+                4, // A single 32 bit pixels = 4 bytes
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            image_data_buffer.copy_data(&vec![0x80u8, 0x80, 0xFF, 0xFF]);
+            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image_data_buffers.push(image_data_buffer);
+
+            Arc::new(ImageView::new_default(
+                context.clone(),
+                Arc::new(image),
+                vk::ImageAspectFlags::COLOR,
+            ))
+        };
+
+        (base_color, normal_map)
     };
+
     let mut sampler_map = HashMap::new();
     let mut texture_map = HashMap::new();
     let mut material_map = HashMap::new();
@@ -117,6 +145,7 @@ pub fn setup(
                                         context.clone(),
                                         setup_command_buffer,
                                         &mut image_data_buffers,
+                                        true,
                                     )
                                 })
                                 .clone();
@@ -132,7 +161,42 @@ pub fn setup(
                             }
                         })
                         .unwrap_or_else(|| Texture {
-                            image_view: default_image_view.clone(),
+                            image_view: default_base_color_image_view.clone(),
+                            sampler: default_sampler.clone(),
+                        });
+
+                    let normal_texture = loaded_primitive
+                        .material
+                        .as_ref()
+                        .normal_texture
+                        .as_ref()
+                        .map(|v| {
+                            // TODO: remove code duplication
+                            let image_view = texture_map
+                                .entry(v.image.id())
+                                .or_insert_with(|| {
+                                    create_image(
+                                        v.image.clone(),
+                                        context.clone(),
+                                        setup_command_buffer,
+                                        &mut image_data_buffers,
+                                        false,
+                                    )
+                                })
+                                .clone();
+                            let sampler = sampler_map
+                                .entry(v.sampler.id())
+                                .or_insert_with(|| {
+                                    create_sampler(v.sampler.clone(), context.clone())
+                                })
+                                .clone();
+                            Texture {
+                                image_view,
+                                sampler,
+                            }
+                        })
+                        .unwrap_or_else(|| Texture {
+                            image_view: default_normal_map_image_view.clone(),
                             sampler: default_sampler.clone(),
                         });
 
@@ -163,12 +227,18 @@ pub fn setup(
                                 base_color_texture.image_view.clone(),
                                 base_color_texture.sampler.clone(),
                             ),
+                            WriteDescriptorSet::image_view_sampler(
+                                2,
+                                normal_texture.image_view.clone(),
+                                normal_texture.sampler.clone(),
+                            ),
                         ],
                     );
 
                     Arc::new(Material {
                         base_color: loaded_primitive.material.base_color,
                         base_color_texture: base_color_texture.clone(),
+                        normal_texture: normal_texture.clone(),
                         roughness_factor: loaded_primitive.material.roughness_factor,
                         metallic_factor: loaded_primitive.material.metallic_factor,
                         emissivity: loaded_primitive.material.emissivity,
@@ -301,6 +371,7 @@ fn create_image(
     context: Arc<Context>,
     setup_command_buffer: vk::CommandBuffer,
     image_data_buffers: &mut Vec<Buffer<u8>>,
+    create_mipmapping: bool,
 ) -> Arc<ImageView> {
     fn convert_format(format: (loader::ImageFormat, loader::ColorSpace)) -> vk::Format {
         match format {
@@ -340,6 +411,15 @@ fn create_image(
         }
     }
 
+    let num_mip_levels = if create_mipmapping {
+        Image::max_mip_levels(vk::Extent2D {
+            width: loaded_image.data.dimensions.0,
+            height: loaded_image.data.dimensions.1,
+        })
+    } else {
+        1
+    };
+
     let image_info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::TYPE_2D)
         .format(convert_format((
@@ -351,10 +431,7 @@ fn create_image(
             height: loaded_image.data.dimensions.1,
             depth: 1,
         })
-        .mip_levels(Image::max_mip_levels(vk::Extent2D {
-            width: loaded_image.data.dimensions.0,
-            height: loaded_image.data.dimensions.1,
-        }))
+        .mip_levels(num_mip_levels)
         .array_layers(1)
         .samples(vk::SampleCountFlags::TYPE_1)
         .usage(
