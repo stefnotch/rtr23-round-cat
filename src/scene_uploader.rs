@@ -360,6 +360,8 @@ fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> 
         .address_mode_w(convert_address_mode(
             &loaded_sampler.sampler_info.address_mode[2],
         ))
+        .min_lod(0.0)
+        .max_lod(vk::LOD_CLAMP_NONE)
         .build();
     let sampler = unsafe { context.device.create_sampler(&sampler_info, None) }
         .expect("Could not create sampler");
