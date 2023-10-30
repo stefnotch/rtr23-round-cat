@@ -26,6 +26,12 @@ pub struct SceneRenderer {
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
 
+    albedo_buffer_image: Arc<Image>,
+    albedo_buffer_imageview: ImageView,
+
+    normals_buffer_image: Arc<Image>,
+    normals_buffer_imageview: ImageView,
+
     depth_buffer_image: Arc<Image>,
     depth_buffer_imageview: ImageView,
 
@@ -366,6 +372,60 @@ impl SceneRenderer {
             ImageAspectFlags::DEPTH,
         );
 
+        let albedo_buffer_image = {
+            let create_info = vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    depth: 1,
+                    width: swapchain.extent.width,
+                    height: swapchain.extent.height,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::A2B10G10R10_UNORM_PACK32)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(
+                    vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::INPUT_ATTACHMENT,
+                )
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let albedo_buffer_imageview = ImageView::new_default(
+            context.clone(),
+            albedo_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        );
+
+        let normals_buffer_image = {
+            let create_info = vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    depth: 1,
+                    width: swapchain.extent.width,
+                    height: swapchain.extent.height,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::R16G16B16A16_SFLOAT)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(vk::ImageUsageFlags::INPUT_ATTACHMENT)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let normals_buffer_imageview = ImageView::new_default(
+            context.clone(),
+            normals_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        );
+
         let framebuffers = {
             swapchain
                 .imageviews
@@ -421,6 +481,10 @@ impl SceneRenderer {
             framebuffers,
             depth_buffer_image,
             depth_buffer_imageview,
+            albedo_buffer_image,
+            albedo_buffer_imageview,
+            normals_buffer_image,
+            normals_buffer_imageview,
             scene_descriptor_buffer,
             camera_descriptor_buffer,
             scene_descriptor_set_layout,
