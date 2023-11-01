@@ -149,7 +149,30 @@ impl CatDemo {
                 .expect("Could not allocate command buffers")
         };
 
-        let scene_renderer = SceneRenderer::new(context.clone(), &swapchain, descriptor_set_pool);
+        let allocator = Arc::new(Mutex::new(allocator));
+
+        let mut egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
+            event_loop,
+            window.inner_size().width,
+            window.inner_size().height,
+            window.scale_factor(),
+            egui::FontDefinitions::default(),
+            egui::Style::default(),
+            device.clone(),
+            allocator.clone(),
+            context.queue_family_index,
+            context.queue,
+            swapchain.loader.clone(),
+            swapchain.inner,
+            swapchain.surface_format,
+        ));
+
+        let scene_renderer = SceneRenderer::new(
+            context.clone(),
+            &mut egui_integration,
+            &swapchain,
+            descriptor_set_pool,
+        );
 
         let fence = {
             let create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
@@ -169,24 +192,6 @@ impl CatDemo {
 
             (present_complete_semaphore, rendering_complete_semaphore)
         };
-
-        let allocator = Arc::new(Mutex::new(allocator));
-
-        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
-            event_loop,
-            window.inner_size().width,
-            window.inner_size().height,
-            window.scale_factor(),
-            egui::FontDefinitions::default(),
-            egui::Style::default(),
-            device.clone(),
-            allocator.clone(),
-            context.queue_family_index,
-            context.queue,
-            swapchain.loader.clone(),
-            swapchain.inner,
-            swapchain.surface_format,
-        ));
 
         let scene = scene_uploader::setup(
             loaded_scene,
@@ -487,6 +492,8 @@ impl CatDemo {
             .set_visuals(egui::style::Visuals::dark());
 
         self.egui_integration.begin_frame(&self.window);
+        self.scene_renderer.draw_ui(&mut self.egui_integration);
+
         egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
             ui.heading("Hello");
             ui.label("Hello egui!");
