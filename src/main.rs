@@ -6,9 +6,9 @@ mod image;
 mod image_view;
 mod input_map;
 mod loader;
+mod render;
 mod sampler;
 mod scene;
-mod scene_renderer;
 mod scene_uploader;
 mod swapchain;
 mod time;
@@ -17,8 +17,8 @@ mod utility;
 
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
+use render::{MainRenderer, SwapchainIndex};
 use scene::Scene;
-use scene_renderer::SceneRenderer;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
@@ -37,11 +37,13 @@ use winit::event::{
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
+use crate::render::set_layout_cache::DescriptorSetLayoutCache;
+
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
 
-    scene_renderer: SceneRenderer,
+    renderer: MainRenderer,
 
     scene: Scene,
     input_map: InputMap,
@@ -125,7 +127,7 @@ impl CatDemo {
                 .expect("Could not create command pool")
         };
 
-        let descriptor_set_pool = {
+        let descriptor_pool = {
             let pool_sizes = [vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: 200,
@@ -167,11 +169,13 @@ impl CatDemo {
             swapchain.surface_format,
         ));
 
-        let scene_renderer = SceneRenderer::new(
+        let descriptor_set_layout_cache = DescriptorSetLayoutCache::new(context.clone());
+
+        let renderer = MainRenderer::new(
             context.clone(),
-            &mut egui_integration,
+            descriptor_pool,
+            &descriptor_set_layout_cache,
             &swapchain,
-            descriptor_set_pool,
         );
 
         let fence = {
@@ -196,8 +200,8 @@ impl CatDemo {
         let scene = scene_uploader::setup(
             loaded_scene,
             context.clone(),
-            descriptor_set_pool,
-            scene_renderer.material_descriptor_set_layout(),
+            descriptor_pool,
+            &descriptor_set_layout_cache,
             context.queue,
             command_pool,
         );
@@ -208,7 +212,7 @@ impl CatDemo {
             swapchain,
 
             command_pool,
-            descriptor_set_pool,
+            descriptor_set_pool: descriptor_pool,
 
             command_buffers,
             should_recreate_swapchain: false,
@@ -222,7 +226,7 @@ impl CatDemo {
             camera,
             time,
 
-            scene_renderer,
+            renderer,
             scene,
             egui_integration,
             _allocator: allocator,
@@ -385,7 +389,7 @@ impl CatDemo {
                 self.swapchain.inner,
                 self.swapchain.surface_format,
             );
-            self.scene_renderer.resize(&self.swapchain);
+            self.renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
 
@@ -412,7 +416,7 @@ impl CatDemo {
             _ => panic!("Could not accquire next image"),
         };
 
-        self.scene_renderer.update(&self.camera);
+        self.renderer.update_descriptor_sets(&self.camera);
 
         let command_buffer = self.command_buffers[present_index as usize];
         unsafe {
@@ -432,11 +436,11 @@ impl CatDemo {
         }
         .expect("Could not begin command buffer");
 
-        self.scene_renderer.draw(
+        self.renderer.render(
             &self.scene,
             command_buffer,
-            present_index as usize,
             &self.swapchain,
+            SwapchainIndex::new(present_index as usize),
             viewport,
         );
 
@@ -492,7 +496,7 @@ impl CatDemo {
             .set_visuals(egui::style::Visuals::dark());
 
         self.egui_integration.begin_frame(&self.window);
-        self.scene_renderer.draw_ui(&mut self.egui_integration);
+        // self.renderer.render_ui(&mut self.egui_integration);
 
         egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
             ui.heading("Hello");

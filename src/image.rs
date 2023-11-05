@@ -271,7 +271,7 @@ impl Image {
     }
 }
 
-pub const fn simple_image_create_info() -> vk::ImageCreateInfo {
+pub fn simple_image_create_info() -> vk::ImageCreateInfo {
     vk::ImageCreateInfo {
         flags: ImageCreateFlags::empty(),
         image_type: ImageType::TYPE_2D,

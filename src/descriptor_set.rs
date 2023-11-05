@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{buffer::Buffer, context::Context, image_view::ImageView, sampler::Sampler};
 
 pub struct DescriptorSet {
-    pub descriptor_set: vk::DescriptorSet,
+    pub inner: vk::DescriptorSet,
 }
 
 impl DescriptorSet {
@@ -48,7 +48,9 @@ impl DescriptorSet {
 
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
 
-        Self { descriptor_set }
+        Self {
+            inner: descriptor_set,
+        }
     }
 }
 
