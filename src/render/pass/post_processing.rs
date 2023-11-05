@@ -11,7 +11,5 @@ impl PostProcessingPass {
 }
 
 impl Drop for PostProcessingPass {
-    fn drop(&mut self) {
-        todo!()
-    }
+    fn drop(&mut self) {}
 }

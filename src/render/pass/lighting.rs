@@ -8,17 +8,11 @@ impl LightingPass {
         Self {}
     }
 
-    pub fn render(&self) {
-        todo!()
-    }
+    pub fn render(&self) {}
 
-    pub fn resize(&mut self) {
-        todo!()
-    }
+    pub fn resize(&mut self) {}
 }
 
 impl Drop for LightingPass {
-    fn drop(&mut self) {
-        todo!()
-    }
+    fn drop(&mut self) {}
 }

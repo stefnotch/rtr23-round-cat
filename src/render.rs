@@ -190,9 +190,7 @@ impl MainRenderer {
 }
 
 impl Drop for MainRenderer {
-    fn drop(&mut self) {
-        todo!()
-    }
+    fn drop(&mut self) {}
 }
 
 fn create_depth_buffer(context: Arc<Context>, extent: vk::Extent2D) -> ImageView {

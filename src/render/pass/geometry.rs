@@ -24,6 +24,12 @@ pub struct GBuffer {
     pub normals_buffer: ImageView,
 }
 
+impl GBuffer {
+    const POSITION_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+    const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+    const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+}
+
 pub struct GeometryPass {
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
@@ -44,7 +50,7 @@ impl GeometryPass {
     ) -> Self {
         let device = &context.device;
 
-        let render_pass = create_render_pass(device, swapchain.format);
+        let render_pass = create_render_pass(device);
 
         let (pipeline, pipeline_layout) =
             create_pipeline(context.clone(), render_pass, set_layout_cache);
@@ -80,7 +86,17 @@ impl GeometryPass {
         let clear_values = [
             vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.0, 0.0, 1.0, 1.0],
+                    float32: [0.0, 0.0, 0.0, 0.0],
+                },
+            },
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
                 },
             },
             vk::ClearValue {
@@ -215,7 +231,7 @@ impl GeometryPass {
             self.context.clone(),
             depth_buffer_imageview,
             swapchain,
-            self.render_pass,
+            render_pass,
         );
 
         self.gbuffer = gbuffer;
@@ -252,7 +268,7 @@ fn create_framebuffers(
                 height: swapchain.extent.height,
                 depth: 1,
             },
-            format: vk::Format::R16G16B16A16_SFLOAT,
+            format: GBuffer::POSITION_FORMAT,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
             ..simple_image_create_info()
         };
@@ -262,7 +278,7 @@ fn create_framebuffers(
 
     let position_buffer_imageview = ImageView::new_default(
         context.clone(),
-        depth_buffer_imageview.image.clone(),
+        position_buffer_image.clone(),
         ImageAspectFlags::COLOR,
     );
 
@@ -273,7 +289,7 @@ fn create_framebuffers(
                 height: swapchain.extent.height,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_SNORM,
+            format: GBuffer::ALBEDO_FORMAT,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
             ..simple_image_create_info()
         };
@@ -294,7 +310,7 @@ fn create_framebuffers(
                 height: swapchain.extent.height,
                 depth: 1,
             },
-            format: vk::Format::R16G16B16A16_SFLOAT,
+            format: GBuffer::NORMALS_FORMAT,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
             ..simple_image_create_info()
         };
@@ -312,8 +328,13 @@ fn create_framebuffers(
         swapchain
             .imageviews
             .iter()
-            .map(|swapchain_image_view| {
-                let image_views = [swapchain_image_view.clone(), depth_buffer_imageview.inner];
+            .map(|_| {
+                let image_views = [
+                    position_buffer_imageview.inner,
+                    albedo_buffer_imageview.inner,
+                    normals_buffer_imageview.inner,
+                    depth_buffer_imageview.inner,
+                ];
 
                 let create_info = vk::FramebufferCreateInfo::builder()
                     .render_pass(render_pass)
@@ -445,7 +466,7 @@ fn create_pipeline(
         dst_alpha_blend_factor: vk::BlendFactor::ZERO,
         alpha_blend_op: vk::BlendOp::ADD,
         color_write_mask: vk::ColorComponentFlags::RGBA,
-    }];
+    }; 3];
 
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
         .logic_op(vk::LogicOp::CLEAR)
@@ -502,10 +523,10 @@ fn create_pipeline(
     (pipeline[0], layout)
 }
 
-fn create_render_pass(device: &ash::Device, swapchain_format: vk::Format) -> vk::RenderPass {
+fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
     let position_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
-        format: swapchain_format,
+        format: GBuffer::POSITION_FORMAT,
         samples: vk::SampleCountFlags::TYPE_1,
         load_op: vk::AttachmentLoadOp::CLEAR,
         store_op: vk::AttachmentStoreOp::STORE,
@@ -517,7 +538,7 @@ fn create_render_pass(device: &ash::Device, swapchain_format: vk::Format) -> vk:
 
     let albedo_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
-        format: swapchain_format,
+        format: GBuffer::ALBEDO_FORMAT,
         samples: vk::SampleCountFlags::TYPE_1,
         load_op: vk::AttachmentLoadOp::CLEAR,
         store_op: vk::AttachmentStoreOp::STORE,
@@ -529,7 +550,7 @@ fn create_render_pass(device: &ash::Device, swapchain_format: vk::Format) -> vk:
 
     let normal_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
-        format: swapchain_format,
+        format: GBuffer::NORMALS_FORMAT,
         samples: vk::SampleCountFlags::TYPE_1,
         load_op: vk::AttachmentLoadOp::CLEAR,
         store_op: vk::AttachmentStoreOp::STORE,
