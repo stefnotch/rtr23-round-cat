@@ -25,6 +25,7 @@ use self::{
 };
 
 #[repr(transparent)]
+#[derive(Debug, Copy, Clone)]
 pub struct SwapchainIndex(usize);
 impl SwapchainIndex {
     pub fn new(index: usize) -> SwapchainIndex {
@@ -110,9 +111,15 @@ impl MainRenderer {
             context.clone(),
             swapchain,
             &depth_buffer_imageview,
+            descriptor_pool,
             set_layout_cache,
         );
-        let lighting_pass = LightingPass::new();
+        let lighting_pass = LightingPass::new(
+            context.clone(),
+            swapchain,
+            &depth_buffer_imageview,
+            set_layout_cache,
+        );
         let post_processing_pass = PostProcessingPass::new();
 
         MainRenderer {
@@ -142,14 +149,19 @@ impl MainRenderer {
 
         self.geometry_pass.render(
             scene,
-            &self.scene_descriptor_set,
             &self.camera_descriptor_set,
             command_buffer,
             swapchain,
             swapchain_index,
             viewport,
         );
-        self.lighting_pass.render();
+        self.lighting_pass.render(
+            command_buffer,
+            self.geometry_pass.gbuffer(),
+            swapchain,
+            swapchain_index,
+            viewport,
+        );
         self.post_processing_pass.render();
     }
 

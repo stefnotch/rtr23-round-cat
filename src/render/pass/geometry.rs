@@ -8,26 +8,192 @@ use crevice::std140::AsStd140;
 
 use crate::{
     context::Context,
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     image::{simple_image_create_info, Image},
     image_view::ImageView,
     render::{
         set_layout_cache::DescriptorSetLayoutCache, shader_types, CameraDescriptorSet,
-        SceneDescriptorSet, SwapchainIndex,
+        SwapchainIndex,
     },
+    sampler::Sampler,
     scene::{Scene, Vertex},
     swapchain::SwapchainContainer,
 };
 
 pub struct GBuffer {
-    pub position_buffer: ImageView,
-    pub albedo_buffer: ImageView,
-    pub normals_buffer: ImageView,
+    pub position_buffer: Arc<ImageView>,
+    pub albedo_buffer: Arc<ImageView>,
+    pub normals_buffer: Arc<ImageView>,
+
+    pub descriptor_set: DescriptorSet,
+    pub sampler: Arc<Sampler>,
+    pub descriptor_set_layout: vk::DescriptorSetLayout,
+}
+
+impl Drop for GBuffer {
+    fn drop(&mut self) {}
 }
 
 impl GBuffer {
     const POSITION_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+
+    pub fn new(
+        context: Arc<Context>,
+        swapchain_extent: vk::Extent2D,
+        descriptor_pool: vk::DescriptorPool,
+    ) -> Self {
+        let position_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                },
+                format: GBuffer::POSITION_FORMAT,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let position_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            position_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        ));
+
+        let albedo_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                },
+                format: GBuffer::ALBEDO_FORMAT,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let albedo_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            albedo_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        ));
+
+        let normals_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                },
+                format: GBuffer::NORMALS_FORMAT,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let normals_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            normals_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        ));
+
+        let descriptor_set_layout = {
+            let bindings = [
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(0)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(1)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(2)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
+            ];
+
+            let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+            unsafe {
+                context
+                    .device
+                    .create_descriptor_set_layout(&create_info, None)
+            }
+            .expect("Could not create descriptor set layout")
+        };
+
+        let sampler = {
+            let create_info = vk::SamplerCreateInfo::builder()
+                .mag_filter(vk::Filter::NEAREST)
+                .min_filter(vk::Filter::NEAREST)
+                .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .mip_lod_bias(0.0)
+                .anisotropy_enable(false)
+                .compare_enable(false)
+                .min_lod(0.0)
+                .max_lod(vk::LOD_CLAMP_NONE);
+
+            let sampler = unsafe { context.device.create_sampler(&create_info, None) }.unwrap();
+
+            Arc::new(Sampler::new(sampler, context.clone()))
+        };
+
+        let descriptor_set = {
+            let writes = [
+                WriteDescriptorSet::image_view_sampler(
+                    0,
+                    position_buffer_imageview.clone(),
+                    sampler.clone(),
+                ),
+                WriteDescriptorSet::image_view_sampler(
+                    1,
+                    albedo_buffer_imageview.clone(),
+                    sampler.clone(),
+                ),
+                WriteDescriptorSet::image_view_sampler(
+                    2,
+                    normals_buffer_imageview.clone(),
+                    sampler.clone(),
+                ),
+            ];
+
+            DescriptorSet::new(
+                context.clone(),
+                descriptor_pool,
+                descriptor_set_layout,
+                &writes,
+            )
+        };
+
+        GBuffer {
+            position_buffer: position_buffer_imageview,
+            albedo_buffer: albedo_buffer_imageview,
+            normals_buffer: normals_buffer_imageview,
+            descriptor_set,
+            sampler,
+            descriptor_set_layout,
+        }
+    }
 }
 
 pub struct GeometryPass {
@@ -37,6 +203,7 @@ pub struct GeometryPass {
     framebuffers: Vec<vk::Framebuffer>,
 
     gbuffer: GBuffer,
+    descriptor_pool: vk::DescriptorPool,
 
     context: Arc<Context>,
 }
@@ -46,6 +213,7 @@ impl GeometryPass {
         context: Arc<Context>,
         swapchain: &SwapchainContainer,
         depth_buffer_imageview: &ImageView,
+        descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
     ) -> Self {
         let device = &context.device;
@@ -55,10 +223,13 @@ impl GeometryPass {
         let (pipeline, pipeline_layout) =
             create_pipeline(context.clone(), render_pass, set_layout_cache);
 
-        let (gbuffer, framebuffers) = create_framebuffers(
+        let gbuffer = GBuffer::new(context.clone(), swapchain.extent, descriptor_pool);
+
+        let framebuffers = create_framebuffers(
             context.clone(),
             depth_buffer_imageview,
             swapchain,
+            &gbuffer,
             render_pass,
         );
 
@@ -70,13 +241,13 @@ impl GeometryPass {
             gbuffer,
 
             context,
+            descriptor_pool,
         }
     }
 
     pub fn render(
         &self,
         scene: &Scene,
-        scene_descriptor_set: &SceneDescriptorSet,
         camera_descriptor_set: &CameraDescriptorSet,
         command_buffer: vk::CommandBuffer,
         swapchain: &SwapchainContainer,
@@ -138,18 +309,13 @@ impl GeometryPass {
                 .cmd_set_viewport(command_buffer, 0, std::slice::from_ref(&viewport))
         };
 
-        let descriptor_sets = [
-            scene_descriptor_set.descriptor_set.inner,
-            camera_descriptor_set.descriptor_set.inner,
-        ];
-
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &descriptor_sets,
+                std::slice::from_ref(&camera_descriptor_set.descriptor_set.inner),
                 &[],
             )
         };
@@ -168,7 +334,7 @@ impl GeometryPass {
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
                         self.pipeline_layout,
-                        2,
+                        1,
                         std::slice::from_ref(&primitive.material.descriptor_set.inner),
                         &[],
                     );
@@ -227,15 +393,22 @@ impl GeometryPass {
             unsafe { device.destroy_framebuffer(framebuffer, None) };
         }
 
-        let (gbuffer, framebuffers) = create_framebuffers(
+        let gbuffer = GBuffer::new(self.context.clone(), swapchain.extent, self.descriptor_pool);
+
+        let framebuffers = create_framebuffers(
             self.context.clone(),
             depth_buffer_imageview,
             swapchain,
+            &gbuffer,
             render_pass,
         );
 
         self.gbuffer = gbuffer;
         self.framebuffers = framebuffers;
+    }
+
+    pub fn gbuffer(&self) -> &GBuffer {
+        &self.gbuffer
     }
 }
 
@@ -257,72 +430,10 @@ fn create_framebuffers(
     context: Arc<Context>,
     depth_buffer_imageview: &ImageView,
     swapchain: &SwapchainContainer,
+    gbuffer: &GBuffer,
     render_pass: vk::RenderPass,
-) -> (GBuffer, Vec<vk::Framebuffer>) {
+) -> Vec<vk::Framebuffer> {
     let device = &context.device;
-
-    let position_buffer_image = {
-        let create_info = vk::ImageCreateInfo {
-            extent: vk::Extent3D {
-                width: swapchain.extent.width,
-                height: swapchain.extent.height,
-                depth: 1,
-            },
-            format: GBuffer::POSITION_FORMAT,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            ..simple_image_create_info()
-        };
-
-        Arc::new(Image::new(context.clone(), &create_info))
-    };
-
-    let position_buffer_imageview = ImageView::new_default(
-        context.clone(),
-        position_buffer_image.clone(),
-        ImageAspectFlags::COLOR,
-    );
-
-    let albedo_buffer_image = {
-        let create_info = vk::ImageCreateInfo {
-            extent: vk::Extent3D {
-                width: swapchain.extent.width,
-                height: swapchain.extent.height,
-                depth: 1,
-            },
-            format: GBuffer::ALBEDO_FORMAT,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            ..simple_image_create_info()
-        };
-
-        Arc::new(Image::new(context.clone(), &create_info))
-    };
-
-    let albedo_buffer_imageview = ImageView::new_default(
-        context.clone(),
-        albedo_buffer_image.clone(),
-        ImageAspectFlags::COLOR,
-    );
-
-    let normals_buffer_image = {
-        let create_info = vk::ImageCreateInfo {
-            extent: vk::Extent3D {
-                width: swapchain.extent.width,
-                height: swapchain.extent.height,
-                depth: 1,
-            },
-            format: GBuffer::NORMALS_FORMAT,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            ..simple_image_create_info()
-        };
-
-        Arc::new(Image::new(context.clone(), &create_info))
-    };
-
-    let normals_buffer_imageview = ImageView::new_default(
-        context.clone(),
-        normals_buffer_image.clone(),
-        ImageAspectFlags::COLOR,
-    );
 
     let framebuffers = {
         swapchain
@@ -330,9 +441,9 @@ fn create_framebuffers(
             .iter()
             .map(|_| {
                 let image_views = [
-                    position_buffer_imageview.inner,
-                    albedo_buffer_imageview.inner,
-                    normals_buffer_imageview.inner,
+                    gbuffer.position_buffer.inner,
+                    gbuffer.albedo_buffer.inner,
+                    gbuffer.normals_buffer.inner,
                     depth_buffer_imageview.inner,
                 ];
 
@@ -349,13 +460,7 @@ fn create_framebuffers(
             .collect::<Vec<_>>()
     };
 
-    let gbuffer = GBuffer {
-        position_buffer: position_buffer_imageview,
-        albedo_buffer: albedo_buffer_imageview,
-        normals_buffer: normals_buffer_imageview,
-    };
-
-    (gbuffer, framebuffers)
+    framebuffers
 }
 
 fn create_pipeline(
@@ -472,11 +577,7 @@ fn create_pipeline(
         .logic_op(vk::LogicOp::CLEAR)
         .attachments(&color_blend_attachment_states);
 
-    let descriptor_set_layouts = [
-        set_layout_cache.scene(),
-        set_layout_cache.camera(),
-        set_layout_cache.material(),
-    ];
+    let descriptor_set_layouts = [set_layout_cache.camera(), set_layout_cache.material()];
 
     let push_constants_ranges = vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::VERTEX,

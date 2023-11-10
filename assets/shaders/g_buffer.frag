@@ -14,26 +14,22 @@ struct DirectionalLight {
     vec3 color;
 };
 
-layout(set = 0, binding = 0) uniform Scene {
-    DirectionalLight directionalLight;
-} scene;
-
-layout(set = 1, binding = 0) uniform Camera {
+layout(set = 0, binding = 0) uniform Camera {
     mat4 view;
     mat4 proj;
     vec3 position;
 } camera;
 
-layout(set = 2, binding = 0) uniform Material {
+layout(set = 1, binding = 0) uniform Material {
     vec3 baseColor;
     vec3 emissivity;
     float roughness;
     float metallic;
 } material;
 
-layout(set = 2, binding = 1) uniform sampler2D baseColorTexture;
+layout(set = 1, binding = 1) uniform sampler2D baseColorTexture;
 
-layout(set = 2, binding = 2) uniform sampler2D normalMapTexture;
+layout(set = 1, binding = 2) uniform sampler2D normalMapTexture;
 
 void main() {
     vec3 N = normalize(v_normal);

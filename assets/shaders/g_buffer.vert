@@ -15,11 +15,7 @@ struct DirectionalLight {
     vec3 color;
 };
 
-layout(set = 0, binding = 0) uniform Scene {
-    DirectionalLight directionalLight;
-} scene;
-
-layout(set = 1, binding = 0) uniform Camera {
+layout(set = 0, binding = 0) uniform Camera {
     mat4 view;
     mat4 proj;
 } camera;
@@ -39,7 +35,7 @@ void main() {
     gl_Position = camera.proj * camera.view * worldPos;
 
     v_position = position;
-    v_normal = normal;
+    v_normal = n;
     v_uv = uv;
     v_tangent = tangent;
 }
