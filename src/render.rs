@@ -118,7 +118,7 @@ impl MainRenderer {
         let lighting_pass = LightingPass::new(
             context.clone(),
             swapchain,
-            &depth_buffer_imageview,
+            geometry_pass.gbuffer(),
             set_layout_cache,
         );
         let post_processing_pass = PostProcessingPass::new();
@@ -197,7 +197,7 @@ impl MainRenderer {
 
         self.geometry_pass
             .resize(&self.depth_buffer_imageview, swapchain);
-        self.lighting_pass.resize();
+        self.lighting_pass.resize(swapchain);
         self.post_processing_pass.resize();
     }
 }

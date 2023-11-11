@@ -8,7 +8,7 @@ use ash::{
 use crate::{
     context::Context,
     image_view::ImageView,
-    render::{set_layout_cache::DescriptorSetLayoutCache, SwapchainIndex, gbuffer::GBuffer},
+    render::{gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SwapchainIndex},
     scene::Scene,
     swapchain::SwapchainContainer,
 };
@@ -26,18 +26,15 @@ impl LightingPass {
     pub fn new(
         context: Arc<Context>,
         swapchain: &SwapchainContainer,
-        depth_buffer: &ImageView,
+        gbuffer: &GBuffer,
         set_layout_cache: &DescriptorSetLayoutCache,
     ) -> Self {
-        let device = &context.device;
-
         let render_pass = create_render_pass(context.clone(), swapchain.format);
 
         let (pipeline, pipeline_layout) =
-            create_pipeline(context.clone(), render_pass, set_layout_cache);
+            create_pipeline(context.clone(), render_pass, set_layout_cache, gbuffer);
 
-        let framebuffers =
-            create_framebuffers(context.clone(), depth_buffer, swapchain, render_pass);
+        let framebuffers = create_framebuffers(context.clone(), swapchain, render_pass);
 
         LightingPass {
             render_pass,
@@ -109,13 +106,25 @@ impl LightingPass {
         unsafe { self.context.device.cmd_end_render_pass(command_buffer) };
     }
 
-    pub fn resize(&mut self) {}
+    pub fn resize(&mut self, swapchain: &SwapchainContainer) {
+        let device = &self.context.device;
+        let render_pass = self.render_pass;
+
+        for &framebuffer in self.framebuffers.iter() {
+            unsafe { device.destroy_framebuffer(framebuffer, None) };
+        }
+
+        let framebuffers = create_framebuffers(self.context.clone(), swapchain, render_pass);
+
+        self.framebuffers = framebuffers;
+    }
 }
 
 fn create_pipeline(
     context: Arc<Context>,
     render_pass: vk::RenderPass,
     set_layout_cache: &DescriptorSetLayoutCache,
+    gbuffer: &GBuffer,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
@@ -194,9 +203,9 @@ fn create_pipeline(
     };
 
     let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-        .depth_test_enable(true)
-        .depth_write_enable(true)
-        .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
+        .depth_test_enable(false)
+        .depth_write_enable(false)
+        .depth_compare_op(vk::CompareOp::NEVER)
         .depth_bounds_test_enable(false)
         .stencil_test_enable(false)
         .front(stencil_state)
@@ -213,13 +222,13 @@ fn create_pipeline(
         dst_alpha_blend_factor: vk::BlendFactor::ZERO,
         alpha_blend_op: vk::BlendOp::ADD,
         color_write_mask: vk::ColorComponentFlags::RGBA,
-    }; 3];
+    }];
 
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
         .logic_op(vk::LogicOp::CLEAR)
         .attachments(&color_blend_attachment_states);
 
-    let descriptor_set_layouts = [set_layout_cache.scene()];
+    let descriptor_set_layouts = [gbuffer.descriptor_set_layout, set_layout_cache.scene()];
 
     let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&descriptor_set_layouts)
@@ -261,7 +270,6 @@ fn create_pipeline(
 
 fn create_framebuffers(
     context: Arc<Context>,
-    depth_buffer: &ImageView,
     swapchain: &SwapchainContainer,
     render_pass: vk::RenderPass,
 ) -> Vec<vk::Framebuffer> {
@@ -269,7 +277,7 @@ fn create_framebuffers(
         .imageviews
         .iter()
         .map(|swapchain_image| {
-            let image_views = [swapchain_image.clone(), depth_buffer.inner.clone()];
+            let image_views = [swapchain_image.clone()];
 
             let create_info = vk::FramebufferCreateInfo::builder()
                 .render_pass(render_pass)
@@ -297,32 +305,14 @@ fn create_render_pass(context: Arc<Context>, swapchain_format: vk::Format) -> vk
         final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
-    let depth_stencil_attachment = vk::AttachmentDescription {
-        flags: vk::AttachmentDescriptionFlags::empty(),
-        format: vk::Format::D32_SFLOAT,
-        samples: vk::SampleCountFlags::TYPE_1,
-        load_op: vk::AttachmentLoadOp::LOAD,
-        store_op: vk::AttachmentStoreOp::DONT_CARE,
-        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-        initial_layout: vk::ImageLayout::UNDEFINED,
-        final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
     let color_attachment_ref = vk::AttachmentReference {
         attachment: 0,
         layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
-    let depth_attachment_ref = vk::AttachmentReference {
-        attachment: 1,
-        layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
     let subpass = vk::SubpassDescription::builder()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(std::slice::from_ref(&color_attachment_ref))
-        .depth_stencil_attachment(&depth_attachment_ref);
+        .color_attachments(std::slice::from_ref(&color_attachment_ref));
 
     let dependencies = [vk::SubpassDependency {
         src_subpass: vk::SUBPASS_EXTERNAL,
@@ -333,7 +323,7 @@ fn create_render_pass(context: Arc<Context>, swapchain_format: vk::Format) -> vk
         ..Default::default()
     }];
 
-    let attachments = [color_attachment, depth_stencil_attachment];
+    let attachments = [color_attachment];
 
     let create_info = vk::RenderPassCreateInfo::builder()
         .attachments(&attachments)
