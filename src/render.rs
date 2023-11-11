@@ -159,6 +159,7 @@ impl MainRenderer {
         self.lighting_pass.render(
             command_buffer,
             self.geometry_pass.gbuffer(),
+            &self.scene_descriptor_set,
             swapchain,
             swapchain_index,
             viewport,

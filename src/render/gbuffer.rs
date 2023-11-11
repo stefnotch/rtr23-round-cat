@@ -18,10 +18,18 @@ pub struct GBuffer {
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
     pub descriptor_set_layout: vk::DescriptorSetLayout,
+
+    context: Arc<Context>,
 }
 
 impl Drop for GBuffer {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None)
+        };
+    }
 }
 
 impl GBuffer {
@@ -185,6 +193,8 @@ impl GBuffer {
             descriptor_set,
             sampler,
             descriptor_set_layout,
+
+            context,
         }
     }
 }

@@ -7,8 +7,12 @@ use ash::{
 
 use crate::{
     context::Context,
+    descriptor_set,
     image_view::ImageView,
-    render::{gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SwapchainIndex},
+    render::{
+        gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SceneDescriptorSet,
+        SwapchainIndex,
+    },
     scene::Scene,
     swapchain::SwapchainContainer,
 };
@@ -49,6 +53,7 @@ impl LightingPass {
         &self,
         command_buffer: vk::CommandBuffer,
         gbuffer: &GBuffer,
+        scene_descriptor_set: &SceneDescriptorSet,
         swapchain: &SwapchainContainer,
         swapchain_index: SwapchainIndex,
         viewport: vk::Viewport,
@@ -90,13 +95,18 @@ impl LightingPass {
                 .cmd_set_viewport(command_buffer, 0, std::slice::from_ref(&viewport))
         };
 
+        let descriptor_set = [
+            gbuffer.descriptor_set.inner,
+            scene_descriptor_set.descriptor_set.inner,
+        ];
+
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                std::slice::from_ref(&gbuffer.descriptor_set.inner),
+                &descriptor_set,
                 &[],
             )
         };
