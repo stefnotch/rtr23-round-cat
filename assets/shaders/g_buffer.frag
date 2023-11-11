@@ -33,8 +33,8 @@ layout(set = 1, binding = 2) uniform sampler2D normalMapTexture;
 
 void main() {
     vec3 N = normalize(v_normal);
-	vec3 T = normalize(v_tangent.xyz);
-	vec3 B = cross(v_normal, v_tangent.xyz) * v_tangent.w;
+    vec3 T = normalize(v_tangent.xyz);
+    vec3 B = cross(v_normal, v_tangent.xyz) * v_tangent.w;
     mat3 TBN = mat3(T,B,N);
 
     vec3 albedo = texture(baseColorTexture, v_uv).rgb * material.baseColor;

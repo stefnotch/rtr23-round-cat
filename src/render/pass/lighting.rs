@@ -8,12 +8,10 @@ use ash::{
 use crate::{
     context::Context,
     image_view::ImageView,
-    render::{set_layout_cache::DescriptorSetLayoutCache, SwapchainIndex},
+    render::{set_layout_cache::DescriptorSetLayoutCache, SwapchainIndex, gbuffer::GBuffer},
     scene::Scene,
     swapchain::SwapchainContainer,
 };
-
-use super::geometry::GBuffer;
 
 pub struct LightingPass {
     render_pass: vk::RenderPass,

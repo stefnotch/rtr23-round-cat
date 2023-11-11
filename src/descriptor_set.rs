@@ -103,4 +103,22 @@ impl WriteDescriptorSet {
             info: DescriptorInfo::Image(info),
         }
     }
+
+    pub fn image_view_sampler_with_layout(
+        binding: u32,
+        image_view: Arc<ImageView>,
+        image_layout: vk::ImageLayout,
+        sampler: Arc<Sampler>,
+    ) -> WriteDescriptorSet {
+        let info = vk::DescriptorImageInfo::builder()
+            .sampler(sampler.inner)
+            .image_view(image_view.inner)
+            .image_layout(image_layout)
+            .build();
+
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::Image(info),
+        }
+    }
 }

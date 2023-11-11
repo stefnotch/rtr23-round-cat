@@ -1,3 +1,4 @@
+mod gbuffer;
 mod pass;
 pub mod set_layout_cache;
 pub mod shader_types;
