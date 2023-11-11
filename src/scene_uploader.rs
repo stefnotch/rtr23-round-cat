@@ -313,7 +313,7 @@ pub fn setup(
 
     // submit
     let submit_info = vk::SubmitInfo::builder()
-        .command_buffers(&[setup_command_buffer])
+        .command_buffers(std::slice::from_ref(&setup_command_buffer))
         .build();
 
     unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
