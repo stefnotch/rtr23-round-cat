@@ -432,8 +432,7 @@ dependencies = [
 [[package]]
 name = "egui-winit-ash-integration"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ff65673b6cfcdc14b64ec326862187bd721bb09028667c906b45ceecc53fcf2"
+source = "git+https://github.com/YouSafe/egui-winit-ash-integration.git?branch=main#3fff87519d44f4c1373249e507cf4fd13c5ea545"
 dependencies = [
  "anyhow",
  "ash",

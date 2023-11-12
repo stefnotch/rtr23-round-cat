@@ -16,11 +16,11 @@ gltf = { version = "1.3.0", default-features = false, features = ["import", "uti
 # I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
 [target.'cfg(windows)'.dependencies]
 winit = { version = "0.28", default-features = false }
-egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "clipboard"] }
+egui-winit-ash-integration = { git = "https://github.com/YouSafe/egui-winit-ash-integration.git", branch = "main", default-features = false, features = ["gpu-allocator-feature", "clipboard"] }
 
 [target.'cfg(not(windows))'.dependencies]
 winit = { version = "0.28" }
-egui-winit-ash-integration = { version = "0.5", default-features = false, features = ["gpu-allocator-feature", "default"] }
+egui-winit-ash-integration = { git = "https://github.com/YouSafe/egui-winit-ash-integration.git", branch = "main", default-features = false, features = ["gpu-allocator-feature", "default"] }
 
 [profile.dev.package.gltf]
 opt-level = 2
