@@ -153,7 +153,7 @@ impl CatDemo {
 
         let allocator = Arc::new(Mutex::new(allocator));
 
-        let mut egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
+        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
             event_loop,
             window.inner_size().width,
             window.inner_size().height,
