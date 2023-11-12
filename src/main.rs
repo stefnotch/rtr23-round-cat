@@ -53,6 +53,7 @@ struct CatDemo {
 
     // Low level Vulkan stuff
     descriptor_set_pool: vk::DescriptorPool,
+    descriptor_set_layout_cache: DescriptorSetLayoutCache,
     command_pool: vk::CommandPool,
 
     command_buffers: Vec<vk::CommandBuffer>,
@@ -213,6 +214,7 @@ impl CatDemo {
 
             command_pool,
             descriptor_set_pool: descriptor_pool,
+            descriptor_set_layout_cache,
 
             command_buffers,
             should_recreate_swapchain: false,
