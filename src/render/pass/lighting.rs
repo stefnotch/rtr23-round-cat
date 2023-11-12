@@ -68,6 +68,15 @@ impl LightingPass {
         //     .newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
         //     /* .image and .subresourceRange should identify image subresource accessed */};
 
+        //   VkDependencyInfoKHR dependencyInfo = {
+        //       ...
+        //       1,                      // imageMemoryBarrierCount
+        //       &imageMemoryBarrier,    // pImageMemoryBarriers
+        //       ...
+        //   }
+
+        //   vkCmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
             gbuffer.position_buffer.clone(),
             gbuffer.albedo_buffer.clone(),
@@ -103,15 +112,6 @@ impl LightingPass {
                 .synchronisation2_loader
                 .cmd_pipeline_barrier2(command_buffer, &dependency_info)
         };
-
-        //   VkDependencyInfoKHR dependencyInfo = {
-        //       ...
-        //       1,                      // imageMemoryBarrierCount
-        //       &imageMemoryBarrier,    // pImageMemoryBarriers
-        //       ...
-        //   }
-
-        //   vkCmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
 
         let clear_values = [vk::ClearValue {
             color: vk::ClearColorValue {
@@ -249,7 +249,7 @@ fn create_pipeline(
         .scissors(&scissors);
 
     let rasterization_state_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
-        .cull_mode(vk::CullModeFlags::BACK)
+        .cull_mode(vk::CullModeFlags::NONE)
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .line_width(1.0)
         .polygon_mode(vk::PolygonMode::FILL);
