@@ -1,6 +1,9 @@
 use std::ffi::CStr;
 
-use ash::vk::{self, ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo};
+use ash::{
+    extensions::khr::Synchronization2,
+    vk::{self, ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo},
+};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::{event_loop::EventLoop, window::Window};
 
@@ -10,6 +13,8 @@ pub struct Context {
 
     pub surface_loader: ash::extensions::khr::Surface,
     pub surface: vk::SurfaceKHR,
+
+    pub synchronisation2_loader: ash::extensions::khr::Synchronization2,
 
     pub physical_device: vk::PhysicalDevice,
     pub queue_family_index: u32,
@@ -59,6 +64,8 @@ impl Context {
 
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
+        let synchronisation2_loader = Synchronization2::new(&instance, &device);
+
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -68,6 +75,8 @@ impl Context {
 
             surface,
             surface_loader,
+
+            synchronisation2_loader,
 
             physical_device,
             queue_family_index,
@@ -155,16 +164,28 @@ fn create_logical_device(
     physical_device: &vk::PhysicalDevice,
 ) -> ash::Device {
     let swapchain_extension = ash::extensions::khr::Swapchain::name();
+    let synchronisation2_extension = ash::extensions::khr::Synchronization2::name();
 
-    let device_extensions = [swapchain_extension.as_ptr()];
+    let device_extensions = [
+        swapchain_extension.as_ptr(),
+        synchronisation2_extension.as_ptr(),
+    ];
 
     let queue_priorities = [1.0];
     let queue_create_info = DeviceQueueCreateInfo::builder()
         .queue_family_index(0)
         .queue_priorities(&queue_priorities);
+
+    let mut physical_device_vulkan13_features = vk::PhysicalDeviceVulkan13Features {
+        synchronization2: vk::TRUE,
+        ..vk::PhysicalDeviceVulkan13Features::default()
+    };
+
     let create_info = DeviceCreateInfo::builder()
         .queue_create_infos(std::slice::from_ref(&queue_create_info))
-        .enabled_extension_names(&device_extensions);
+        .enabled_extension_names(&device_extensions)
+        .push_next(&mut physical_device_vulkan13_features)
+        .build();
 
     unsafe { instance.create_device(*physical_device, &create_info, None) }
         .expect("Could not create logical device")

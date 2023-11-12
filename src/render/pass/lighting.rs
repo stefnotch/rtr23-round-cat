@@ -2,18 +2,18 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 
 use ash::{
     util::read_spv,
-    vk::{self},
+    vk::{
+        self, AccessFlags2, DependencyInfo, ImageLayout, ImageMemoryBarrier2,
+        ImageMemoryBarrier2KHR, ImageSubresourceRange, PipelineStageFlags2,
+    },
 };
 
 use crate::{
     context::Context,
-    descriptor_set,
-    image_view::ImageView,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SceneDescriptorSet,
         SwapchainIndex,
     },
-    scene::Scene,
     swapchain::SwapchainContainer,
 };
 
@@ -58,6 +58,61 @@ impl LightingPass {
         swapchain_index: SwapchainIndex,
         viewport: vk::Viewport,
     ) {
+        // VkImageMemoryBarrier2KHR imageMemoryBarrier = {
+        //     ...
+        //     .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+        //     .srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR,
+        //     .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR,
+        //     .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR,
+        //     .oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        //     .newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
+        //     /* .image and .subresourceRange should identify image subresource accessed */};
+
+        //   VkDependencyInfoKHR dependencyInfo = {
+        //       ...
+        //       1,                      // imageMemoryBarrierCount
+        //       &imageMemoryBarrier,    // pImageMemoryBarriers
+        //       ...
+        //   }
+
+        //   vkCmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
+        let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
+            gbuffer.position_buffer.clone(),
+            gbuffer.albedo_buffer.clone(),
+            gbuffer.normals_buffer.clone(),
+        ]
+        .iter()
+        .map(|image| vk::ImageMemoryBarrier2 {
+            src_stage_mask: PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            src_access_mask: AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: PipelineStageFlags2::FRAGMENT_SHADER,
+            dst_access_mask: AccessFlags2::SHADER_READ,
+            old_layout: ImageLayout::ATTACHMENT_OPTIMAL,
+            new_layout: ImageLayout::READ_ONLY_OPTIMAL,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image: image.image.inner,
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            ..ImageMemoryBarrier2::default()
+        })
+        .collect();
+
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(&image_memory_barriers);
+
+        unsafe {
+            self.context
+                .synchronisation2_loader
+                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
+        };
+
         let clear_values = [vk::ClearValue {
             color: vk::ClearColorValue {
                 float32: [0.0, 0.0, 0.0, 0.0],
@@ -194,7 +249,7 @@ fn create_pipeline(
         .scissors(&scissors);
 
     let rasterization_state_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
-        .cull_mode(vk::CullModeFlags::BACK)
+        .cull_mode(vk::CullModeFlags::NONE)
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .line_width(1.0)
         .polygon_mode(vk::PolygonMode::FILL);
