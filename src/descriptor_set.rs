@@ -15,10 +15,11 @@ impl DescriptorSet {
         set_layout: vk::DescriptorSetLayout,
         write_descriptor_sets: &[WriteDescriptorSet],
     ) -> Self {
+        let x = Box::new([set_layout]);
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&set_layout));
+            .set_layouts(x.as_ref());
 
         let descriptor_set = unsafe {
             device
@@ -47,6 +48,8 @@ impl DescriptorSet {
             .collect();
 
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
+
+        std::mem::drop(x);
 
         Self {
             inner: descriptor_set,
