@@ -30,12 +30,13 @@ void main() {
     vec4 worldPos = entity.model * vec4(position, 1.0);
 
     // in world space
-    vec3 n = mat3(entity.normalMatrix) * normal;
+    vec3 n = normalize(vec3(entity.normalMatrix * vec4(normal, 0.0)));
+    vec3 t = normalize(vec3(entity.model * vec4(tangent.rgb, 0.0)));
 
     gl_Position = camera.proj * camera.view * worldPos;
 
     v_position = position;
     v_normal = n;
     v_uv = uv;
-    v_tangent = tangent;
+    v_tangent = vec4(t, tangent.w);
 }

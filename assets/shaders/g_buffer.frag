@@ -34,18 +34,15 @@ layout(set = 1, binding = 2) uniform sampler2D normalMapTexture;
 void main() {
     vec3 N = normalize(v_normal);
     vec3 T = normalize(v_tangent.xyz);
-    vec3 B = cross(v_normal, v_tangent.xyz) * v_tangent.w;
+    vec3 B = cross(N, T) * v_tangent.w;
     mat3 TBN = mat3(T,B,N);
 
     vec3 albedo = texture(baseColorTexture, v_uv).rgb * material.baseColor;
 
     // in world space
-    vec3 norm = TBN * (texture(normalMapTexture, v_uv).rgb * 2.0 - 1.0);
-
-    // in world space
-    vec3 n = normalize(norm);
+    vec3 norm = TBN * (texture(normalMapTexture, v_uv).rgb * 2.0 - vec3(1.0));
 
     outPosition = v_position;
     outAlbedo = albedo;
-    outNormal = n;
+    outNormal = normalize(norm);
 }
