@@ -1,5 +1,6 @@
 mod buffer;
 mod camera;
+mod config_loader;
 mod context;
 mod descriptor_set;
 mod image;
@@ -42,6 +43,7 @@ use crate::render::set_layout_cache::DescriptorSetLayoutCache;
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
+    config_file_loader: config_loader::ConfigFileLoader,
 
     renderer: MainRenderer,
 
@@ -75,6 +77,8 @@ struct CatDemo {
 
 impl CatDemo {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
+        let mut config_file_loader = config_loader::ConfigFileLoader::new("config.json");
+        let config = config_file_loader.load_config();
         let (window_width, window_height) = (800, 600);
 
         let window = WindowBuilder::new()
@@ -88,11 +92,16 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene-local/sponza/sponza.glb")
+            .load_scene(&config.scene_path)
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
-        let freecam_controller = FreecamController::new(5.0, 0.01);
+        let mut freecam_controller = FreecamController::new(5.0, 0.01);
+        if let Some(camera_position) = &config.cached.camera_position {
+            freecam_controller.position = camera_position.position;
+            freecam_controller.pitch = camera_position.pitch;
+            freecam_controller.yaw = camera_position.yaw;
+        }
         let camera = Camera::new(
             window_width as f32 / window_height as f32,
             Default::default(),
@@ -231,6 +240,7 @@ impl CatDemo {
             renderer,
             scene,
             egui_integration,
+            config_file_loader,
             _allocator: allocator,
         }
     }
@@ -341,6 +351,21 @@ impl CatDemo {
                     self.draw_frame();
                 }
                 _ => (),
+            };
+
+            match control_flow {
+                winit::event_loop::ControlFlow::ExitWithCode(_) => {
+                    self.config_file_loader
+                        .get_or_load_config()
+                        .cached
+                        .camera_position = Some(config_loader::CameraPosition {
+                        position: self.freecam_controller.position,
+                        pitch: self.freecam_controller.pitch,
+                        yaw: self.freecam_controller.yaw,
+                    });
+                    self.config_file_loader.save_config();
+                }
+                _ => {}
             }
         });
     }
@@ -573,7 +598,6 @@ impl Drop for CatDemo {
 
 fn main() {
     let event_loop = EventLoop::new();
-
     let demo = CatDemo::new(&event_loop);
     demo.main_loop(event_loop);
 }
