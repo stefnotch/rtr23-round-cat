@@ -1,10 +1,10 @@
 
 [workspace]
 resolver = "2"
-members = [ "asset_server",
+members = [ 
+  "asset_server",
   "demo"
 ]
-default-run = "demo"
 
 [profile.dev.package.gltf]
 opt-level = 2

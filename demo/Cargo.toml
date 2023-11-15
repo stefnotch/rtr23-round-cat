@@ -1,7 +1,8 @@
 [package]
-name = "round-cat"
+name = "demo"
 version = "0.1.0"
 edition = "2021"
+default-run = "demo"
 
 [dependencies]
 ash = "0.37.3"
