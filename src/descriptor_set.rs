@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{buffer::Buffer, context::Context, image_view::ImageView, sampler::Sampler};
 
 pub struct DescriptorSet {
-    pub descriptor_set: vk::DescriptorSet,
+    pub inner: vk::DescriptorSet,
 }
 
 impl DescriptorSet {
@@ -15,10 +15,11 @@ impl DescriptorSet {
         set_layout: vk::DescriptorSetLayout,
         write_descriptor_sets: &[WriteDescriptorSet],
     ) -> Self {
+        let x = Box::new([set_layout]);
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&set_layout));
+            .set_layouts(x.as_ref());
 
         let descriptor_set = unsafe {
             device
@@ -48,7 +49,11 @@ impl DescriptorSet {
 
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
 
-        Self { descriptor_set }
+        std::mem::drop(x);
+
+        Self {
+            inner: descriptor_set,
+        }
     }
 }
 
@@ -94,6 +99,24 @@ impl WriteDescriptorSet {
             .sampler(sampler.inner)
             .image_view(image_view.inner)
             .image_layout(image_view.image.layout)
+            .build();
+
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::Image(info),
+        }
+    }
+
+    pub fn image_view_sampler_with_layout(
+        binding: u32,
+        image_view: Arc<ImageView>,
+        image_layout: vk::ImageLayout,
+        sampler: Arc<Sampler>,
+    ) -> WriteDescriptorSet {
+        let info = vk::DescriptorImageInfo::builder()
+            .sampler(sampler.inner)
+            .image_view(image_view.inner)
+            .image_layout(image_layout)
             .build();
 
         WriteDescriptorSet {

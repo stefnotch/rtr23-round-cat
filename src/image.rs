@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageSubresourceRange};
+use ash::vk::{
+    self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageSubresourceRange, ImageTiling,
+    ImageType, ImageUsageFlags, SampleCountFlags, SharingMode,
+};
 
 use crate::{buffer::Buffer, context::Context, find_memorytype_index};
 
@@ -265,6 +268,27 @@ impl Image {
             .checked_ilog2()
             .unwrap()
             + 1
+    }
+}
+
+pub fn simple_image_create_info() -> vk::ImageCreateInfo {
+    vk::ImageCreateInfo {
+        flags: ImageCreateFlags::empty(),
+        image_type: ImageType::TYPE_2D,
+        format: Format::UNDEFINED,
+        extent: Extent3D {
+            width: 0,
+            height: 0,
+            depth: 0,
+        },
+        mip_levels: 1,
+        array_layers: 1,
+        samples: SampleCountFlags::TYPE_1,
+        tiling: ImageTiling::OPTIMAL,
+        usage: ImageUsageFlags::empty(),
+        sharing_mode: SharingMode::EXCLUSIVE,
+        initial_layout: ImageLayout::UNDEFINED,
+        ..Default::default()
     }
 }
 

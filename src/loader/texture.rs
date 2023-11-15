@@ -29,7 +29,6 @@ pub struct BytesImageData {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// A list of the more common image formats that we actually support.
 pub enum ImageFormat {
-    // TODO: Where are the sRGB formats?
     /// 8 bit texture, 1 channel, normalized color space
     R8_UNORM,
     R8G8_UNORM,

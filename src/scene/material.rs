@@ -1,6 +1,6 @@
 use ultraviolet::Vec3;
 
-use crate::{buffer::Buffer, descriptor_set::DescriptorSet, scene_renderer::shader_types};
+use crate::{buffer::Buffer, descriptor_set::DescriptorSet, render::shader_types};
 
 use super::Texture;
 

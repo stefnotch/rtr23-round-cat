@@ -1,14 +1,15 @@
 mod buffer;
 mod camera;
+mod config_loader;
 mod context;
 mod descriptor_set;
 mod image;
 mod image_view;
 mod input_map;
 mod loader;
+mod render;
 mod sampler;
 mod scene;
-mod scene_renderer;
 mod scene_uploader;
 mod swapchain;
 mod time;
@@ -17,8 +18,8 @@ mod utility;
 
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
+use render::{MainRenderer, SwapchainIndex};
 use scene::Scene;
-use scene_renderer::SceneRenderer;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
@@ -37,11 +38,14 @@ use winit::event::{
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
+use crate::render::set_layout_cache::DescriptorSetLayoutCache;
+
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
+    config_file_loader: config_loader::ConfigFileLoader,
 
-    scene_renderer: SceneRenderer,
+    renderer: MainRenderer,
 
     scene: Scene,
     input_map: InputMap,
@@ -51,6 +55,7 @@ struct CatDemo {
 
     // Low level Vulkan stuff
     descriptor_set_pool: vk::DescriptorPool,
+    descriptor_set_layout_cache: DescriptorSetLayoutCache,
     command_pool: vk::CommandPool,
 
     command_buffers: Vec<vk::CommandBuffer>,
@@ -72,6 +77,8 @@ struct CatDemo {
 
 impl CatDemo {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
+        let mut config_file_loader = config_loader::ConfigFileLoader::new("config.json");
+        let config = config_file_loader.load_config();
         let (window_width, window_height) = (800, 600);
 
         let window = WindowBuilder::new()
@@ -85,11 +92,16 @@ impl CatDemo {
 
         let mut asset_loader = AssetLoader::new();
         let loaded_scene = asset_loader
-            .load_scene("assets/scene-local/sponza/sponza.glb")
+            .load_scene(&config.scene_path)
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
-        let freecam_controller = FreecamController::new(5.0, 0.01);
+        let mut freecam_controller = FreecamController::new(5.0, 0.01);
+        if let Some(camera_position) = &config.cached.camera_position {
+            freecam_controller.position = camera_position.position;
+            freecam_controller.pitch = camera_position.pitch;
+            freecam_controller.yaw = camera_position.yaw;
+        }
         let camera = Camera::new(
             window_width as f32 / window_height as f32,
             Default::default(),
@@ -125,7 +137,7 @@ impl CatDemo {
                 .expect("Could not create command pool")
         };
 
-        let descriptor_set_pool = {
+        let descriptor_pool = {
             let pool_sizes = [vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: 200,
@@ -149,7 +161,32 @@ impl CatDemo {
                 .expect("Could not allocate command buffers")
         };
 
-        let scene_renderer = SceneRenderer::new(context.clone(), &swapchain, descriptor_set_pool);
+        let allocator = Arc::new(Mutex::new(allocator));
+
+        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
+            event_loop,
+            window.inner_size().width,
+            window.inner_size().height,
+            window.scale_factor(),
+            egui::FontDefinitions::default(),
+            egui::Style::default(),
+            device.clone(),
+            allocator.clone(),
+            context.queue_family_index,
+            context.queue,
+            swapchain.loader.clone(),
+            swapchain.inner,
+            swapchain.surface_format,
+        ));
+
+        let descriptor_set_layout_cache = DescriptorSetLayoutCache::new(context.clone());
+
+        let renderer = MainRenderer::new(
+            context.clone(),
+            descriptor_pool,
+            &descriptor_set_layout_cache,
+            &swapchain,
+        );
 
         let fence = {
             let create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
@@ -170,29 +207,11 @@ impl CatDemo {
             (present_complete_semaphore, rendering_complete_semaphore)
         };
 
-        let allocator = Arc::new(Mutex::new(allocator));
-
-        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
-            event_loop,
-            window.inner_size().width,
-            window.inner_size().height,
-            window.scale_factor(),
-            egui::FontDefinitions::default(),
-            egui::Style::default(),
-            device.clone(),
-            allocator.clone(),
-            context.queue_family_index,
-            context.queue,
-            swapchain.loader.clone(),
-            swapchain.inner,
-            swapchain.surface_format,
-        ));
-
         let scene = scene_uploader::setup(
             loaded_scene,
             context.clone(),
-            descriptor_set_pool,
-            scene_renderer.material_descriptor_set_layout(),
+            descriptor_pool,
+            &descriptor_set_layout_cache,
             context.queue,
             command_pool,
         );
@@ -203,7 +222,8 @@ impl CatDemo {
             swapchain,
 
             command_pool,
-            descriptor_set_pool,
+            descriptor_set_pool: descriptor_pool,
+            descriptor_set_layout_cache,
 
             command_buffers,
             should_recreate_swapchain: false,
@@ -217,9 +237,10 @@ impl CatDemo {
             camera,
             time,
 
-            scene_renderer,
+            renderer,
             scene,
             egui_integration,
+            config_file_loader,
             _allocator: allocator,
         }
     }
@@ -330,6 +351,21 @@ impl CatDemo {
                     self.draw_frame();
                 }
                 _ => (),
+            };
+
+            match control_flow {
+                winit::event_loop::ControlFlow::ExitWithCode(_) => {
+                    self.config_file_loader
+                        .get_or_load_config()
+                        .cached
+                        .camera_position = Some(config_loader::CameraPosition {
+                        position: self.freecam_controller.position,
+                        pitch: self.freecam_controller.pitch,
+                        yaw: self.freecam_controller.yaw,
+                    });
+                    self.config_file_loader.save_config();
+                }
+                _ => {}
             }
         });
     }
@@ -380,7 +416,7 @@ impl CatDemo {
                 self.swapchain.inner,
                 self.swapchain.surface_format,
             );
-            self.scene_renderer.resize(&self.swapchain);
+            self.renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
 
@@ -407,7 +443,7 @@ impl CatDemo {
             _ => panic!("Could not accquire next image"),
         };
 
-        self.scene_renderer.update(&self.camera);
+        self.renderer.update_descriptor_sets(&self.camera);
 
         let command_buffer = self.command_buffers[present_index as usize];
         unsafe {
@@ -427,11 +463,11 @@ impl CatDemo {
         }
         .expect("Could not begin command buffer");
 
-        self.scene_renderer.draw(
+        self.renderer.render(
             &self.scene,
             command_buffer,
-            present_index as usize,
             &self.swapchain,
+            SwapchainIndex::new(present_index as usize),
             viewport,
         );
 
@@ -487,6 +523,8 @@ impl CatDemo {
             .set_visuals(egui::style::Visuals::dark());
 
         self.egui_integration.begin_frame(&self.window);
+        // self.renderer.render_ui(&mut self.egui_integration);
+
         egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
             ui.heading("Hello");
             ui.label("Hello egui!");
@@ -560,7 +598,6 @@ impl Drop for CatDemo {
 
 fn main() {
     let event_loop = EventLoop::new();
-
     let demo = CatDemo::new(&event_loop);
     demo.main_loop(event_loop);
 }

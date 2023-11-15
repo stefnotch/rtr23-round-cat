@@ -10,16 +10,16 @@ use crate::{
     image::Image,
     image_view::ImageView,
     loader::{self, Asset, LoadedImage, LoadedSampler},
+    render::{set_layout_cache::DescriptorSetLayoutCache, shader_types},
     sampler::Sampler,
     scene::{Material, Mesh, Model, Primitive, Scene, Texture},
-    scene_renderer::shader_types,
 };
 
 pub fn setup(
     loaded_scene: loader::LoadedScene,
     context: Arc<Context>,
     descriptor_pool: vk::DescriptorPool,
-    set_layout: vk::DescriptorSetLayout,
+    set_layout_cache: &DescriptorSetLayoutCache,
     queue: vk::Queue,
     command_pool: vk::CommandPool,
 ) -> Scene {
@@ -219,7 +219,7 @@ pub fn setup(
                     let descriptor_set = DescriptorSet::new(
                         context.clone(),
                         descriptor_pool,
-                        set_layout,
+                        set_layout_cache.material(),
                         &[
                             WriteDescriptorSet::buffer(0, &material_buffer),
                             WriteDescriptorSet::image_view_sampler(
@@ -313,7 +313,7 @@ pub fn setup(
 
     // submit
     let submit_info = vk::SubmitInfo::builder()
-        .command_buffers(&[setup_command_buffer])
+        .command_buffers(std::slice::from_ref(&setup_command_buffer))
         .build();
 
     unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
