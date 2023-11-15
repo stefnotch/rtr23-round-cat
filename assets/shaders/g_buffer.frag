@@ -8,6 +8,7 @@ layout (location = 3) in vec4 v_tangent;
 layout (location = 0) out vec3 outPosition;
 layout (location = 1) out vec3 outAlbedo;
 layout (location = 2) out vec3 outNormal;
+layout (location = 3) out vec2 outMetallicRoughness;
 
 struct DirectionalLight {
     vec3 direction;
@@ -45,4 +46,5 @@ void main() {
     outPosition = v_position;
     outAlbedo = albedo;
     outNormal = normalize(norm);
+    outMetallicRoughness = vec2(material.metallic, material.roughness);
 }

@@ -18,6 +18,7 @@ struct DirectionalLight {
 layout(set = 0, binding = 0) uniform Camera {
     mat4 view;
     mat4 proj;
+    vec3 position;
 } camera;
 
 layout(push_constant) uniform Entity {

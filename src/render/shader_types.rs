@@ -30,4 +30,5 @@ pub struct Material {
 pub struct Camera {
     pub view: Mat4,
     pub proj: Mat4,
+    pub position: Vec3,
 }

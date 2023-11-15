@@ -92,6 +92,11 @@ impl GeometryPass {
                 },
             },
             vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+            vk::ClearValue {
                 depth_stencil: vk::ClearDepthStencilValue {
                     depth: 1.0,
                     stencil: 0,
@@ -265,6 +270,7 @@ fn create_framebuffers(
                     gbuffer.position_buffer.inner,
                     gbuffer.albedo_buffer.inner,
                     gbuffer.normals_buffer.inner,
+                    gbuffer.metallic_roughness_buffer.inner,
                     depth_buffer_imageview.inner,
                 ];
 
@@ -392,7 +398,7 @@ fn create_pipeline(
         dst_alpha_blend_factor: vk::BlendFactor::ZERO,
         alpha_blend_op: vk::BlendOp::ADD,
         color_write_mask: vk::ColorComponentFlags::RGBA,
-    }; 3];
+    }; 4];
 
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
         .logic_op(vk::LogicOp::CLEAR)
@@ -482,6 +488,18 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
         final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
+    let metallic_roughness_attachment = vk::AttachmentDescription {
+        flags: vk::AttachmentDescriptionFlags::empty(),
+        format: GBuffer::METALLIC_ROUGHNESS_FORMAT,
+        samples: vk::SampleCountFlags::TYPE_1,
+        load_op: vk::AttachmentLoadOp::CLEAR,
+        store_op: vk::AttachmentStoreOp::STORE,
+        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+    };
+
     let depth_stencil_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
         format: vk::Format::D32_SFLOAT,
@@ -509,8 +527,13 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
         layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
-    let depth_attachment_ref = vk::AttachmentReference {
+    let metallic_roughness_attachment_ref = vk::AttachmentReference {
         attachment: 3,
+        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    let depth_attachment_ref = vk::AttachmentReference {
+        attachment: 4,
         layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     };
 
@@ -518,6 +541,7 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
         position_attachment_ref,
         albedo_attachment_ref,
         normal_attachment_ref,
+        metallic_roughness_attachment_ref,
     ];
 
     let subpass = vk::SubpassDescription::builder()
@@ -529,6 +553,7 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
         position_attachment,
         albedo_attachment,
         normal_attachment,
+        metallic_roughness_attachment,
         depth_stencil_attachment,
     ];
 

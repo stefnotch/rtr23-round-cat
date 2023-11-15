@@ -160,6 +160,7 @@ impl MainRenderer {
             command_buffer,
             self.geometry_pass.gbuffer(),
             &self.scene_descriptor_set,
+            &self.camera_descriptor_set,
             swapchain,
             swapchain_index,
             viewport,
@@ -182,6 +183,7 @@ impl MainRenderer {
         let camera = shader_types::Camera {
             view: camera.view_matrix(),
             proj: camera.projection_matrix(),
+            position: camera.position,
         };
 
         self.scene_descriptor_set
