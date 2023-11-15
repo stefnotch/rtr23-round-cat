@@ -180,7 +180,7 @@ pub fn setup(
                                         context.clone(),
                                         setup_command_buffer,
                                         &mut image_data_buffers,
-                                        false,
+                                        true,
                                     )
                                 })
                                 .clone();
