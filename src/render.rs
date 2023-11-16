@@ -177,6 +177,7 @@ impl MainRenderer {
                     z: 0.0,
                 },
                 color: Vec3::new(1.0, 1.0, 1.0),
+                intensity: 3.0,
             },
         };
 

@@ -11,6 +11,7 @@ pub struct Entity {
 pub struct DirectionalLight {
     pub direction: Vec3,
     pub color: Vec3,
+    pub intensity: f32,
 }
 
 #[derive(AsStd140)]

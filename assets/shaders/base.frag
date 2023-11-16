@@ -19,6 +19,7 @@ struct PointLight {
 struct DirectionalLight {
     vec3 direction;
     vec3 color;
+    float intensity;
 };
 
 layout(set = 1, binding = 0) uniform Scene {
@@ -128,9 +129,7 @@ vec3 pbr(PointLight pointLight, vec3 n, vec3 v, vec3 worldPos, vec3 albedo, vec3
 vec3 pbr(DirectionalLight directionalLight, vec3 n, vec3 v, vec3 worldPos, vec3 albedo, vec3 f0, float metallic, float roughness) {
     vec3 l = normalize(-directionalLight.direction);
 
-    // TODO: Add directionalLight.intensity
-
-    vec3 lightIntensity = directionalLight.color; /* * directionalLight.intensity; */
+    vec3 lightIntensity = directionalLight.color * directionalLight.intensity; 
     return pbr_common(lightIntensity, l, n, v, albedo, f0, metallic, roughness);
 }
 
@@ -142,11 +141,14 @@ void main() {
     vec3 albedo = texture(albedoBuffer, v_uv).rgb;
     vec2 metallicRoughness = texture(metallicRoughnessBuffer, v_uv).rg;
 
-    float metallic = 0.1;
-    float roughness = 0.1;
+    float metallic = 0.5;
+    float roughness = 0.5;
 
     // in world space
     vec3 n = normalize(normal);
+
+    // fragColor = vec4(position, 1.0);
+    // return;
 
     // world space
     vec3 v = normalize(camera.position - position); 

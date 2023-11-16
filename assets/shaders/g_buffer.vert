@@ -36,7 +36,7 @@ void main() {
 
     gl_Position = camera.proj * camera.view * worldPos;
 
-    v_position = position;
+    v_position = worldPos.xyz;
     v_normal = n;
     v_uv = uv;
     v_tangent = vec4(t, tangent.w);
