@@ -92,16 +92,16 @@ async fn main() -> anyhow::Result<()> {
 fn load_asset_database(
     config: &AssetsConfig,
 ) -> anyhow::Result<AssetDatabase<AssetDatabaseMigrated>> {
-    let database_config = sled::Config::default()
-        .path(config.get_asset_cache_db_path())
-        .flush_every_ms(Some(1000));
+    let database_config = redb::Builder::new();
 
-    let mut asset_database = AssetDatabase::new(database_config.open()?);
-    // if asset_database.needs_migration(config.version) {
-    //     std::mem::drop(asset_database);
-    //     fs::remove_dir_all(&config.target)?;
-    //     fs::create_dir_all(&config.target)?;
-    //     asset_database = AssetDatabase::new(sled::Db::open_with_config(&database_config)?);
-    // }
+    let mut asset_database =
+        AssetDatabase::new(database_config.create(config.get_asset_cache_db_path())?);
+    if asset_database.needs_migration(config.version) {
+        std::mem::drop(asset_database);
+        fs::remove_dir_all(&config.target)?;
+        fs::create_dir_all(&config.target)?;
+        asset_database =
+            AssetDatabase::new(database_config.create(config.get_asset_cache_db_path())?);
+    }
     Ok(asset_database.finished_migration())
 }
