@@ -5,3 +5,9 @@
 ## Developer info
 
 Needs a stable Rust toolchain, and the Vulkan SDK.
+
+Run the asset server
+
+```bash
+cargo run --bin asset_server
+```

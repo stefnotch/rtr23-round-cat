@@ -1,4 +1,4 @@
-use crate::source_files::SourceFileRef;
+use crate::{asset_sourcer::AssetRef, source_files::SourceFileRef};
 
 use super::{Asset, AssetSourcer, AssetType, CreateAssetInfo};
 
@@ -16,8 +16,10 @@ impl AssetSourcer for ShaderSourcer {
         // We simply assume that it's a valid shader.
         // Compilation is done later, on-demand.
         let imported_asset = Asset::new(
-            import_request.asset_ref_base,
-            AssetType::Shader,
+            AssetRef {
+                name: import_request.asset_name_base,
+                asset_type: AssetType::Shader,
+            },
             import_request.file_ref.clone(),
         );
 

@@ -4,7 +4,7 @@ use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Relative to the asset folder root.
-#[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct SourceFileRef(RelativePathBuf);
 impl SourceFileRef {
     pub fn new(path: RelativePathBuf) -> Self {
@@ -18,13 +18,11 @@ impl SourceFileRef {
 
 #[derive(Serialize, Deserialize)]
 pub struct SourceFiles {
-    pub version: u64,
     pub files: HashMap<SourceFileRef, SourceFileData>,
 }
 impl SourceFiles {
     pub fn new() -> Self {
         Self {
-            version: 0,
             files: Default::default(),
         }
     }
@@ -38,5 +36,4 @@ impl Default for SourceFiles {
 #[derive(Serialize, Deserialize)]
 pub struct SourceFileData {
     pub last_changed: Option<SystemTime>,
-    pub is_dirty: bool,
 }

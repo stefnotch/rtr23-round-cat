@@ -1,11 +1,12 @@
 mod shader_sourcer;
 
+use serde::{Deserialize, Serialize};
 pub use shader_sourcer::*;
 use std::{path::Path, sync::Arc};
 
 use uuid::Uuid;
 
-use crate::source_files::SourceFileRef;
+use crate::{asset_file::AssetFileInfo, source_files::SourceFileRef};
 
 pub trait AssetSourcer {
     /// Rough filtering for files.
@@ -17,60 +18,61 @@ pub trait AssetSourcer {
 
 pub struct CreateAssetInfo {
     pub file_ref: SourceFileRef,
-    pub asset_ref_base: AssetRef,
+    pub asset_name_base: Vec<String>,
 }
 impl CreateAssetInfo {
     pub fn from_source_file(file_ref: SourceFileRef) -> Self {
-        let asset_ref_base = AssetRef(
-            file_ref
-                .get_path()
-                .components()
-                .map(|v| v.as_str().into())
-                .collect(),
-        );
+        let asset_name_base = file_ref
+            .get_path()
+            .with_extension("")
+            .components()
+            .map(|v| v.as_str().into())
+            .collect();
         Self {
             file_ref,
-            asset_ref_base,
+            asset_name_base,
         }
     }
 }
 
-pub struct AssetRef(Vec<String>);
-
-/// A lazily loaded asset.
-pub struct Asset {
-    pub name: AssetRef,
+/// A reference to an asset.
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+pub struct AssetRef {
+    pub name: Vec<String>,
     pub asset_type: AssetType,
+}
+/// A lazily loaded asset.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Asset {
+    pub key: AssetRef,
     main_file: SourceFileRef,
 
-    // could also be a generational index?
-    // or a hash of the file?
-    // or we could store this in a meta file next to the asset?
-    // well, I have no special requirements, so this is good
-    output_file_id: Uuid,
-    /// Can also reference currently nonexistent files.
-    extra_files: Vec<SourceFileRef>,
+    cache_file_info: Option<AssetFileInfo>,
     data: Option<Arc<AssetData>>,
 }
 
 impl Asset {
-    pub fn new(name: AssetRef, asset_type: AssetType, main_file: SourceFileRef) -> Self {
+    pub fn new(key: AssetRef, main_file: SourceFileRef) -> Self {
         Self {
-            name,
-            asset_type,
+            key,
             main_file,
-            output_file_id: Uuid::new_v4(),
-            extra_files: vec![],
+            cache_file_info: None,
             data: None,
         }
     }
+
+    pub fn get_key(&self) -> &AssetRef {
+        &self.key
+    }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub enum AssetType {
     Shader,
     Model,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AssetData {
     Shader(),
     Model(),
