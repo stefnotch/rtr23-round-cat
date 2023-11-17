@@ -8,6 +8,7 @@ use std::{collections::HashMap, fs, path::PathBuf, time::SystemTime};
 
 use asset_database::AssetDatabaseMigrated;
 use asset_sourcer::{Asset, AssetRef};
+use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use source_files::SourceFileRef;
 use uuid::Uuid;
@@ -31,11 +32,23 @@ impl Assets {
             asset_dependencies_inverse: HashMap::new(),
         }
     }
+
+    fn add_asset(&mut self, asset: Asset) {
+        if let Some(asset_file_info) = &asset.cache_file_info {
+            for dependency in asset_file_info.dependencies.iter() {
+                self.asset_dependencies_inverse
+                    .entry(dependency.clone())
+                    .or_default()
+                    .push(asset.key.clone());
+            }
+        }
+        self.assets.insert(asset.key.clone(), asset);
+    }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
     let config = AssetsConfig {
         version: 0,
@@ -43,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         target: "target-assets".into(),
     };
 
+    fs::create_dir_all(&config.target)?;
     let mut asset_database = load_asset_database(&config)?;
 
     // TODO: start the file watcher *here*
@@ -50,21 +64,25 @@ async fn main() -> anyhow::Result<()> {
     // Update the source files in the asset caching database
     let asset_sourcers: Vec<Box<dyn AssetSourcer>> = vec![Box::new(ShaderSourcer {})];
     let source_files = read_startup(&config, &asset_sourcers);
-    asset_database.set_source_files(source_files)?;
 
     let mut assets = Assets::new();
 
-    // for (source_ref, _) in source_files.files.iter() {
-    // for asset_sourcer in asset_sourcers.iter() {
-    // if !asset_sourcer.can_potentially_handle(source_ref) {
-    // continue;
-    // }
-    // for asset in asset_sourcer.create(CreateAssetInfo::from_source_file(source_ref.clone()))
-    // {
-    // assets.assets.insert(asset.get_key().clone(), asset);
-    // }
-    // }
-    // }
+    for (source_ref, _) in source_files.files.iter() {
+        for asset_sourcer in asset_sourcers.iter() {
+            if !asset_sourcer.can_potentially_handle(source_ref) {
+                continue;
+            }
+            for mut asset in
+                asset_sourcer.create(CreateAssetInfo::from_source_file(source_ref.clone()))
+            {
+                asset.cache_file_info = asset_database
+                    .get_asset_file_info(asset.get_key())
+                    .ok()
+                    .flatten();
+                assets.add_asset(asset);
+            }
+        }
+    }
 
     println!("Hello, world!");
 
@@ -74,18 +92,16 @@ async fn main() -> anyhow::Result<()> {
 fn load_asset_database(
     config: &AssetsConfig,
 ) -> anyhow::Result<AssetDatabase<AssetDatabaseMigrated>> {
-    fs::create_dir_all(&config.target)?;
-    let database_config = sled::Config {
-        path: config.get_asset_cache_db_path().into(),
-        flush_every_ms: Some(1000),
-        ..Default::default()
-    };
-    let mut asset_database = AssetDatabase::new(sled::Db::open_with_config(&database_config)?);
-    if asset_database.needs_migration(config.version) {
-        std::mem::drop(asset_database);
-        fs::remove_dir_all(&config.target)?;
-        fs::create_dir_all(&config.target)?;
-        asset_database = AssetDatabase::new(sled::Db::open_with_config(&database_config)?);
-    }
+    let database_config = sled::Config::default()
+        .path(config.get_asset_cache_db_path())
+        .flush_every_ms(Some(1000));
+
+    let mut asset_database = AssetDatabase::new(database_config.open()?);
+    // if asset_database.needs_migration(config.version) {
+    //     std::mem::drop(asset_database);
+    //     fs::remove_dir_all(&config.target)?;
+    //     fs::create_dir_all(&config.target)?;
+    //     asset_database = AssetDatabase::new(sled::Db::open_with_config(&database_config)?);
+    // }
     Ok(asset_database.finished_migration())
 }

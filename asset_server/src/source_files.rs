@@ -19,6 +19,7 @@ impl SourceFileRef {
 #[derive(Serialize, Deserialize)]
 pub struct SourceFiles {
     pub files: HashMap<SourceFileRef, SourceFileData>,
+    // TODO: Changed file queue or something
 }
 impl SourceFiles {
     pub fn new() -> Self {

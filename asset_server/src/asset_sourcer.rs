@@ -45,10 +45,10 @@ pub struct AssetRef {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Asset {
     pub key: AssetRef,
-    main_file: SourceFileRef,
+    pub main_file: SourceFileRef,
 
-    cache_file_info: Option<AssetFileInfo>,
-    data: Option<Arc<AssetData>>,
+    pub cache_file_info: Option<AssetFileInfo>,
+    pub data: Option<Arc<AssetData>>,
 }
 
 impl Asset {
