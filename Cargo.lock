@@ -137,13 +137,16 @@ dependencies = [
 name = "asset_server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "atomicwrites",
  "bincode",
  "env_logger",
  "ipc-channel",
  "notify-debouncer-full",
+ "relative-path",
  "serde",
  "tokio",
+ "uuid",
  "walkdir",
 ]
 
@@ -1586,6 +1589,15 @@ name = "regex-syntax"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
+
+[[package]]
+name = "relative-path"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c707298afce11da2efef2f600116fa93ffa7a032b5d7b628aa17711ec81383ca"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "rustc-demangle"

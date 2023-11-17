@@ -2,3 +2,4 @@
 target/
 .vscode
 /config.json
+/target-assets/

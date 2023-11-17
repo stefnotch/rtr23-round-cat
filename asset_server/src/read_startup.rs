@@ -1,13 +1,16 @@
+use relative_path::{PathExt, RelativePathBuf};
 use walkdir::WalkDir;
 
 use crate::{
-    asset_processor::AssetProcessor, assets_config::AssetsConfig, SourceFileData, SourceFiles,
+    asset_sourcer::AssetSourcer,
+    assets_config::AssetsConfig,
+    source_files::{SourceFileData, SourceFileRef, SourceFiles},
 };
 
 pub fn read_startup(
     config: &AssetsConfig,
     old_source_files: &SourceFiles,
-    asset_processors: &[Box<dyn AssetProcessor>],
+    asset_sourcers: &[Box<dyn AssetSourcer>],
 ) -> SourceFiles {
     let mut source_files = SourceFiles::new();
     for entry in WalkDir::new(&config.source)
@@ -18,14 +21,25 @@ pub fn read_startup(
             continue;
         }
 
-        if !asset_processors
+        let relative_path = entry
+            .path()
+            .relative_to(config.get_source_file_path())
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to get relative path for {:?} with base {:?}",
+                    entry.path(),
+                    config.get_source_file_path()
+                )
+            });
+        let path = SourceFileRef::new(relative_path);
+
+        if !asset_sourcers
             .iter()
-            .any(|v| v.can_potentially_handle(entry.path()))
+            .any(|v| v.can_potentially_handle(&path))
         {
             continue;
         }
 
-        let path = entry.path().to_path_buf();
         let last_changed = match entry.metadata() {
             Ok(v) => v.modified().ok(),
             // Maybe log this?
