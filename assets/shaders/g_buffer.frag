@@ -32,6 +32,8 @@ layout(set = 1, binding = 1) uniform sampler2D baseColorTexture;
 
 layout(set = 1, binding = 2) uniform sampler2D normalMapTexture;
 
+layout(set = 1, binding = 3) uniform sampler2D metallicRoughnessTexture;
+
 void main() {
     vec3 N = normalize(v_normal);
     vec3 T = normalize(v_tangent.xyz);
@@ -40,11 +42,13 @@ void main() {
 
     vec3 albedo = texture(baseColorTexture, v_uv).rgb * material.baseColor;
 
+    vec2 metallicRoughness = texture(metallicRoughnessTexture, v_uv).rg * vec2(material.metallic, material.roughness);
+
     // in world space
     vec3 norm = TBN * (texture(normalMapTexture, v_uv).rgb * 2.0 - vec3(1.0));
 
     outPosition = v_position;
     outAlbedo = albedo;
     outNormal = normalize(norm);
-    outMetallicRoughness = vec2(material.metallic, material.roughness);
+    outMetallicRoughness = metallicRoughness;
 }

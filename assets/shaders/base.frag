@@ -141,14 +141,11 @@ void main() {
     vec3 albedo = texture(albedoBuffer, v_uv).rgb;
     vec2 metallicRoughness = texture(metallicRoughnessBuffer, v_uv).rg;
 
-    float metallic = 0.5;
-    float roughness = 0.5;
+    float metallic = metallicRoughness.r;
+    float roughness = metallicRoughness.g;
 
     // in world space
     vec3 n = normalize(normal);
-
-    // fragColor = vec4(position, 1.0);
-    // return;
 
     // world space
     vec3 v = normalize(camera.position - position); 

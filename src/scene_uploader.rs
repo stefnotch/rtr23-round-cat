@@ -200,6 +200,41 @@ pub fn setup(
                             sampler: default_sampler.clone(),
                         });
 
+                    let metallic_roughness_texture = loaded_primitive
+                        .material
+                        .as_ref()
+                        .metallic_roughness_texture
+                        .as_ref()
+                        .map(|v| {
+                            // TODO: remove code duplication
+                            let image_view = texture_map
+                                .entry(v.image.id())
+                                .or_insert_with(|| {
+                                    create_image(
+                                        v.image.clone(),
+                                        context.clone(),
+                                        setup_command_buffer,
+                                        &mut image_data_buffers,
+                                        false,
+                                    )
+                                })
+                                .clone();
+                            let sampler = sampler_map
+                                .entry(v.sampler.id())
+                                .or_insert_with(|| {
+                                    create_sampler(v.sampler.clone(), context.clone())
+                                })
+                                .clone();
+                            Texture {
+                                image_view,
+                                sampler,
+                            }
+                        })
+                        .unwrap_or_else(|| Texture {
+                            image_view: default_base_color_image_view.clone(),
+                            sampler: default_sampler.clone(),
+                        });
+
                     let material_buffer = Buffer::new(
                         context.clone(),
                         shader_types::Material::std140_size_static() as u64,
@@ -232,6 +267,11 @@ pub fn setup(
                                 normal_texture.image_view.clone(),
                                 normal_texture.sampler.clone(),
                             ),
+                            WriteDescriptorSet::image_view_sampler(
+                                3,
+                                metallic_roughness_texture.image_view.clone(),
+                                metallic_roughness_texture.sampler.clone(),
+                            ),
                         ],
                     );
 
@@ -241,6 +281,7 @@ pub fn setup(
                         normal_texture: normal_texture.clone(),
                         roughness_factor: loaded_primitive.material.roughness_factor,
                         metallic_factor: loaded_primitive.material.metallic_factor,
+                        metallic_roughness_texture: metallic_roughness_texture.clone(),
                         emissivity: loaded_primitive.material.emissivity,
                         descriptor_set: descriptor_set,
                         descriptor_set_buffer: material_buffer,
