@@ -51,22 +51,6 @@ impl<State> AssetDatabase<State> {
 }
 
 impl AssetDatabase<AssetDatabaseMigrated> {
-    fn open_source_files_tree(&self) -> io::Result<sled::Tree> {
-        self.db.open_tree(b"source_files")
-    }
-
-    pub fn set_source_files(&mut self, source_files: SourceFiles) -> anyhow::Result<()> {
-        let source_files_tree = self.open_source_files_tree()?;
-        source_files_tree.clear()?;
-        for (file_ref, file_data) in source_files.files {
-            source_files_tree.insert(
-                bincode::serialize(&file_ref)?,
-                bincode::serialize(&file_data)?,
-            )?;
-        }
-        Ok(())
-    }
-
     fn open_asset_file_info_tree(&self) -> io::Result<sled::Tree> {
         self.db.open_tree(b"asset_file_info")
     }
