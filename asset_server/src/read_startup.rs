@@ -3,17 +3,15 @@ use std::collections::HashMap;
 use walkdir::WalkDir;
 
 use crate::{
-    asset_sourcer::AssetSourcer,
-    assets_config::AssetsConfig,
-    file_change::FileTimestamp,
-    source_files::{SourceFileData, SourceFiles},
+    asset_sourcer::AssetSourcer, assets_config::AssetsConfig, file_change::FileTimestamp,
+    source_files::SourceFilesMap,
 };
 
-impl SourceFiles {
+impl SourceFilesMap {
     pub fn read_startup(
         config: &AssetsConfig,
         asset_sourcers: &[Box<dyn AssetSourcer>],
-    ) -> SourceFiles {
+    ) -> SourceFilesMap {
         let mut source_files = HashMap::new();
         for entry in WalkDir::new(&config.source)
             .into_iter()
@@ -40,9 +38,9 @@ impl SourceFiles {
                     continue;
                 }
             };
-            source_files.insert(path, SourceFileData { timestamp });
+            source_files.insert(path, timestamp);
         }
 
-        SourceFiles::new(source_files)
+        SourceFilesMap::new(source_files)
     }
 }

@@ -18,6 +18,7 @@ use crate::{
     asset_database::AssetDatabase,
     asset_sourcer::{AssetSourcer, CreateAssetInfo, ShaderSourcer},
     assets_config::AssetsConfig,
+    source_files::SourceFilesMap,
 };
 
 struct Assets {
@@ -57,15 +58,13 @@ async fn main() -> anyhow::Result<()> {
     let mut asset_database = load_asset_database(&config)?;
 
     // TODO: start the file watcher *here*
-    // TODO: Start working with the file watcher channel
 
-    // Update the source files in the asset caching database
+    // Read the source files and create the assets
     let asset_sourcers: Vec<Box<dyn AssetSourcer>> = vec![Box::new(ShaderSourcer {})];
-    let source_files = SourceFiles::read_startup(&config, &asset_sourcers);
 
     let mut assets = Assets::new();
-
-    for (source_ref, _) in source_files.files.iter() {
+    let source_files = SourceFilesMap::read_startup(&config, &asset_sourcers);
+    for (source_ref, _) in source_files.0.iter() {
         for asset_sourcer in asset_sourcers.iter() {
             if !asset_sourcer.can_potentially_handle(source_ref) {
                 continue;
@@ -87,6 +86,9 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+
+    // TODO: Start working with the file watcher channel
+    let source_files = SourceFiles::new(source_files);
 
     println!("Hello, world!");
 

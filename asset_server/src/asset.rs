@@ -45,7 +45,7 @@ pub enum AssetType {
 /// Loaded asset data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AssetData {
-    Shader(),
+    Shader(Vec<u8>),
     Model(),
 }
 

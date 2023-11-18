@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum FileTimestamp {
     /// Remember that filesystem timestamps are not reliable.
     /// For example, if you copy a file, the timestamp will be the same.
