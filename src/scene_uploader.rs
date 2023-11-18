@@ -283,7 +283,7 @@ pub fn setup(
                         metallic_factor: loaded_primitive.material.metallic_factor,
                         metallic_roughness_texture: metallic_roughness_texture.clone(),
                         emissivity: loaded_primitive.material.emissivity,
-                        descriptor_set: descriptor_set,
+                        descriptor_set,
                         descriptor_set_buffer: material_buffer,
                     })
                 })

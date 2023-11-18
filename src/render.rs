@@ -226,11 +226,9 @@ fn create_depth_buffer(context: Arc<Context>, extent: vk::Extent2D) -> ImageView
         Arc::new(Image::new(context.clone(), &create_info))
     };
 
-    let depth_buffer_imageview = ImageView::new_default(
+    ImageView::new_default(
         context.clone(),
         depth_buffer_image.clone(),
         ImageAspectFlags::DEPTH,
-    );
-
-    depth_buffer_imageview
+    )
 }

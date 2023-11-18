@@ -138,10 +138,16 @@ impl CatDemo {
         };
 
         let descriptor_pool = {
-            let pool_sizes = [vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 200,
-            }];
+            let pool_sizes = [
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::UNIFORM_BUFFER,
+                    descriptor_count: 200,
+                },
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 200,
+                },
+            ];
 
             let create_info = vk::DescriptorPoolCreateInfo::builder()
                 .max_sets(1000)

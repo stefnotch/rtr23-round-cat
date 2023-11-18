@@ -3,8 +3,8 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 use ash::{
     util::read_spv,
     vk::{
-        self, AccessFlags2, DependencyInfo, ImageLayout, ImageMemoryBarrier2,
-        ImageMemoryBarrier2KHR, ImageSubresourceRange, PipelineStageFlags2,
+        self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
+        PipelineStageFlags2,
     },
 };
 
