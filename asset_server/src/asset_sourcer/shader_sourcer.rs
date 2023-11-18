@@ -1,6 +1,10 @@
-use crate::{asset_sourcer::AssetRef, source_files::SourceFileRef};
+use crate::{
+    asset::{AssetDependency, AssetRef, AssetType},
+    file_change::FileTimestamp,
+    source_files::SourceFileRef,
+};
 
-use super::{Asset, AssetSourcer, AssetType, CreateAssetInfo};
+use super::{Asset, AssetSourcer, CreateAssetInfo};
 
 pub struct ShaderSourcer {}
 
@@ -20,7 +24,10 @@ impl AssetSourcer for ShaderSourcer {
                 name: import_request.asset_name_base,
                 asset_type: AssetType::Shader,
             },
-            import_request.file_ref.clone(),
+            AssetDependency {
+                file: import_request.file_ref.clone(),
+                timestamp: FileTimestamp::unknown(),
+            },
         );
 
         vec![imported_asset]

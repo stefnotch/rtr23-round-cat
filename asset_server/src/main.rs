@@ -1,24 +1,23 @@
+mod asset;
 mod asset_database;
-mod asset_file;
+mod asset_loader;
 mod asset_sourcer;
 mod assets_config;
+mod file_change;
 mod read_startup;
 mod source_files;
-use std::{collections::HashMap, fs, path::PathBuf, time::SystemTime};
+use std::{collections::HashMap, fs};
 
+use asset::{Asset, AssetRef};
 use asset_database::AssetDatabaseMigrated;
-use asset_sourcer::{Asset, AssetRef};
 use env_logger::Env;
-use serde::{Deserialize, Serialize};
-use source_files::SourceFileRef;
-use uuid::Uuid;
+use source_files::{SourceFileRef, SourceFiles};
 
 use crate::{
+    asset::AssetCache,
     asset_database::AssetDatabase,
     asset_sourcer::{AssetSourcer, CreateAssetInfo, ShaderSourcer},
     assets_config::AssetsConfig,
-    read_startup::read_startup,
-    source_files::SourceFiles,
 };
 
 struct Assets {
@@ -34,13 +33,11 @@ impl Assets {
     }
 
     fn add_asset(&mut self, asset: Asset) {
-        if let Some(asset_file_info) = &asset.cache_file_info {
-            for dependency in asset_file_info.dependencies.iter() {
-                self.asset_dependencies_inverse
-                    .entry(dependency.clone())
-                    .or_default()
-                    .push(asset.key.clone());
-            }
+        for dependency in asset.dependencies.iter() {
+            self.asset_dependencies_inverse
+                .entry(dependency.file.clone())
+                .or_default()
+                .push(asset.key.clone());
         }
         self.assets.insert(asset.key.clone(), asset);
     }
@@ -60,10 +57,11 @@ async fn main() -> anyhow::Result<()> {
     let mut asset_database = load_asset_database(&config)?;
 
     // TODO: start the file watcher *here*
+    // TODO: Start working with the file watcher channel
 
     // Update the source files in the asset caching database
     let asset_sourcers: Vec<Box<dyn AssetSourcer>> = vec![Box::new(ShaderSourcer {})];
-    let source_files = read_startup(&config, &asset_sourcers);
+    let source_files = SourceFiles::read_startup(&config, &asset_sourcers);
 
     let mut assets = Assets::new();
 
@@ -75,10 +73,16 @@ async fn main() -> anyhow::Result<()> {
             for mut asset in
                 asset_sourcer.create(CreateAssetInfo::from_source_file(source_ref.clone()))
             {
-                asset.cache_file_info = asset_database
-                    .get_asset_file_info(asset.get_key())
+                if let Some(asset_cache_file) = asset_database
+                    .get_asset_cache_file(&asset.key)
                     .ok()
-                    .flatten();
+                    .flatten()
+                {
+                    asset.main_file.timestamp = asset_cache_file.main_file.timestamp;
+                    assert!(asset.main_file.file == asset_cache_file.main_file.file);
+                    asset.dependencies = asset_cache_file.dependencies;
+                    asset.cache = AssetCache::File(asset_cache_file.id);
+                }
                 assets.add_asset(asset);
             }
         }

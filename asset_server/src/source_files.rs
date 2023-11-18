@@ -1,7 +1,12 @@
-use std::{collections::HashMap, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
+
+use crate::file_change::FileTimestamp;
 
 /// Relative to the asset folder root.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
@@ -16,25 +21,18 @@ impl SourceFileRef {
     }
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct SourceFiles {
-    pub files: HashMap<SourceFileRef, SourceFileData>,
-    // TODO: Changed file queue or something
+    pub files: Arc<Mutex<im::HashMap<SourceFileRef, SourceFileData>>>,
+    // TODO: Changed file channel https://docs.rs/crossbeam/0.8.2/crossbeam/channel/index.html
 }
 impl SourceFiles {
-    pub fn new() -> Self {
+    pub fn new(files: HashMap<SourceFileRef, SourceFileData>) -> Self {
         Self {
-            files: Default::default(),
+            files: Arc::new(Mutex::new(im::HashMap::from(files))),
         }
     }
 }
-impl Default for SourceFiles {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct SourceFileData {
-    pub last_changed: Option<SystemTime>,
+    pub timestamp: FileTimestamp,
 }

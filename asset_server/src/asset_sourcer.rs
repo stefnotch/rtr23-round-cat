@@ -6,7 +6,7 @@ use std::{path::Path, sync::Arc};
 
 use uuid::Uuid;
 
-use crate::{asset_file::AssetFileInfo, source_files::SourceFileRef};
+use crate::{asset::Asset, source_files::SourceFileRef};
 
 pub trait AssetSourcer {
     /// Rough filtering for files.
@@ -33,47 +33,4 @@ impl CreateAssetInfo {
             asset_name_base,
         }
     }
-}
-
-/// A reference to an asset.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
-pub struct AssetRef {
-    pub name: Vec<String>,
-    pub asset_type: AssetType,
-}
-/// A lazily loaded asset.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Asset {
-    pub key: AssetRef,
-    pub main_file: SourceFileRef,
-
-    pub cache_file_info: Option<AssetFileInfo>,
-    pub data: Option<Arc<AssetData>>,
-}
-
-impl Asset {
-    pub fn new(key: AssetRef, main_file: SourceFileRef) -> Self {
-        Self {
-            key,
-            main_file,
-            cache_file_info: None,
-            data: None,
-        }
-    }
-
-    pub fn get_key(&self) -> &AssetRef {
-        &self.key
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
-pub enum AssetType {
-    Shader,
-    Model,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AssetData {
-    Shader(),
-    Model(),
 }

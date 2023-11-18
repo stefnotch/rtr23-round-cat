@@ -1,10 +1,11 @@
 use std::{collections::HashMap, io};
 
 use redb::{Database, ReadableTable, TableDefinition};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
-    asset_file::AssetFileInfo,
-    asset_sourcer::{Asset, AssetRef},
+    asset::{AssetDependency, AssetRef},
     source_files::{SourceFileRef, SourceFiles},
 };
 
@@ -54,13 +55,13 @@ impl<State> AssetDatabase<State> {
 const ASSET_FILE_INFO_TABLE: TableDefinition<&[u8], Vec<u8>> =
     TableDefinition::new("asset_file_info");
 impl AssetDatabase<AssetDatabaseMigrated> {
-    pub fn get_asset_file_info(&self, key: &AssetRef) -> anyhow::Result<Option<AssetFileInfo>> {
+    pub fn get_asset_cache_file(&self, key: &AssetRef) -> anyhow::Result<Option<AssetCacheFile>> {
         let transaction = self.db.begin_read()?;
 
         let asset_file_info_tree = transaction.open_table(ASSET_FILE_INFO_TABLE)?;
         let binary_key = bincode::serialize(key).unwrap();
         let asset_file_info = match asset_file_info_tree.get(&binary_key[..])? {
-            Some(data) => bincode::deserialize::<Option<AssetFileInfo>>(&data.value()),
+            Some(data) => bincode::deserialize::<Option<AssetCacheFile>>(&data.value()),
             None => return Ok(None),
         };
 
@@ -72,4 +73,19 @@ impl AssetDatabase<AssetDatabaseMigrated> {
             }
         }
     }
+}
+
+/// A generated asset file
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AssetCacheFile {
+    pub main_file: AssetDependency,
+
+    /// Can also reference currently nonexistent files.
+    pub dependencies: Vec<AssetDependency>,
+
+    // could also be a generational index?
+    // or a hash of the file?
+    // or we could store this in a meta file next to the asset?
+    // well, I have no special requirements, so this is good
+    pub id: Uuid,
 }
