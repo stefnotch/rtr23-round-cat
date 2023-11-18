@@ -12,7 +12,7 @@ pub struct AssetsConfig {
 
 impl AssetsConfig {
     pub fn get_asset_cache_db_path(&self) -> PathBuf {
-        self.target.join(&"asset_cache.redb")
+        self.target.join("asset_cache.redb")
     }
 
     pub fn get_source_file_ref(&self, path: &Path) -> SourceFileRef {

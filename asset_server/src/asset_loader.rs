@@ -1,17 +1,15 @@
 mod shader_loader;
 
 pub use shader_loader::*;
-use std::{ops::Deref, path::Path, process::Command, sync::Arc};
 
-use anyhow::bail;
-use uuid::Uuid;
+
+
+
 
 use crate::{
-    asset::{Asset, AssetDependency},
+    asset::{Asset},
     asset_cache::AssetCompilationFile,
-    asset_database::{AssetDatabase, AssetDatabaseMigrated},
     assets_config::AssetsConfig,
-    file_change::FileTimestamp,
     source_files::SourceFiles,
 };
 

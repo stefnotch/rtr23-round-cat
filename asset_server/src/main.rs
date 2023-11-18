@@ -87,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     fs::create_dir_all(&config.target)?;
-    let mut asset_database = load_asset_database(&config)?;
+    let asset_database = load_asset_database(&config)?;
 
     // TODO: start the file watcher *here*
 
@@ -117,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // TODO: Start working with the file watcher channel
-    let source_files = SourceFiles::new(source_files);
+    let _source_files = SourceFiles::new(source_files);
 
     println!("Hello, world!");
 

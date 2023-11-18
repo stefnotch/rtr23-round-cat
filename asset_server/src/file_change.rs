@@ -1,9 +1,11 @@
-use std::time::SystemTime;
+use std::{
+    hash::{Hash, Hasher},
+    time::SystemTime,
+};
 
 use serde::{Deserialize, Serialize};
 
-// The default Hash implementation still works, since we still uphold [the important property](https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq).
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum FileTimestamp {
     /// Remember that filesystem timestamps are not reliable.
     /// For example, if you copy a file, the timestamp will be the same.
@@ -38,3 +40,13 @@ impl PartialEq for FileTimestamp {
 }
 
 impl Eq for FileTimestamp {}
+
+// Keeps Clippy happy and upholds the https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq property
+impl Hash for FileTimestamp {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Timestamp(timestamp) => timestamp.hash(state),
+            Self::Unknown => state.write_u8(0),
+        }
+    }
+}

@@ -6,7 +6,6 @@ use uuid::Uuid;
 use crate::{
     asset::{Asset, AssetDependency},
     asset_cache::AssetCompilationFile,
-    asset_database::{AssetDatabase, AssetDatabaseMigrated},
     asset_loader::FileDropper,
     assets_config::AssetsConfig,
     source_files::SourceFiles,
@@ -58,8 +57,8 @@ impl AssetLoader for ShaderLoader {
             .strip_prefix("shader:")
             .ok_or_else(|| anyhow::format_err!("Invalid dependency file for {:?}", asset.key))?
             .trim()
-            .split(" ")
-            .map(|path| config.get_source_file_ref(&Path::new(path)));
+            .split(' ')
+            .map(|path| config.get_source_file_ref(Path::new(path)));
 
         let mut asset_dependencies = HashSet::new();
         for dependency in dependency_paths {

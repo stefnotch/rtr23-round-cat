@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicU64, Arc, LockResult, Mutex, MutexGuard},
+    sync::{atomic::AtomicU64, Arc, Mutex},
 };
 
 use relative_path::RelativePathBuf;
@@ -72,7 +72,7 @@ impl SourceFiles {
         file: &SourceFileRef,
     ) -> Result<FileTimestamp, SnapshotReadError> {
         let files = self.inner.files.lock().unwrap();
-        let file = files.get(file).ok_or_else(|| SnapshotReadError::NotFound)?;
+        let file = files.get(file).ok_or(SnapshotReadError::NotFound)?;
         if file.snapshot_version <= lock.0 {
             Ok(file.timestamp)
         } else {
