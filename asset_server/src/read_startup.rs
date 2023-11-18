@@ -4,13 +4,13 @@ use walkdir::WalkDir;
 
 use crate::{
     asset_sourcer::AssetSourcer, assets_config::AssetsConfig, file_change::FileTimestamp,
-    source_files::SourceFilesMap,
+    source_files::SourceFilesMap, MyAssetTypes,
 };
 
 impl SourceFilesMap {
     pub fn read_startup(
         config: &AssetsConfig,
-        asset_sourcers: &[Box<dyn AssetSourcer>],
+        asset_sourcers: &[Box<dyn AssetSourcer<MyAssetTypes>>],
     ) -> SourceFilesMap {
         let mut source_files = HashMap::new();
         for entry in WalkDir::new(&config.source)

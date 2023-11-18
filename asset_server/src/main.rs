@@ -1,4 +1,5 @@
 mod asset;
+mod asset_cache;
 mod asset_database;
 mod asset_loader;
 mod asset_sourcer;
@@ -8,21 +9,51 @@ mod read_startup;
 mod source_files;
 use std::{collections::HashMap, fs};
 
-use asset::{Asset, AssetRef};
+use asset::{Asset, AssetDependency, AssetRef, AssetTypes};
+use asset_cache::AssetCompilationFile;
 use asset_database::AssetDatabaseMigrated;
+use asset_loader::ShaderLoader;
 use env_logger::Env;
 use source_files::{SourceFileRef, SourceFiles};
 
 use crate::{
-    asset::AssetCache,
     asset_database::AssetDatabase,
     asset_sourcer::{AssetSourcer, CreateAssetInfo, ShaderSourcer},
     assets_config::AssetsConfig,
     source_files::SourceFilesMap,
 };
 
+pub enum MyAssetTypes {
+    Shader(Asset<ShaderLoader>),
+    // Model(Asset<ModelLoader>),
+}
+impl AssetTypes for MyAssetTypes {
+    fn get_key(&self) -> &AssetRef {
+        match self {
+            MyAssetTypes::Shader(asset) => asset.get_key(),
+            // MyAssetTypes::Model(asset) => asset.get_key(),
+        }
+    }
+}
+
+impl MyAssetTypes {
+    fn dependencies(&self) -> impl Iterator<Item = &AssetDependency> {
+        match self {
+            MyAssetTypes::Shader(asset) => asset.dependencies.iter(),
+            // MyAssetTypes::Model(asset) => asset.dependencies(),
+        }
+    }
+
+    fn populate_from_cache_file(&mut self, asset_cache_file: AssetCompilationFile) {
+        match self {
+            MyAssetTypes::Shader(asset) => asset.populate_from_cache_file(asset_cache_file),
+            // MyAssetTypes::Model(asset) => asset.populate_from_cache_file(asset_cache_file),
+        }
+    }
+}
+
 struct Assets {
-    assets: HashMap<AssetRef, Asset>,
+    assets: HashMap<AssetRef, MyAssetTypes>,
     asset_dependencies_inverse: HashMap<SourceFileRef, Vec<AssetRef>>,
 }
 impl Assets {
@@ -33,14 +64,15 @@ impl Assets {
         }
     }
 
-    fn add_asset(&mut self, asset: Asset) {
-        for dependency in asset.dependencies.iter() {
+    fn add_asset(&mut self, asset: MyAssetTypes) {
+        let key = asset.get_key().clone();
+        for dependency in asset.dependencies() {
             self.asset_dependencies_inverse
                 .entry(dependency.file.clone())
                 .or_default()
-                .push(asset.key.clone());
+                .push(key.clone());
         }
-        self.assets.insert(asset.key.clone(), asset);
+        self.assets.insert(key.clone(), asset);
     }
 }
 
@@ -60,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
     // TODO: start the file watcher *here*
 
     // Read the source files and create the assets
-    let asset_sourcers: Vec<Box<dyn AssetSourcer>> = vec![Box::new(ShaderSourcer {})];
+    let asset_sourcers: Vec<Box<dyn AssetSourcer<MyAssetTypes>>> = vec![Box::new(ShaderSourcer {})];
 
     let mut assets = Assets::new();
     let source_files = SourceFilesMap::read_startup(&config, &asset_sourcers);
@@ -73,14 +105,11 @@ async fn main() -> anyhow::Result<()> {
                 asset_sourcer.create(CreateAssetInfo::from_source_file(source_ref.clone()))
             {
                 if let Some(asset_cache_file) = asset_database
-                    .get_asset_cache_file(&asset.key)
+                    .get_asset_compilation_file(asset.get_key())
                     .ok()
                     .flatten()
                 {
-                    asset.main_file.timestamp = asset_cache_file.main_file.timestamp;
-                    assert!(asset.main_file.file == asset_cache_file.main_file.file);
-                    asset.dependencies = asset_cache_file.dependencies;
-                    asset.cache = AssetCache::File(asset_cache_file.id);
+                    asset.populate_from_cache_file(asset_cache_file);
                 }
                 assets.add_asset(asset);
             }

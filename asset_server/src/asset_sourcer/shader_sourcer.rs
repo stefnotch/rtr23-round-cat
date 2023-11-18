@@ -2,13 +2,14 @@ use crate::{
     asset::{AssetDependency, AssetRef, AssetType},
     file_change::FileTimestamp,
     source_files::SourceFileRef,
+    MyAssetTypes,
 };
 
 use super::{Asset, AssetSourcer, CreateAssetInfo};
 
 pub struct ShaderSourcer {}
 
-impl AssetSourcer for ShaderSourcer {
+impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
     fn can_potentially_handle(&self, path: &SourceFileRef) -> bool {
         match path.get_path().extension() {
             Some(extension) => extension == "glsl" || extension == "frag" || extension == "vert",
@@ -16,7 +17,7 @@ impl AssetSourcer for ShaderSourcer {
         }
     }
 
-    fn create(&self, import_request: CreateAssetInfo) -> Vec<Asset> {
+    fn create(&self, import_request: CreateAssetInfo) -> Vec<MyAssetTypes> {
         // We simply assume that it's a valid shader.
         // Compilation is done later, on-demand.
         let imported_asset = Asset::new(
@@ -30,6 +31,6 @@ impl AssetSourcer for ShaderSourcer {
             },
         );
 
-        vec![imported_asset]
+        vec![MyAssetTypes::Shader(imported_asset)]
     }
 }

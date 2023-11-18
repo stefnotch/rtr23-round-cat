@@ -8,12 +8,12 @@ use uuid::Uuid;
 
 use crate::{asset::Asset, source_files::SourceFileRef};
 
-pub trait AssetSourcer {
+pub trait AssetSourcer<AssetTypes> {
     /// Rough filtering for files.
     /// Concrete checks are done later.
     fn can_potentially_handle(&self, path: &SourceFileRef) -> bool;
 
-    fn create(&self, create_info: CreateAssetInfo) -> Vec<Asset>;
+    fn create(&self, create_info: CreateAssetInfo) -> Vec<AssetTypes>;
 }
 
 pub struct CreateAssetInfo {

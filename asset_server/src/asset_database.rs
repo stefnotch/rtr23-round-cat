@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     asset::{AssetDependency, AssetRef},
+    asset_cache::AssetCompilationFile,
     source_files::{SourceFileRef, SourceFiles},
 };
 
@@ -55,13 +56,16 @@ impl<State> AssetDatabase<State> {
 const ASSET_FILE_INFO_TABLE: TableDefinition<&[u8], Vec<u8>> =
     TableDefinition::new("asset_file_info");
 impl AssetDatabase<AssetDatabaseMigrated> {
-    pub fn get_asset_cache_file(&self, key: &AssetRef) -> anyhow::Result<Option<AssetCacheFile>> {
+    pub fn get_asset_compilation_file(
+        &self,
+        key: &AssetRef,
+    ) -> anyhow::Result<Option<AssetCompilationFile>> {
         let transaction = self.db.begin_read()?;
 
         let asset_file_info_tree = transaction.open_table(ASSET_FILE_INFO_TABLE)?;
         let binary_key = bincode::serialize(key).unwrap();
         let asset_file_info = match asset_file_info_tree.get(&binary_key[..])? {
-            Some(data) => bincode::deserialize::<Option<AssetCacheFile>>(&data.value()),
+            Some(data) => bincode::deserialize::<Option<AssetCompilationFile>>(&data.value()),
             None => return Ok(None),
         };
 
@@ -69,23 +73,26 @@ impl AssetDatabase<AssetDatabaseMigrated> {
             Ok(asset_file_info) => Ok(asset_file_info),
             Err(err) => {
                 log::error!("Failed to deserialize asset file info: {:?}", err);
-                Ok(None)
+                Err(err)?
             }
         }
     }
-}
 
-/// A generated asset file
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AssetCacheFile {
-    pub main_file: AssetDependency,
+    pub fn set_asset_compilation_file(
+        &self,
+        key: &AssetRef,
+        compilation_file: AssetCompilationFile,
+    ) -> anyhow::Result<()> {
+        let binary_key = bincode::serialize(key)?;
+        let binary_value = bincode::serialize(&compilation_file)?;
 
-    /// Can also reference currently nonexistent files.
-    pub dependencies: Vec<AssetDependency>,
+        let transaction = self.db.begin_write()?;
+        {
+            let mut asset_file_info_tree = transaction.open_table(ASSET_FILE_INFO_TABLE)?;
+            asset_file_info_tree.insert(&binary_key[..], binary_value)?;
+        }
+        transaction.commit()?;
 
-    // could also be a generational index?
-    // or a hash of the file?
-    // or we could store this in a meta file next to the asset?
-    // well, I have no special requirements, so this is good
-    pub id: Uuid,
+        Ok(())
+    }
 }

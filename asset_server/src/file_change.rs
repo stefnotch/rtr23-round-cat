@@ -2,7 +2,8 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+// The default Hash implementation still works, since we still uphold [the important property](https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq).
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash)]
 pub enum FileTimestamp {
     /// Remember that filesystem timestamps are not reliable.
     /// For example, if you copy a file, the timestamp will be the same.
