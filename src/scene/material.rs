@@ -10,6 +10,7 @@ pub struct Material {
     pub normal_texture: Texture,
     pub roughness_factor: f32,
     pub metallic_factor: f32,
+    pub metallic_roughness_texture: Texture,
     pub emissivity: Vec3,
 
     pub descriptor_set: DescriptorSet,

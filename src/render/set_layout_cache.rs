@@ -64,6 +64,12 @@ impl DescriptorSetLayoutCache {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                     .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(3)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
             ];
 
             let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);

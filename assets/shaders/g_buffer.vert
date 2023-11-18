@@ -18,6 +18,7 @@ struct DirectionalLight {
 layout(set = 0, binding = 0) uniform Camera {
     mat4 view;
     mat4 proj;
+    vec3 position;
 } camera;
 
 layout(push_constant) uniform Entity {
@@ -35,7 +36,7 @@ void main() {
 
     gl_Position = camera.proj * camera.view * worldPos;
 
-    v_position = position;
+    v_position = worldPos.xyz;
     v_normal = n;
     v_uv = uv;
     v_tangent = vec4(t, tangent.w);

@@ -9,6 +9,7 @@ pub struct LoadedMaterial {
     pub normal_texture: Option<LoadedTexture>,
     pub roughness_factor: f32,
     pub metallic_factor: f32,
+    pub metallic_roughness_texture: Option<LoadedTexture>,
     pub emissivity: Vec3,
 }
 
@@ -19,6 +20,7 @@ impl LoadedMaterial {
             base_color: Vec3::new(0.8, 0.8, 0.0),
             base_color_texture: None,
             normal_texture: None,
+            metallic_roughness_texture: None,
             roughness_factor: 0.0,
             metallic_factor: 0.0,
             emissivity: Vec3::zero(),

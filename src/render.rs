@@ -160,6 +160,7 @@ impl MainRenderer {
             command_buffer,
             self.geometry_pass.gbuffer(),
             &self.scene_descriptor_set,
+            &self.camera_descriptor_set,
             swapchain,
             swapchain_index,
             viewport,
@@ -176,12 +177,14 @@ impl MainRenderer {
                     z: 0.0,
                 },
                 color: Vec3::new(1.0, 1.0, 1.0),
+                intensity: 3.0,
             },
         };
 
         let camera = shader_types::Camera {
             view: camera.view_matrix(),
             proj: camera.projection_matrix(),
+            position: camera.position,
         };
 
         self.scene_descriptor_set
