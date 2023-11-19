@@ -1,17 +1,13 @@
 mod shader_sourcer;
 
-
 pub use shader_sourcer::*;
-
-
-
 
 use crate::{asset::Asset, source_files::SourceFileRef};
 
 pub trait AssetSourcer<AssetTypes> {
-    /// Rough filtering for files.
-    /// Concrete checks are done later.
-    fn can_potentially_handle(&self, path: &SourceFileRef) -> bool;
+    /// Filters out files that are not relevant for this sourcer.
+    /// e.g. A gltf loader would want to read .gltf, .glb and image files.
+    fn might_read(&self, path: &SourceFileRef) -> bool;
 
     fn create(&self, create_info: CreateAssetInfo) -> Vec<AssetTypes>;
 }

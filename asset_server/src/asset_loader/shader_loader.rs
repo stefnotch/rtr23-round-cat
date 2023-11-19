@@ -1,12 +1,16 @@
-use std::{collections::HashSet, path::Path, process::Command};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::bail;
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetDependency},
+    asset::{Asset, AssetDependency, Shader},
     asset_cache::AssetCompilationFile,
-    asset_loader::FileDropper,
+    asset_loader::TempFile,
     assets_config::AssetsConfig,
     source_files::SourceFiles,
 };
@@ -15,23 +19,28 @@ use super::{AssetCompileResult, AssetLoader};
 
 pub struct ShaderLoader {}
 
+impl ShaderLoader {
+    fn get_output_path(id: &Uuid, config: &AssetsConfig) -> PathBuf {
+        config.target.join(id.to_string()).with_extension("spv")
+    }
+}
+
 impl AssetLoader for ShaderLoader {
-    type AssetData = Vec<u8>;
+    type AssetData = Shader;
 
     fn compile_asset(
         &self,
-        asset: &Asset<Self>,
+        asset: &Asset<Self::AssetData>,
         config: &AssetsConfig,
         source_files: &SourceFiles,
-    ) -> anyhow::Result<AssetCompileResult<Self>> {
+    ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
         let snapshot_lock = source_files.take_snapshot();
         log::info!("Loading asset {:?}", asset.key);
 
         let id = Uuid::new_v4();
         let input_path = asset.main_file_path(config);
-        let output_name = id.to_string();
-        let output_path = FileDropper::new(config.target.join(&output_name).with_extension("spv"));
-        let output_d_path = FileDropper::new(config.target.join(&output_name).with_extension("d"));
+        let output_path = TempFile::new(ShaderLoader::get_output_path(&id, config));
+        let output_d_path = TempFile::new(output_path.path().with_extension("spv.d"));
 
         let shader_compile_result = Command::new("glslc")
             .arg("-c") // Compile the shader
@@ -83,5 +92,15 @@ impl AssetLoader for ShaderLoader {
             },
             data: None,
         })
+    }
+
+    fn load_asset(
+        &self,
+        compilation_result: &AssetCompilationFile,
+        config: &AssetsConfig,
+    ) -> anyhow::Result<Self::AssetData> {
+        let output_path = ShaderLoader::get_output_path(&compilation_result.id, config);
+        let data = std::fs::read(output_path)?;
+        Ok(Shader { data })
     }
 }

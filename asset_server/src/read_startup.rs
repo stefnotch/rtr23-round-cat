@@ -22,10 +22,7 @@ impl SourceFilesMap {
             }
 
             let path = config.get_source_file_ref(entry.path());
-            if !asset_sourcers
-                .iter()
-                .any(|v| v.can_potentially_handle(&path))
-            {
+            if !asset_sourcers.iter().any(|v| v.might_read(&path)) {
                 continue;
             }
 

@@ -1,13 +1,6 @@
-
-
 use redb::{Database, ReadableTable, TableDefinition};
 
-
-
-use crate::{
-    asset::{AssetRef},
-    asset_cache::AssetCompilationFile,
-};
+use crate::{asset::AssetRef, asset_cache::AssetCompilationFile};
 
 pub struct AssetDatabase<State> {
     db: Database,
@@ -80,7 +73,7 @@ impl AssetDatabase<AssetDatabaseMigrated> {
     pub fn set_asset_compilation_file(
         &self,
         key: &AssetRef,
-        compilation_file: AssetCompilationFile,
+        compilation_file: &AssetCompilationFile,
     ) -> anyhow::Result<()> {
         let binary_key = bincode::serialize(key)?;
         let binary_value = bincode::serialize(&compilation_file)?;

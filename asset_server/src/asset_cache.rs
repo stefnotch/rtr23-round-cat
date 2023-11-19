@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     asset::{Asset, AssetDependency},
-    asset_loader::AssetLoader,
+    asset_loader::AssetData,
 };
 
 /// References a generated asset file
@@ -24,7 +24,7 @@ pub struct AssetCompilationFile {
 }
 
 impl AssetCompilationFile {
-    pub fn is_outdated<Loader: AssetLoader>(&self, asset: &Asset<Loader>) -> bool {
+    pub fn is_outdated<T: AssetData>(&self, asset: &Asset<T>) -> bool {
         self.main_file.timestamp != asset.main_file.timestamp
             || self.dependencies != asset.dependencies
     }

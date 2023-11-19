@@ -9,17 +9,24 @@ use super::{Asset, AssetSourcer, CreateAssetInfo};
 
 pub struct ShaderSourcer {}
 
-impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
-    fn can_potentially_handle(&self, path: &SourceFileRef) -> bool {
+impl ShaderSourcer {
+    fn is_shader_file(path: &SourceFileRef) -> bool {
         match path.get_path().extension() {
             Some(extension) => extension == "glsl" || extension == "frag" || extension == "vert",
             None => false,
         }
     }
+}
+
+impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
+    fn might_read(&self, path: &SourceFileRef) -> bool {
+        Self::is_shader_file(path)
+    }
 
     fn create(&self, import_request: CreateAssetInfo) -> Vec<MyAssetTypes> {
-        // We simply assume that it's a valid shader.
-        // Compilation is done later, on-demand.
+        if !Self::is_shader_file(&import_request.file_ref) {
+            return vec![];
+        }
         let imported_asset = Asset::new(
             AssetRef {
                 name: import_request.asset_name_base,
