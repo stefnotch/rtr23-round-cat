@@ -3,7 +3,7 @@ mod shader_loader;
 pub use shader_loader::*;
 
 use crate::{
-    asset::Asset, asset_cache::AssetCompilationFile, assets_config::AssetsConfig,
+    asset::Asset, asset_compilation::AssetCompilationFile, assets_config::AssetsConfig,
     source_files::SourceFiles,
 };
 

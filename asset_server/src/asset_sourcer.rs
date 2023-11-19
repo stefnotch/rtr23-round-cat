@@ -2,14 +2,22 @@ mod shader_sourcer;
 
 pub use shader_sourcer::*;
 
-use crate::{asset::Asset, source_files::SourceFileRef};
+use crate::{
+    asset::Asset,
+    asset_database::{AssetDatabase, AssetDatabaseMigrated},
+    source_files::SourceFileRef,
+};
 
 pub trait AssetSourcer<AssetTypes> {
     /// Filters out files that are not relevant for this sourcer.
     /// e.g. A gltf loader would want to read .gltf, .glb and image files.
     fn might_read(&self, path: &SourceFileRef) -> bool;
 
-    fn create(&self, create_info: CreateAssetInfo) -> Vec<AssetTypes>;
+    fn create(
+        &self,
+        create_info: CreateAssetInfo,
+        asset_database: &AssetDatabase<AssetDatabaseMigrated>,
+    ) -> Vec<AssetTypes>;
 }
 
 pub struct CreateAssetInfo {

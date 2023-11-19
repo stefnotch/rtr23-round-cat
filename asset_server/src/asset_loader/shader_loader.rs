@@ -1,15 +1,11 @@
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{collections::HashSet, path::PathBuf, process::Command};
 
 use anyhow::bail;
 use uuid::Uuid;
 
 use crate::{
     asset::{Asset, AssetDependency, Shader},
-    asset_cache::AssetCompilationFile,
+    asset_compilation::AssetCompilationFile,
     asset_loader::TempFile,
     assets_config::AssetsConfig,
     source_files::{SourceFileRef, SourceFiles},

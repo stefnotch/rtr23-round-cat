@@ -1,5 +1,5 @@
 mod asset;
-mod asset_cache;
+mod asset_compilation;
 mod asset_database;
 mod asset_loader;
 mod asset_sourcer;
@@ -10,8 +10,7 @@ mod read_startup;
 mod source_files;
 use std::{collections::HashMap, fs, sync::Arc};
 
-use asset::{Asset, AssetDependency, AssetRef, Shader};
-use asset_cache::AssetCompilationFile;
+use asset::{Asset, AssetRef, Shader};
 use asset_database::AssetDatabaseMigrated;
 use asset_loader::{AssetData, ShaderLoader};
 use env_logger::Env;
@@ -28,20 +27,6 @@ use crate::{
 pub enum MyAssetTypes {
     Shader(Asset<Shader>),
     // Model(Asset<ModelLoader>),
-}
-impl MyAssetTypes {
-    fn get_key(&self) -> &AssetRef {
-        match self {
-            MyAssetTypes::Shader(asset) => asset.get_key(),
-            // MyAssetTypes::Model(asset) => asset.get_key(),
-        }
-    }
-    fn populate_from_cache_file(&mut self, asset_cache_file: AssetCompilationFile) {
-        match self {
-            MyAssetTypes::Shader(asset) => asset.populate_from_cache_file(asset_cache_file),
-            // MyAssetTypes::Model(asset) => asset.populate_from_cache_file(asset_cache_file),
-        }
-    }
 }
 
 struct Assets<T: AssetData> {
@@ -128,16 +113,10 @@ async fn main() -> anyhow::Result<()> {
             if !asset_sourcer.might_read(source_ref) {
                 continue;
             }
-            for mut asset in
-                asset_sourcer.create(CreateAssetInfo::from_source_file(source_ref.clone()))
-            {
-                if let Some(asset_cache_file) = asset_database
-                    .get_asset_compilation_file(asset.get_key())
-                    .ok()
-                    .flatten()
-                {
-                    asset.populate_from_cache_file(asset_cache_file);
-                }
+            for asset in asset_sourcer.create(
+                CreateAssetInfo::from_source_file(source_ref.clone()),
+                &asset_database,
+            ) {
                 match asset {
                     MyAssetTypes::Shader(asset) => shader_assets.add_asset(asset),
                     // MyAssetTypes::Model(asset) => model_assets.add_asset(asset),

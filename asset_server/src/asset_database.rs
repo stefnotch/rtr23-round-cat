@@ -1,6 +1,6 @@
 use redb::{Database, ReadableTable, TableDefinition};
 
-use crate::{asset::AssetRef, asset_cache::AssetCompilationFile};
+use crate::{asset::AssetRef, asset_compilation::AssetCompilationFile};
 
 pub struct AssetDatabase<State> {
     db: Database,

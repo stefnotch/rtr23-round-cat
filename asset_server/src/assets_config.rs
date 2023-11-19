@@ -1,8 +1,4 @@
-use std::path::{Path, PathBuf};
-
-use relative_path::PathExt;
-
-use crate::source_files::SourceFileRef;
+use std::path::PathBuf;
 
 pub struct AssetsConfig {
     pub version: u64,

@@ -11,7 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    asset_cache::AssetCompilationFile,
+    asset_compilation::AssetCompilationFile,
     asset_database::{AssetDatabase, AssetDatabaseMigrated},
     asset_loader::{AssetData, AssetLoader},
     assets_config::AssetsConfig,
@@ -66,7 +66,11 @@ impl<Data: AssetData> Asset<Data> {
         &self.key
     }
 
-    pub fn populate_from_cache_file(&mut self, asset_cache_file: AssetCompilationFile) {
+    pub fn try_populate_from_cache_file(&mut self, asset_cache_file: Option<AssetCompilationFile>) {
+        let asset_cache_file = match asset_cache_file {
+            Some(asset_cache_file) => asset_cache_file,
+            None => return,
+        };
         self.main_file.timestamp = asset_cache_file.main_file.timestamp;
         assert!(self.main_file.file == asset_cache_file.main_file.file);
         self.dependencies = asset_cache_file.dependencies;
