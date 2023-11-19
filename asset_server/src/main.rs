@@ -1,92 +1,15 @@
-mod asset;
-mod asset_compilation;
-mod asset_database;
-mod asset_loader;
-mod asset_sourcer;
-mod assets_config;
-mod file_change;
-mod json_schema;
-mod read_startup;
-mod source_files;
-use std::{collections::HashMap, fs, sync::Arc};
+use std::fs;
 
-use asset::{Asset, AssetRef, Shader};
-use asset_database::AssetDatabaseMigrated;
-use asset_loader::{AssetData, ShaderLoader};
-use env_logger::Env;
-use json_schema::AssetJsonSchema;
-use source_files::{SourceFileRef, SourceFiles};
-
-use crate::{
-    asset_database::AssetDatabase,
+use asset_server::{
+    asset::AssetRef,
+    asset_database::{AssetDatabase, AssetDatabaseMigrated},
+    asset_loader::ShaderLoader,
     asset_sourcer::{AssetSourcer, CreateAssetInfo, ShaderSourcer},
     assets_config::AssetsConfig,
-    source_files::SourceFilesMap,
+    source_files::{SourceFiles, SourceFilesMap},
+    Assets, MyAssetServer, MyAssetTypes,
 };
-
-pub enum MyAssetTypes {
-    Shader(Asset<Shader>),
-    // Model(Asset<ModelLoader>),
-}
-
-struct Assets<T: AssetData> {
-    assets: HashMap<AssetRef, Asset<T>>,
-    asset_dependencies_inverse: HashMap<SourceFileRef, Vec<AssetRef>>,
-}
-impl<T: AssetData> Assets<T> {
-    fn new() -> Self {
-        Self {
-            assets: HashMap::new(),
-            asset_dependencies_inverse: HashMap::new(),
-        }
-    }
-
-    fn add_asset(&mut self, asset: Asset<T>) {
-        for dependency in asset.dependencies.iter() {
-            self.asset_dependencies_inverse
-                .entry(dependency.file.clone())
-                .or_default()
-                .push(asset.key.clone());
-        }
-        self.assets.insert(asset.key.clone(), asset);
-    }
-}
-
-struct MyAssetServer {
-    config: AssetsConfig,
-    source_files: SourceFiles,
-    asset_database: AssetDatabase<AssetDatabaseMigrated>,
-
-    shader_loader: ShaderLoader,
-    shader_assets: Assets<Shader>,
-}
-
-impl MyAssetServer {
-    fn load_shader_asset(&mut self, request: AssetRef) -> anyhow::Result<Arc<Shader>> {
-        let asset = self
-            .shader_assets
-            .assets
-            .get_mut(&request)
-            .ok_or_else(|| anyhow::format_err!("Asset not found {:?}", request))?;
-
-        let asset_data = asset.load(
-            &self.shader_loader,
-            &mut self.asset_database,
-            &self.config,
-            &self.source_files,
-        )?;
-
-        Ok(asset_data)
-    }
-
-    fn write_schema_file(&self) -> anyhow::Result<()> {
-        let schema = AssetJsonSchema::create_schema(
-            self.shader_assets.assets.keys(), // .chain(self.model_assets.assets.keys()
-        );
-        std::fs::write(self.config.get_asset_schema_path(), schema)?;
-        Ok(())
-    }
-}
+use env_logger::Env;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

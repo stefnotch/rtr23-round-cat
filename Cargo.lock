@@ -138,6 +138,7 @@ name = "asset_client"
 version = "0.1.0"
 dependencies = [
  "asset_server",
+ "serde",
 ]
 
 [[package]]

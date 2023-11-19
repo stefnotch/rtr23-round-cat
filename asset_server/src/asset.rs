@@ -4,7 +4,6 @@ pub use shader::*;
 use std::{
     collections::HashSet,
     fmt::{Display, Formatter},
-    path::PathBuf,
     sync::Arc,
 };
 

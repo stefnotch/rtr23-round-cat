@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 asset_server = { path = "../asset_server" }
+serde = { version = "1.0" }
