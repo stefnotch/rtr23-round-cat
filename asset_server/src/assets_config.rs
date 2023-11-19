@@ -23,4 +23,8 @@ impl AssetsConfig {
             )
         }))
     }
+
+    pub fn get_asset_schema_path(&self) -> PathBuf {
+        self.target.join("schema.json")
+    }
 }

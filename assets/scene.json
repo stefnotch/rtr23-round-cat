@@ -1,0 +1,5 @@
+{
+  "$schema": "../target-assets/schema.json",
+  "gbuffer_frag_shader": "shaders/g_buffer.frag.shader",
+  "gbuffer_vert_shader": "shaders/g_buffer.vert.shader"
+}

@@ -20,7 +20,6 @@ impl CreateAssetInfo {
     pub fn from_source_file(file_ref: SourceFileRef) -> Self {
         let asset_name_base = file_ref
             .get_path()
-            .with_extension("")
             .components()
             .map(|v| v.as_str().into())
             .collect();

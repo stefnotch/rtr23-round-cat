@@ -146,6 +146,7 @@ dependencies = [
  "redb",
  "relative-path",
  "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "uuid",

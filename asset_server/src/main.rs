@@ -5,6 +5,7 @@ mod asset_loader;
 mod asset_sourcer;
 mod assets_config;
 mod file_change;
+mod json_schema;
 mod read_startup;
 mod source_files;
 use std::{collections::HashMap, fs, sync::Arc};
@@ -14,6 +15,7 @@ use asset_cache::AssetCompilationFile;
 use asset_database::AssetDatabaseMigrated;
 use asset_loader::{AssetData, ShaderLoader};
 use env_logger::Env;
+use json_schema::AssetJsonSchema;
 use source_files::{SourceFileRef, SourceFiles};
 
 use crate::{
@@ -91,6 +93,14 @@ impl AssetsServer {
 
         Ok(asset_data)
     }
+
+    fn write_schema_file(&self) -> anyhow::Result<()> {
+        let schema = AssetJsonSchema::create_schema(
+            self.shader_assets.assets.keys(), // .chain(self.model_assets.assets.keys()
+        );
+        std::fs::write(self.config.get_asset_schema_path(), schema)?;
+        Ok(())
+    }
 }
 
 #[tokio::main]
@@ -155,6 +165,8 @@ async fn main() -> anyhow::Result<()> {
         asset_type: AssetType::Shader,
     });
 
+    assets_server.write_schema_file()?;
+
     // TODO:
     // - File watcher (+ a changed asset map?)
     // - Error recovery (aka re-request the asset)
@@ -164,7 +176,10 @@ async fn main() -> anyhow::Result<()> {
     // - Add a scene.json file which references everything that we need. When our program starts up, it asks the asset server for the scene.json, and then proceeds to load everything that the scene.json references.
     // In release mode, everything that the scene.json references is pre-compiled and serialised to the disk. And then the released program loads those files from the disk instead of asking the asset server.
     //
+    // - Automatically cleaning up the target-assets folder
+    // - Gentle shutdown https://rust-cli.github.io/book/in-depth/signals.html
 
+    // TOOD: https://github.com/typst/comemo or https://github.com/Justice4Joffrey/depends-rs or https://github.com/salsa-rs/salsa
     Ok(())
 }
 

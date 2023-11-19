@@ -1,7 +1,12 @@
 mod shader;
 
 pub use shader::*;
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    fmt::{Display, Formatter},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -104,6 +109,15 @@ impl<Data: AssetData> Asset<Data> {
 pub enum AssetType {
     Shader,
     Model,
+}
+
+impl Display for AssetType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssetType::Shader => write!(f, "shader"),
+            AssetType::Model => write!(f, "model"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
