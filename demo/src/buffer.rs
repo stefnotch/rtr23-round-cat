@@ -22,7 +22,7 @@ impl<T> IntoSlice<T> for [T] {
 
 impl<T> IntoSlice<T> for Vec<T> {
     fn as_sliced(&self) -> &[T] {
-        &self
+        self
     }
 }
 

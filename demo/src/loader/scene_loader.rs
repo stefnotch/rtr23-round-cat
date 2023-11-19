@@ -169,12 +169,30 @@ impl AssetLoader {
 
             let roughness_factor = material_pbr.roughness_factor();
             let metallic_factor = material_pbr.metallic_factor();
+
+            let metallic_roughness_texture =
+                material_pbr
+                    .metallic_roughness_texture()
+                    .map(|metallic_roughness_texture| {
+                        let image = self.load_images(
+                            loading_data,
+                            metallic_roughness_texture.texture(),
+                            ColorSpace::Linear,
+                        );
+                        let sampler = self.load_sampler(
+                            loading_data,
+                            metallic_roughness_texture.texture().sampler(),
+                        );
+                        LoadedTexture { image, sampler }
+                    });
+
             let material = Arc::new(LoadedMaterial {
                 id,
                 base_color,
                 base_color_texture,
                 roughness_factor,
                 metallic_factor,
+                metallic_roughness_texture,
                 emissivity,
                 normal_texture,
             });
