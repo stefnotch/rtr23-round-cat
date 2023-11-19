@@ -15,6 +15,7 @@ crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", feature
 gltf = { version = "1.3.0", default-features = false, features = ["import", "utils", "names", "KHR_lights_punctual", "KHR_materials_emissive_strength"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
+asset_client = { path = "../asset_client" }
 
 # I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
 [target.'cfg(windows)'.dependencies]

@@ -15,15 +15,6 @@ impl AssetsConfig {
         self.target.join("asset_cache.redb")
     }
 
-    pub fn get_source_file_ref(&self, path: &Path) -> SourceFileRef {
-        SourceFileRef::new(path.relative_to(&self.source).unwrap_or_else(|error| {
-            panic!(
-                "Failed to get relative path for {:?} with base {:?}, because of {:?}",
-                path, &self.source, error
-            )
-        }))
-    }
-
     pub fn get_asset_schema_path(&self) -> PathBuf {
         self.target.join("schema.json")
     }

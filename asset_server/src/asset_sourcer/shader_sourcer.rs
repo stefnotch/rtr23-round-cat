@@ -1,5 +1,5 @@
 use crate::{
-    asset::{AssetDependency, AssetRef, AssetType},
+    asset::{AssetDependency, AssetRef},
     file_change::FileTimestamp,
     source_files::SourceFileRef,
     MyAssetTypes,
@@ -28,10 +28,7 @@ impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
             return vec![];
         }
         let imported_asset = Asset::new(
-            AssetRef {
-                name: import_request.asset_name_base,
-                asset_type: AssetType::Shader,
-            },
+            AssetRef::new(import_request.asset_name_base),
             AssetDependency {
                 file: import_request.file_ref.clone(),
                 timestamp: FileTimestamp::unknown(),

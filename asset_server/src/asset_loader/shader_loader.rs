@@ -12,7 +12,7 @@ use crate::{
     asset_cache::AssetCompilationFile,
     asset_loader::TempFile,
     assets_config::AssetsConfig,
-    source_files::SourceFiles,
+    source_files::{SourceFileRef, SourceFiles},
 };
 
 use super::{AssetCompileResult, AssetLoader};
@@ -38,7 +38,10 @@ impl AssetLoader for ShaderLoader {
         log::info!("Loading asset {:?}", asset.key);
 
         let id = Uuid::new_v4();
-        let input_path = asset.main_file_path(config);
+        let input_path = asset
+            .main_file_ref()
+            .get_path()
+            .to_path(source_files.base_path());
         let output_path = TempFile::new(ShaderLoader::get_output_path(&id, config));
         let output_d_path = TempFile::new(output_path.path().with_extension("spv.d"));
 
@@ -67,7 +70,7 @@ impl AssetLoader for ShaderLoader {
             .ok_or_else(|| anyhow::format_err!("Invalid dependency file for {:?}", asset.key))?
             .trim()
             .split(' ')
-            .map(|path| config.get_source_file_ref(Path::new(path)));
+            .map(|path| SourceFileRef::new(path, source_files.base_path()));
 
         let mut asset_dependencies = HashSet::new();
         for dependency in dependency_paths {

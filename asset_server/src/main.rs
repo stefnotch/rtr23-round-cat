@@ -10,7 +10,7 @@ mod read_startup;
 mod source_files;
 use std::{collections::HashMap, fs, sync::Arc};
 
-use asset::{Asset, AssetDependency, AssetRef, AssetType, Shader};
+use asset::{Asset, AssetDependency, AssetRef, Shader};
 use asset_cache::AssetCompilationFile;
 use asset_database::AssetDatabaseMigrated;
 use asset_loader::{AssetData, ShaderLoader};
@@ -67,7 +67,7 @@ impl<T: AssetData> Assets<T> {
     }
 }
 
-struct AssetsServer {
+struct MyAssetServer {
     config: AssetsConfig,
     source_files: SourceFiles,
     asset_database: AssetDatabase<AssetDatabaseMigrated>,
@@ -76,7 +76,7 @@ struct AssetsServer {
     shader_assets: Assets<Shader>,
 }
 
-impl AssetsServer {
+impl MyAssetServer {
     fn load_shader_asset(&mut self, request: AssetRef) -> anyhow::Result<Arc<Shader>> {
         let asset = self
             .shader_assets
@@ -123,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut shader_assets = Assets::new();
     let source_files = SourceFilesMap::read_startup(&config, &asset_sourcers);
-    for (source_ref, _) in source_files.0.iter() {
+    for (source_ref, _) in source_files.files.iter() {
         for asset_sourcer in asset_sourcers.iter() {
             if !asset_sourcer.might_read(source_ref) {
                 continue;
@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // TODO: Start working with the file watcher channel
-    let mut assets_server = AssetsServer {
+    let mut assets_server = MyAssetServer {
         config,
         source_files: SourceFiles::new(source_files),
         asset_database,
@@ -160,10 +160,8 @@ async fn main() -> anyhow::Result<()> {
         println!("{:?}", a.0);
     }
 
-    let test_shader = assets_server.load_shader_asset(AssetRef {
-        name: vec!["shaders".into(), "base".into()],
-        asset_type: AssetType::Shader,
-    });
+    let test_shader =
+        assets_server.load_shader_asset(AssetRef::new(vec!["shaders".into(), "base".into()]));
 
     assets_server.write_schema_file()?;
 

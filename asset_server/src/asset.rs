@@ -22,9 +22,20 @@ use crate::{
 /// A reference to an asset.
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct AssetRef {
-    pub name: Vec<String>,
-    pub asset_type: AssetType,
+    name: Vec<String>,
 }
+impl AssetRef {
+    pub fn new(name: Vec<String>) -> Self {
+        Self { name }
+    }
+}
+
+impl Display for AssetRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name.join("/"))
+    }
+}
+
 /// A lazily loaded asset.
 #[derive(Clone, Debug)]
 pub struct Asset<Data: AssetData> {
@@ -47,11 +58,8 @@ impl<Data: AssetData> Asset<Data> {
         }
     }
 
-    pub fn main_file_path(&self, config: &AssetsConfig) -> PathBuf {
-        self.main_file
-            .file
-            .get_path()
-            .to_path(config.source.clone())
+    pub fn main_file_ref(&self) -> &SourceFileRef {
+        &self.main_file.file
     }
 
     pub fn get_key(&self) -> &AssetRef {
@@ -101,21 +109,6 @@ impl<Data: AssetData> Asset<Data> {
             let data = loader.load_asset(&compile_result, config).map(Arc::new)?; // Potentially slow
             self.data = Some(data.clone());
             return Ok(data);
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
-pub enum AssetType {
-    Shader,
-    Model,
-}
-
-impl Display for AssetType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AssetType::Shader => write!(f, "shader"),
-            AssetType::Model => write!(f, "model"),
         }
     }
 }

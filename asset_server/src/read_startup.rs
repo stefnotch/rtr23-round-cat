@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use walkdir::WalkDir;
 
 use crate::{
-    asset_sourcer::AssetSourcer, assets_config::AssetsConfig, file_change::FileTimestamp,
-    source_files::SourceFilesMap, MyAssetTypes,
+    asset_sourcer::AssetSourcer,
+    assets_config::AssetsConfig,
+    file_change::FileTimestamp,
+    source_files::{SourceFileRef, SourceFilesMap},
+    MyAssetTypes,
 };
 
 impl SourceFilesMap {
@@ -21,7 +24,7 @@ impl SourceFilesMap {
                 continue;
             }
 
-            let path = config.get_source_file_ref(entry.path());
+            let path = SourceFileRef::new(entry.path(), &config.source);
             if !asset_sourcers.iter().any(|v| v.might_read(&path)) {
                 continue;
             }
@@ -38,6 +41,6 @@ impl SourceFilesMap {
             source_files.insert(path, timestamp);
         }
 
-        SourceFilesMap::new(source_files)
+        SourceFilesMap::new(config.source.clone(), source_files)
     }
 }

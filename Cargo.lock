@@ -134,6 +134,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "asset_client"
+version = "0.1.0"
+dependencies = [
+ "asset_server",
+]
+
+[[package]]
 name = "asset_server"
 version = "0.1.0"
 dependencies = [
@@ -457,6 +464,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "ash-window",
+ "asset_client",
  "crevice",
  "egui",
  "egui-winit-ash-integration",

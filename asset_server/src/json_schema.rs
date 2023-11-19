@@ -8,11 +8,8 @@ pub struct AssetJsonSchema;
 impl AssetJsonSchema {
     pub fn create_schema<'a>(asset_refs: impl Iterator<Item = &'a AssetRef>) -> String {
         let one_of_values: Vec<_> = asset_refs
-            .map(|asset_ref| {
-                let name = asset_ref.name.join("/");
-                let asset_type = asset_ref.asset_type.to_string();
-                let const_value = format!("{}.{}", name, asset_type);
-                OneOfValue { const_value }
+            .map(|asset_ref| OneOfValue {
+                const_value: asset_ref.to_string(),
             })
             .collect();
 
