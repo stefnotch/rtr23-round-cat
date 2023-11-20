@@ -78,28 +78,14 @@ impl AllAssets {
         &'a mut self,
         asset_ref: &AssetRef,
     ) -> Option<&'a mut Asset<T>> {
-        let assets = self
-            .all_assets
-            .get_mut(&T::id())
-            .expect("Asset type not registered")
-            .downcast_mut::<Assets<T>>()
-            .expect("Asset type mismatch");
-
-        assets.assets.get_mut(asset_ref)
+        self.get_typed_assets_mut().assets.get_mut(asset_ref)
     }
 
     pub fn get_asset<'a, T: AssetData + 'static>(
         &'a self,
         asset_ref: &AssetRef,
     ) -> Option<&'a Asset<T>> {
-        let assets = self
-            .all_assets
-            .get(&T::id())
-            .expect("Asset type not registered")
-            .downcast_ref::<Assets<T>>()
-            .expect("Asset type mismatch");
-
-        assets.assets.get(asset_ref)
+        self.get_typed_assets().assets.get(asset_ref)
     }
 
     pub fn load_asset<T: AssetData + 'static>(
@@ -122,14 +108,7 @@ impl AllAssets {
     }
 
     pub fn add_asset<T: AssetData + 'static>(&mut self, asset: Asset<T>) {
-        let assets = self
-            .all_assets
-            .get_mut(&T::id())
-            .expect("Asset type not registered")
-            .downcast_mut::<Assets<T>>()
-            .expect("Asset type mismatch");
-
-        assets.add_asset(asset);
+        self.get_typed_assets_mut().add_asset(asset);
     }
 }
 

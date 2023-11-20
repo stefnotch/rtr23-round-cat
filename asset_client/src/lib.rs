@@ -6,7 +6,6 @@ use std::sync::Mutex;
 pub use asset_common;
 use asset_common::{
     ipc::{get_ipc_name, ReadWriteLenPrefixed},
-    scene::Scene,
     AssetData, AssetHandle, AssetRef,
 };
 use interprocess::local_socket::LocalSocketStream;
