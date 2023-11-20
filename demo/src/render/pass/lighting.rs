@@ -3,8 +3,8 @@ use std::{ffi::CStr, io::Cursor, sync::Arc};
 use ash::{
     util::read_spv,
     vk::{
-        self, AccessFlags2, DependencyInfo, ImageLayout, ImageMemoryBarrier2,
-        ImageMemoryBarrier2KHR, ImageSubresourceRange, PipelineStageFlags2,
+        self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
+        PipelineStageFlags2,
     },
 };
 
@@ -12,8 +12,8 @@ use crate::{
     asset_loading::MainScene,
     context::Context,
     render::{
-        gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SceneDescriptorSet,
-        SwapchainIndex,
+        gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
+        SceneDescriptorSet, SwapchainIndex,
     },
     swapchain::SwapchainContainer,
 };
@@ -61,33 +61,16 @@ impl LightingPass {
         command_buffer: vk::CommandBuffer,
         gbuffer: &GBuffer,
         scene_descriptor_set: &SceneDescriptorSet,
+        camera_descriptor_set: &CameraDescriptorSet,
         swapchain: &SwapchainContainer,
         swapchain_index: SwapchainIndex,
         viewport: vk::Viewport,
     ) {
-        // VkImageMemoryBarrier2KHR imageMemoryBarrier = {
-        //     ...
-        //     .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-        //     .srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR,
-        //     .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR,
-        //     .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR,
-        //     .oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        //     .newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
-        //     /* .image and .subresourceRange should identify image subresource accessed */};
-
-        //   VkDependencyInfoKHR dependencyInfo = {
-        //       ...
-        //       1,                      // imageMemoryBarrierCount
-        //       &imageMemoryBarrier,    // pImageMemoryBarriers
-        //       ...
-        //   }
-
-        //   vkCmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
-
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
             gbuffer.position_buffer.clone(),
             gbuffer.albedo_buffer.clone(),
             gbuffer.normals_buffer.clone(),
+            gbuffer.metallic_roughness_buffer.clone(),
         ]
         .iter()
         .map(|image| vk::ImageMemoryBarrier2 {
@@ -160,6 +143,7 @@ impl LightingPass {
         let descriptor_set = [
             gbuffer.descriptor_set.inner,
             scene_descriptor_set.descriptor_set.inner,
+            camera_descriptor_set.descriptor_set.inner,
         ];
 
         unsafe {
@@ -305,7 +289,11 @@ fn create_pipeline(
         .logic_op(vk::LogicOp::CLEAR)
         .attachments(&color_blend_attachment_states);
 
-    let descriptor_set_layouts = [gbuffer.descriptor_set_layout, set_layout_cache.scene()];
+    let descriptor_set_layouts = [
+        gbuffer.descriptor_set_layout,
+        set_layout_cache.scene(),
+        set_layout_cache.camera(),
+    ];
 
     let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&descriptor_set_layouts)

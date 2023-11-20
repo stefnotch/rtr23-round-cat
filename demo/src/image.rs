@@ -29,7 +29,7 @@ impl Image {
         let mip_levels = create_info.mip_levels;
 
         let image =
-            unsafe { device.create_image(&create_info, None) }.expect("Could not create image");
+            unsafe { device.create_image(create_info, None) }.expect("Could not create image");
 
         let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
 

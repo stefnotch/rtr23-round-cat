@@ -14,6 +14,7 @@ pub struct GBuffer {
     pub position_buffer: Arc<ImageView>,
     pub albedo_buffer: Arc<ImageView>,
     pub normals_buffer: Arc<ImageView>,
+    pub metallic_roughness_buffer: Arc<ImageView>,
 
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
@@ -36,6 +37,7 @@ impl GBuffer {
     pub const POSITION_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     pub const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     pub const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+    pub const METALLIC_ROUGHNESS_FORMAT: vk::Format = vk::Format::R8G8_UNORM;
 
     pub fn new(
         context: Arc<Context>,
@@ -105,6 +107,27 @@ impl GBuffer {
             ImageAspectFlags::COLOR,
         ));
 
+        let metallic_roughness_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                },
+                format: GBuffer::METALLIC_ROUGHNESS_FORMAT,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let metallic_roughness_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            metallic_roughness_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
+        ));
+
         let descriptor_set_layout = {
             let bindings = [
                 vk::DescriptorSetLayoutBinding::builder()
@@ -121,6 +144,12 @@ impl GBuffer {
                     .build(),
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(2)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(3)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -176,6 +205,12 @@ impl GBuffer {
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     sampler.clone(),
                 ),
+                WriteDescriptorSet::image_view_sampler_with_layout(
+                    3,
+                    metallic_roughness_buffer_imageview.clone(),
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    sampler.clone(),
+                ),
             ];
 
             DescriptorSet::new(
@@ -190,6 +225,7 @@ impl GBuffer {
             position_buffer: position_buffer_imageview,
             albedo_buffer: albedo_buffer_imageview,
             normals_buffer: normals_buffer_imageview,
+            metallic_roughness_buffer: metallic_roughness_buffer_imageview,
             descriptor_set,
             sampler,
             descriptor_set_layout,
