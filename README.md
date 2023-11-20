@@ -11,3 +11,7 @@ Run the asset server
 ```bash
 cargo run --bin asset_server
 ```
+
+## Assets Server
+
+![Schema of what the asset server works like](./assets_server.png)
