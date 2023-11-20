@@ -44,6 +44,7 @@ impl SourceFilesMap {
     }
 }
 
+// TODO: This should be like a virtual filesystem, where we can get the file contents.
 #[derive(Clone, Debug)]
 pub struct SourceFiles {
     inner: Arc<SourceFilesInner>,

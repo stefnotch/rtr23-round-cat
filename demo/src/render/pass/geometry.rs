@@ -301,13 +301,11 @@ fn create_pipeline(
     let device = &context.device;
 
     let vert_spv_file = main_scene
-        .scene
-        .gbuffer_vert_shader
-        .load(&main_scene.asset_client);
+        .asset_client
+        .load(&main_scene.scene.gbuffer_vert_shader);
     let frag_spv_file = main_scene
-        .scene
-        .gbuffer_frag_shader
-        .load(&main_scene.asset_client);
+        .asset_client
+        .load(&main_scene.scene.gbuffer_frag_shader);
 
     let vert_shader_code = read_spv(&mut Cursor::new(&vert_spv_file.data))
         .expect("Could not read vert shader spv file");

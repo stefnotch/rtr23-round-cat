@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use asset_client::{
-    asset_common::{scene::Scene, shader::Shader, AssetRef},
-    AssetClient, AssetHandle,
+    asset_common::{shader::Shader, AssetHandle, Entrypoint},
+    AssetClient,
 };
 
 pub struct MainScene {
@@ -12,13 +12,10 @@ pub struct MainScene {
 
 impl MainScene {
     pub fn load(asset_client: Arc<AssetClient>) -> Self {
-        let scene_handle =
-            AssetHandle::<Scene>::new_unchecked(AssetRef::new(vec!["scene.json".into()]));
-
-        let scene_bytes = scene_handle.load(&asset_client);
-
+        let scene_bytes = asset_client.load(&Entrypoint::new().main_scene);
+        let scene = serde_json::from_slice(&scene_bytes.data).unwrap();
         Self {
-            scene: serde_json::from_slice(&scene_bytes.data).unwrap(),
+            scene,
             asset_client,
         }
     }

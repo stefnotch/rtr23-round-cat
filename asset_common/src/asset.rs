@@ -1,7 +1,7 @@
 pub mod scene;
 pub mod shader;
 
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::{
     borrow::Cow,
     error::Error,
@@ -56,3 +56,76 @@ impl Display for NeverError {
     }
 }
 impl Error for NeverError {}
+
+/// A reference to an asset.
+///
+/// Given a JSON file like
+/// ```json
+/// {
+///     "shader": "shaders/g_buffer.frag"
+/// }
+/// ```
+///
+/// Then we can deserialize it like this:
+/// ```rust
+/// #[derive(Deserialize)]
+/// struct Scene {
+///     shader: AssetHandle<ShaderAsset>
+/// }
+/// ```
+///
+///
+/// And use it like this:
+/// ```rust
+/// let scene: Scene = serde_json::from_str(json)?;
+/// let shader = asset_client.load(&scene.shader);
+/// ```
+pub struct AssetHandle<T: AssetData> {
+    key: AssetRef,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: AssetData> AssetHandle<T> {
+    pub(crate) fn new_unchecked(key: AssetRef) -> Self {
+        Self {
+            key,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn get_ref(&self) -> &AssetRef {
+        &self.key
+    }
+}
+
+impl<'de, T: AssetData> de::Deserialize<'de> for AssetHandle<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(AssetHandleVisitor::<T> {
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+struct AssetHandleVisitor<T: AssetData> {
+    _marker: std::marker::PhantomData<T>,
+}
+impl<'de, T: AssetData> de::Visitor<'de> for AssetHandleVisitor<T> {
+    type Value = AssetHandle<T>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("A string representing an asset reference")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AssetHandle {
+            key: AssetRef::new(v.split('/').map(|s| s.to_string()).collect()),
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
