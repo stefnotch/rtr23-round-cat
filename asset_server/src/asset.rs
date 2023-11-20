@@ -14,7 +14,7 @@ use crate::{
 
 /// A lazily loaded asset.
 #[derive(Clone, Debug)]
-pub struct Asset<Data: AssetData> {
+pub struct Asset<Data: AssetData + ?Sized> {
     pub key: AssetRef,
     pub main_file: AssetDependency,
     /// Can also reference currently nonexistent files.

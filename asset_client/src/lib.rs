@@ -70,7 +70,7 @@ impl<T: AssetData> AssetHandle<T> {
     }
 
     pub fn load(&self, asset_client: &AssetClient) -> T {
-        let buf = asset_client.request_bytes(&self.key, T::ID);
+        let buf = asset_client.request_bytes(&self.key, T::id());
         T::from_bytes(&buf).unwrap()
     }
 }

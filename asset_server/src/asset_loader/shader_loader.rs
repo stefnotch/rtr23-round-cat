@@ -98,7 +98,7 @@ impl AssetLoader for ShaderLoader {
         &self,
         compilation_result: &AssetCompilationFile,
         config: &AssetsConfig,
-        source_files: &SourceFiles,
+        _source_files: &SourceFiles,
     ) -> anyhow::Result<Self::AssetData> {
         let output_path = ShaderLoader::get_output_path(&compilation_result.id, config);
         let data = std::fs::read(output_path)?;

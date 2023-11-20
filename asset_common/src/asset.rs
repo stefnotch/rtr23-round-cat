@@ -33,10 +33,18 @@ impl Display for AssetRef {
     }
 }
 
-pub trait AssetData: Sized {
-    const ID: &'static str;
-    fn to_bytes(&self) -> Result<Cow<[u8]>, impl Error + 'static>;
-    fn from_bytes(bytes: &[u8]) -> Result<Self, impl Error + 'static>;
+pub type AssetTypeId = &'static str;
+
+pub trait AssetData {
+    fn id() -> AssetTypeId
+    where
+        Self: Sized;
+    fn to_bytes(&self) -> Result<Cow<[u8]>, impl Error + 'static>
+    where
+        Self: Sized;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, impl Error + 'static>
+    where
+        Self: Sized;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

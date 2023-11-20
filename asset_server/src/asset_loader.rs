@@ -31,6 +31,28 @@ pub trait AssetLoader {
     ) -> anyhow::Result<Self::AssetData>;
 }
 
+impl<Loader: AssetLoader + ?Sized> AssetLoader for Box<Loader> {
+    type AssetData = Loader::AssetData;
+
+    fn compile_asset(
+        &self,
+        asset: &Asset<Self::AssetData>,
+        config: &AssetsConfig,
+        source_files: &SourceFiles,
+    ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
+        (**self).compile_asset(asset, config, source_files)
+    }
+
+    fn load_asset(
+        &self,
+        compilation_result: &AssetCompilationFile,
+        config: &AssetsConfig,
+        source_files: &SourceFiles,
+    ) -> anyhow::Result<Self::AssetData> {
+        (**self).load_asset(compilation_result, config, source_files)
+    }
+}
+
 pub struct AssetCompileResult<Data: AssetData> {
     pub compilation_file: AssetCompilationFile,
 
