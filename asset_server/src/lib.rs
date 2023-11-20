@@ -10,12 +10,14 @@ pub mod read_startup;
 pub mod source_files;
 use std::{collections::HashMap, sync::Arc};
 
+use asset_common::{scene::Scene, shader::Shader, AssetData, AssetRef};
+use asset_loader::{AssetLoader, SceneLoader};
+
 use crate::{
-    asset::{Asset, AssetRef, Shader},
+    asset::Asset,
     asset_database::AssetDatabase,
     asset_database::AssetDatabaseMigrated,
-    asset_loader::{AssetData, ShaderLoader},
-    asset_sourcer::{AssetSourcer, CreateAssetInfo, ShaderSourcer},
+    asset_loader::ShaderLoader,
     assets_config::AssetsConfig,
     json_schema::AssetJsonSchema,
     source_files::{SourceFileRef, SourceFiles},
@@ -23,6 +25,7 @@ use crate::{
 
 pub enum MyAssetTypes {
     Shader(Asset<Shader>),
+    Scene(Asset<Scene>),
     // Model(Asset<ModelLoader>),
 }
 
@@ -54,24 +57,51 @@ pub struct MyAssetServer {
     pub source_files: SourceFiles,
     pub asset_database: AssetDatabase<AssetDatabaseMigrated>,
 
+    // Maybe the typed registry from https://arxiv.org/pdf/2307.07069.pdf using https://doc.rust-lang.org/std/any/trait.Any.html would be better?
     pub shader_loader: ShaderLoader,
     pub shader_assets: Assets<Shader>,
+
+    pub scene_loader: SceneLoader,
+    pub scene_assets: Assets<Scene>,
 }
 
 impl MyAssetServer {
     pub fn load_shader_asset(&mut self, request: AssetRef) -> anyhow::Result<Arc<Shader>> {
-        let asset = self
-            .shader_assets
+        MyAssetServer::load_asset(
+            &self.config,
+            &self.source_files,
+            &self.asset_database,
+            &self.shader_loader,
+            &mut self.shader_assets,
+            request,
+        )
+    }
+
+    pub fn load_scene_asset(&mut self, request: AssetRef) -> anyhow::Result<Arc<Scene>> {
+        MyAssetServer::load_asset(
+            &self.config,
+            &self.source_files,
+            &self.asset_database,
+            &self.scene_loader,
+            &mut self.scene_assets,
+            request,
+        )
+    }
+
+    fn load_asset<Loader: AssetLoader<AssetData = T>, T: AssetData>(
+        config: &AssetsConfig,
+        source_files: &SourceFiles,
+        asset_database: &AssetDatabase<AssetDatabaseMigrated>,
+        loader: &Loader,
+        assets: &mut Assets<T>,
+        request: AssetRef,
+    ) -> anyhow::Result<Arc<T>> {
+        let asset = assets
             .assets
             .get_mut(&request)
             .ok_or_else(|| anyhow::format_err!("Asset not found {:?}", request))?;
 
-        let asset_data = asset.load(
-            &self.shader_loader,
-            &mut self.asset_database,
-            &self.config,
-            &self.source_files,
-        )?;
+        let asset_data = asset.load(loader, asset_database, config, source_files)?;
 
         Ok(asset_data)
     }

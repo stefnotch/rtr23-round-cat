@@ -1,7 +1,6 @@
+use asset_common::AssetRef;
 use serde::Serialize;
 use serde_json::json;
-
-use crate::asset::AssetRef;
 
 pub struct AssetJsonSchema;
 

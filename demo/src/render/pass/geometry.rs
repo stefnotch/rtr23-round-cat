@@ -7,6 +7,7 @@ use ash::{
 use crevice::std140::AsStd140;
 
 use crate::{
+    asset_loading::MainScene,
     context::Context,
     image_view::ImageView,
     render::{
@@ -36,13 +37,14 @@ impl GeometryPass {
         depth_buffer_imageview: &ImageView,
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
+        main_scene: &MainScene,
     ) -> Self {
         let device = &context.device;
 
         let render_pass = create_render_pass(device);
 
         let (pipeline, pipeline_layout) =
-            create_pipeline(context.clone(), render_pass, set_layout_cache);
+            create_pipeline(context.clone(), render_pass, set_layout_cache, main_scene);
 
         let gbuffer = GBuffer::new(context.clone(), swapchain.extent, descriptor_pool);
 
@@ -288,18 +290,23 @@ fn create_pipeline(
     context: Arc<Context>,
     render_pass: vk::RenderPass,
     set_layout_cache: &DescriptorSetLayoutCache,
+    main_scene: &MainScene,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
-    let mut vert_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/g_buffer.vert.spv"))[..]);
-    let mut frag_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/g_buffer.frag.spv"))[..]);
+    let vert_spv_file = main_scene
+        .scene
+        .gbuffer_vert_shader
+        .load(&main_scene.asset_client);
+    let frag_spv_file = main_scene
+        .scene
+        .gbuffer_frag_shader
+        .load(&main_scene.asset_client);
 
-    let vert_shader_code =
-        read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
-    let frag_shader_code =
-        read_spv(&mut frag_spv_file).expect("Could not read frag shader spv file");
+    let vert_shader_code = read_spv(&mut Cursor::new(&vert_spv_file.data))
+        .expect("Could not read vert shader spv file");
+    let frag_shader_code = read_spv(&mut Cursor::new(&frag_spv_file.data))
+        .expect("Could not read frag shader spv file");
 
     let vertex_shader_shader_module = {
         let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_shader_code);

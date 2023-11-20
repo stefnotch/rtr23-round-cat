@@ -1,13 +1,37 @@
 // Deals with the IPC
 // Isn't directly aware of assets
 
-use asset_server::{
-    asset::{AssetRef, Shader},
-    asset_loader::AssetData,
+use std::sync::Mutex;
+
+pub use asset_common;
+use asset_common::{
+    ipc::{get_ipc_name, ReadWriteLenPrefixed},
+    AssetData, AssetRef,
 };
+use interprocess::local_socket::LocalSocketStream;
 use serde::de;
 
-pub struct AssetClient {}
+pub struct AssetClient {
+    socket: Mutex<LocalSocketStream>,
+}
+
+impl AssetClient {
+    pub fn new() -> Self {
+        let socket = LocalSocketStream::connect(get_ipc_name())
+            .expect("Expected the asset server to be running, it can be started using `cargo run --bin asset_server`");
+        Self {
+            socket: Mutex::new(socket),
+        }
+    }
+
+    pub fn request_bytes(&self, key: &AssetRef, asset_type_id: &str) -> Vec<u8> {
+        // This is legal, because it treats a request-response as an atomic operation.
+        let mut guard = self.socket.lock().unwrap();
+        guard.write_len_prefixed(&key.as_bytes()).unwrap();
+        guard.write_len_prefixed(asset_type_id.as_bytes()).unwrap();
+        return guard.read_len_prefixed().unwrap();
+    }
+}
 
 /// A reference to an asset.
 ///
@@ -37,9 +61,17 @@ pub struct AssetHandle<T: AssetData> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl AssetHandle<Shader> {
-    pub fn load(&self, asset_client: &AssetClient) -> Shader {
-        todo!()
+impl<T: AssetData> AssetHandle<T> {
+    pub fn new_unchecked(key: AssetRef) -> Self {
+        Self {
+            key,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn load(&self, asset_client: &AssetClient) -> T {
+        let buf = asset_client.request_bytes(&self.key, T::ID);
+        T::from_bytes(&buf).unwrap()
     }
 }
 

@@ -1,5 +1,7 @@
+mod scene_sourcer;
 mod shader_sourcer;
 
+pub use scene_sourcer::*;
 pub use shader_sourcer::*;
 
 use crate::{

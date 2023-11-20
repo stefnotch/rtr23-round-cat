@@ -1,39 +1,16 @@
-mod shader;
-
-pub use shader::*;
-use std::{
-    collections::HashSet,
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
+use asset_common::{AssetData, AssetRef};
+use std::{collections::HashSet, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
     asset_compilation::AssetCompilationFile,
     asset_database::{AssetDatabase, AssetDatabaseMigrated},
-    asset_loader::{AssetData, AssetLoader},
+    asset_loader::AssetLoader,
     assets_config::AssetsConfig,
     file_change::FileTimestamp,
     source_files::{SourceFileRef, SourceFiles},
 };
-
-/// A reference to an asset.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
-pub struct AssetRef {
-    name: Vec<String>,
-}
-impl AssetRef {
-    pub fn new(name: Vec<String>) -> Self {
-        Self { name }
-    }
-}
-
-impl Display for AssetRef {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name.join("/"))
-    }
-}
 
 /// A lazily loaded asset.
 #[derive(Clone, Debug)]
@@ -78,7 +55,7 @@ impl<Data: AssetData> Asset<Data> {
     pub fn compile_if_outdated(
         &mut self,
         loader: &impl AssetLoader<AssetData = Data>,
-        asset_database: &mut AssetDatabase<AssetDatabaseMigrated>,
+        asset_database: &AssetDatabase<AssetDatabaseMigrated>,
         config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<AssetCompilationFile> {
@@ -99,7 +76,7 @@ impl<Data: AssetData> Asset<Data> {
     pub fn load(
         &mut self,
         loader: &impl AssetLoader<AssetData = Data>,
-        asset_database: &mut AssetDatabase<AssetDatabaseMigrated>,
+        asset_database: &AssetDatabase<AssetDatabaseMigrated>,
         config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<Arc<Data>> {
@@ -109,7 +86,9 @@ impl<Data: AssetData> Asset<Data> {
         if let Some(data) = self.data.clone() {
             return Ok(data);
         } else {
-            let data = loader.load_asset(&compile_result, config).map(Arc::new)?; // Potentially slow
+            let data = loader
+                .load_asset(&compile_result, config, source_files)
+                .map(Arc::new)?; // Potentially slow
             self.data = Some(data.clone());
             return Ok(data);
         }

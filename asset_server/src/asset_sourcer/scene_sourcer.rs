@@ -10,20 +10,20 @@ use crate::{
 
 use super::{Asset, AssetSourcer, CreateAssetInfo};
 
-pub struct ShaderSourcer {}
+pub struct SceneSourcer {}
 
-impl ShaderSourcer {
-    fn is_shader_file(path: &SourceFileRef) -> bool {
+impl SceneSourcer {
+    fn is_scene_file(path: &SourceFileRef) -> bool {
         match path.get_path().extension() {
-            Some(extension) => extension == "glsl" || extension == "frag" || extension == "vert",
+            Some(extension) => extension == "json",
             None => false,
         }
     }
 }
 
-impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
+impl AssetSourcer<MyAssetTypes> for SceneSourcer {
     fn might_read(&self, path: &SourceFileRef) -> bool {
-        Self::is_shader_file(path)
+        Self::is_scene_file(path)
     }
 
     fn create(
@@ -31,7 +31,7 @@ impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
         import_request: CreateAssetInfo,
         asset_database: &AssetDatabase<AssetDatabaseMigrated>,
     ) -> Vec<MyAssetTypes> {
-        if !Self::is_shader_file(&import_request.file_ref) {
+        if !Self::is_scene_file(&import_request.file_ref) {
             return vec![];
         }
         let mut imported_asset = Asset::new(
@@ -49,6 +49,6 @@ impl AssetSourcer<MyAssetTypes> for ShaderSourcer {
                 .flatten(),
         );
 
-        vec![MyAssetTypes::Shader(imported_asset)]
+        vec![MyAssetTypes::Scene(imported_asset)]
     }
 }

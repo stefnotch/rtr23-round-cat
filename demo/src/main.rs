@@ -1,3 +1,4 @@
+mod asset_loading;
 mod buffer;
 mod camera;
 mod config_loader;
@@ -16,6 +17,7 @@ mod time;
 mod transform;
 mod utility;
 
+use asset_client::AssetClient;
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
 use render::{MainRenderer, SwapchainIndex};
@@ -38,12 +40,14 @@ use winit::event::{
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
+use crate::asset_loading::MainScene;
 use crate::render::set_layout_cache::DescriptorSetLayoutCache;
 
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
     egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
     config_file_loader: config_loader::ConfigFileLoader,
+    main_scene: MainScene,
 
     renderer: MainRenderer,
 
@@ -79,6 +83,8 @@ impl CatDemo {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let mut config_file_loader = config_loader::ConfigFileLoader::new("config.json");
         let config = config_file_loader.load_config();
+        let asset_client = Arc::new(AssetClient::new());
+        let main_scene = MainScene::load(asset_client.clone());
         let (window_width, window_height) = (800, 600);
 
         let window = WindowBuilder::new()
@@ -186,6 +192,7 @@ impl CatDemo {
             descriptor_pool,
             &descriptor_set_layout_cache,
             &swapchain,
+            &main_scene,
         );
 
         let fence = {
@@ -217,6 +224,7 @@ impl CatDemo {
         );
         let time = Time::new();
         Self {
+            main_scene,
             window,
             context,
             swapchain,

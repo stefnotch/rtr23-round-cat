@@ -9,6 +9,7 @@ use ash::{
 };
 
 use crate::{
+    asset_loading::MainScene,
     context::Context,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, SceneDescriptorSet,
@@ -32,11 +33,17 @@ impl LightingPass {
         swapchain: &SwapchainContainer,
         gbuffer: &GBuffer,
         set_layout_cache: &DescriptorSetLayoutCache,
+        main_scene: &MainScene,
     ) -> Self {
         let render_pass = create_render_pass(context.clone(), swapchain.format);
 
-        let (pipeline, pipeline_layout) =
-            create_pipeline(context.clone(), render_pass, set_layout_cache, gbuffer);
+        let (pipeline, pipeline_layout) = create_pipeline(
+            context.clone(),
+            render_pass,
+            set_layout_cache,
+            gbuffer,
+            main_scene,
+        );
 
         let framebuffers = create_framebuffers(context.clone(), swapchain, render_pass);
 
@@ -190,18 +197,23 @@ fn create_pipeline(
     render_pass: vk::RenderPass,
     set_layout_cache: &DescriptorSetLayoutCache,
     gbuffer: &GBuffer,
+    main_scene: &MainScene,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
-    let mut vert_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
-    let mut frag_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.frag.spv"))[..]);
+    let vert_spv_file = main_scene
+        .scene
+        .light_vert_shader
+        .load(&main_scene.asset_client);
+    let frag_spv_file = main_scene
+        .scene
+        .light_frag_shader
+        .load(&main_scene.asset_client);
 
-    let vert_shader_code =
-        read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
-    let frag_shader_code =
-        read_spv(&mut frag_spv_file).expect("Could not read frag shader spv file");
+    let vert_shader_code = read_spv(&mut Cursor::new(&vert_spv_file.data))
+        .expect("Could not read vert shader spv file");
+    let frag_shader_code = read_spv(&mut Cursor::new(&frag_spv_file.data))
+        .expect("Could not read frag shader spv file");
 
     let vertex_shader_shader_module = {
         let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_shader_code);

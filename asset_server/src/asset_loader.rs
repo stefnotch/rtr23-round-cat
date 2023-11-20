@@ -1,13 +1,14 @@
+mod scene_loader;
 mod shader_loader;
 
+use asset_common::AssetData;
+pub use scene_loader::*;
 pub use shader_loader::*;
 
 use crate::{
     asset::Asset, asset_compilation::AssetCompilationFile, assets_config::AssetsConfig,
     source_files::SourceFiles,
 };
-
-pub trait AssetData: Sized {}
 
 pub trait AssetLoader {
     type AssetData: AssetData;
@@ -26,6 +27,7 @@ pub trait AssetLoader {
         &self,
         compilation_result: &AssetCompilationFile,
         config: &AssetsConfig,
+        source_files: &SourceFiles,
     ) -> anyhow::Result<Self::AssetData>;
 }
 

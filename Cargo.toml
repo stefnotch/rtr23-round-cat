@@ -2,6 +2,7 @@
 [workspace]
 resolver = "2"
 members = [ 
+  "asset_common", 
   "asset_client", 
   "asset_server",
   "demo"

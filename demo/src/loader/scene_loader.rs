@@ -62,7 +62,6 @@ struct SamplerKey {
 }
 
 impl AssetLoader {
-    // TODO: Fix the error type
     pub fn load_scene(
         &mut self,
         path: impl AsRef<Path>,

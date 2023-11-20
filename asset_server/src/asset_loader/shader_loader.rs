@@ -1,10 +1,11 @@
 use std::{collections::HashSet, path::PathBuf, process::Command};
 
 use anyhow::bail;
+use asset_common::shader::Shader;
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetDependency, Shader},
+    asset::{Asset, AssetDependency},
     asset_compilation::AssetCompilationFile,
     asset_loader::TempFile,
     assets_config::AssetsConfig,
@@ -97,6 +98,7 @@ impl AssetLoader for ShaderLoader {
         &self,
         compilation_result: &AssetCompilationFile,
         config: &AssetsConfig,
+        source_files: &SourceFiles,
     ) -> anyhow::Result<Self::AssetData> {
         let output_path = ShaderLoader::get_output_path(&compilation_result.id, config);
         let data = std::fs::read(output_path)?;

@@ -1,12 +1,10 @@
 use std::collections::HashSet;
 
+use asset_common::AssetData;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    asset::{Asset, AssetDependency},
-    asset_loader::AssetData,
-};
+use crate::asset::{Asset, AssetDependency};
 
 /// References a generated asset file
 #[derive(Clone, Debug, Serialize, Deserialize)]

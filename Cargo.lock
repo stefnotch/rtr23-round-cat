@@ -137,7 +137,17 @@ dependencies = [
 name = "asset_client"
 version = "0.1.0"
 dependencies = [
- "asset_server",
+ "asset_common",
+ "interprocess",
+ "serde",
+]
+
+[[package]]
+name = "asset_common"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "interprocess",
  "serde",
 ]
 
@@ -146,8 +156,10 @@ name = "asset_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "asset_common",
  "bincode",
  "env_logger",
+ "interprocess",
  "ipc-channel",
  "log",
  "notify-debouncer-full",
@@ -897,6 +909,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "interprocess"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81f2533f3be42fffe3b5e63b71aeca416c1c3bc33e4e27be018521e76b1f38fb"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "rustc_version",
+ "to_method",
+ "winapi",
+]
+
+[[package]]
 name = "ipc-channel"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1627,6 +1652,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rustix"
 version = "0.38.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1687,6 +1721,12 @@ dependencies = [
  "smithay-client-toolkit",
  "tiny-skia",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "836fa6a3e1e547f9a2c4040802ec865b5d85f4014efe00555d7090a3dcaa1090"
 
 [[package]]
 name = "serde"
@@ -1890,6 +1930,12 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "to_method"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c4ceeeca15c8384bbc3e011dbd8fccb7f068a440b752b7d9b32ceb0ca0e2e8"
 
 [[package]]
 name = "tokio"
