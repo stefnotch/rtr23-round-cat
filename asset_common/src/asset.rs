@@ -1,4 +1,4 @@
-pub mod scene;
+pub mod asset_collection;
 pub mod shader;
 
 use serde::{de, Deserialize, Serialize};
@@ -69,7 +69,7 @@ impl Error for NeverError {}
 /// Then we can deserialize it like this:
 /// ```rust
 /// #[derive(Deserialize)]
-/// struct Scene {
+/// struct AssetCollection {
 ///     shader: AssetHandle<ShaderAsset>
 /// }
 /// ```
@@ -77,8 +77,8 @@ impl Error for NeverError {}
 ///
 /// And use it like this:
 /// ```rust
-/// let scene: Scene = serde_json::from_str(json)?;
-/// let shader = asset_client.load(&scene.shader);
+/// let assets: AssetCollection = serde_json::from_str(json)?;
+/// let shader = asset_client.load(&assets.shader);
 /// ```
 pub struct AssetHandle<T: AssetData> {
     key: AssetRef,

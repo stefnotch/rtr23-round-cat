@@ -1,14 +1,14 @@
-use asset_common::scene::Scene;
+use asset_common::asset_collection::AssetCollection;
 use uuid::Uuid;
 
 use crate::{asset::Asset, asset_compilation::AssetCompilationFile, source_files::SourceFiles};
 
 use super::{AssetCompileResult, AssetLoader};
 
-pub struct SceneLoader {}
+pub struct AssetCollectionLoader {}
 
-impl AssetLoader for SceneLoader {
-    type AssetData = Scene;
+impl AssetLoader for AssetCollectionLoader {
+    type AssetData = AssetCollection;
 
     fn compile_asset(
         &self,
@@ -25,7 +25,7 @@ impl AssetLoader for SceneLoader {
                 dependencies: Default::default(),
                 id: Uuid::new_v4(),
             },
-            data: Some(Scene { data }),
+            data: Some(AssetCollection { data }),
         })
     }
 
@@ -38,6 +38,6 @@ impl AssetLoader for SceneLoader {
         let files_snapshot = source_files.take_snapshot();
         let file = &compilation_result.main_file.file;
         let data = files_snapshot.read(file)?;
-        Ok(Scene { data })
+        Ok(AssetCollection { data })
     }
 }

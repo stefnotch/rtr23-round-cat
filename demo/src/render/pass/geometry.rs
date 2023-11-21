@@ -7,7 +7,7 @@ use ash::{
 use crevice::std140::AsStd140;
 
 use crate::{
-    asset_loading::MainScene,
+    asset_loading::MainAssets,
     context::Context,
     image_view::ImageView,
     render::{
@@ -37,7 +37,7 @@ impl GeometryPass {
         depth_buffer_imageview: &ImageView,
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
-        main_scene: &MainScene,
+        main_scene: &MainAssets,
     ) -> Self {
         let device = &context.device;
 
@@ -296,16 +296,16 @@ fn create_pipeline(
     context: Arc<Context>,
     render_pass: vk::RenderPass,
     set_layout_cache: &DescriptorSetLayoutCache,
-    main_scene: &MainScene,
+    main_scene: &MainAssets,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
     let vert_spv_file = main_scene
         .asset_client
-        .load(&main_scene.scene.gbuffer_vert_shader);
+        .load(&main_scene.assets.gbuffer_vert_shader);
     let frag_spv_file = main_scene
         .asset_client
-        .load(&main_scene.scene.gbuffer_frag_shader);
+        .load(&main_scene.assets.gbuffer_frag_shader);
 
     let vert_shader_code = read_spv(&mut Cursor::new(&vert_spv_file.data))
         .expect("Could not read vert shader spv file");

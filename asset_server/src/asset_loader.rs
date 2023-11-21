@@ -1,8 +1,8 @@
-mod scene_loader;
+mod asset_collection_loader;
 mod shader_loader;
 
+pub use asset_collection_loader::*;
 use asset_common::AssetData;
-pub use scene_loader::*;
 pub use shader_loader::*;
 
 use crate::{asset::Asset, asset_compilation::AssetCompilationFile, source_files::SourceFiles};

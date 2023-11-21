@@ -10,7 +10,7 @@ use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
 
 use crate::{
-    asset_loading::MainScene,
+    asset_loading::MainAssets,
     buffer::Buffer,
     camera::Camera,
     context::Context,
@@ -64,7 +64,7 @@ impl MainRenderer {
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
         swapchain: &SwapchainContainer,
-        main_scene: &MainScene,
+        main_scene: &MainAssets,
     ) -> Self {
         let depth_buffer_imageview = create_depth_buffer(context.clone(), swapchain.extent);
 

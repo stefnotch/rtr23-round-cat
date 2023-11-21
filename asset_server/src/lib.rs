@@ -1,7 +1,7 @@
 use asset_database::{AssetDatabase, AssetDatabaseMigrated};
-use asset_loader::{SceneLoader, ShaderLoader};
+use asset_loader::{AssetCollectionLoader, ShaderLoader};
 use asset_server::{load_asset_database, AllAssets, MyAssetServer};
-use asset_sourcer::{SceneSourcer, ShaderSourcer};
+use asset_sourcer::{AssetCollectionSourcer, ShaderSourcer};
 use assets_config::AssetsConfig;
 use source_files::SourceFiles;
 
@@ -21,11 +21,14 @@ impl MyAssetServer {
     pub fn new(source_files: SourceFiles, db: AssetDatabase<AssetDatabaseMigrated>) -> Self {
         Self {
             source_files,
-            asset_sourcers: vec![Box::new(ShaderSourcer {}), Box::new(SceneSourcer {})],
+            asset_sourcers: vec![
+                Box::new(ShaderSourcer {}),
+                Box::new(AssetCollectionSourcer {}),
+            ],
             asset_database: db,
             all_assets: AllAssets::new()
                 .with_asset_type(ShaderLoader {})
-                .with_asset_type(SceneLoader {}),
+                .with_asset_type(AssetCollectionLoader {}),
         }
     }
 }

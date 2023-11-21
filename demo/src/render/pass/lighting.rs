@@ -9,7 +9,7 @@ use ash::{
 };
 
 use crate::{
-    asset_loading::MainScene,
+    asset_loading::MainAssets,
     context::Context,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
@@ -33,7 +33,7 @@ impl LightingPass {
         swapchain: &SwapchainContainer,
         gbuffer: &GBuffer,
         set_layout_cache: &DescriptorSetLayoutCache,
-        main_scene: &MainScene,
+        main_scene: &MainAssets,
     ) -> Self {
         let render_pass = create_render_pass(context.clone(), swapchain.format);
 
@@ -181,16 +181,16 @@ fn create_pipeline(
     render_pass: vk::RenderPass,
     set_layout_cache: &DescriptorSetLayoutCache,
     gbuffer: &GBuffer,
-    main_scene: &MainScene,
+    main_scene: &MainAssets,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
     let vert_spv_file = main_scene
         .asset_client
-        .load(&main_scene.scene.light_vert_shader);
+        .load(&main_scene.assets.light_vert_shader);
     let frag_spv_file = main_scene
         .asset_client
-        .load(&main_scene.scene.light_frag_shader);
+        .load(&main_scene.assets.light_frag_shader);
 
     let vert_shader_code = read_spv(&mut Cursor::new(&vert_spv_file.data))
         .expect("Could not read vert shader spv file");

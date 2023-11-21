@@ -1,18 +1,18 @@
 mod asset;
 pub mod ipc;
 
-use asset::scene::Scene;
+use asset::asset_collection::AssetCollection;
 pub use asset::*;
 
 pub struct Entrypoint {
-    pub main_scene: AssetHandle<Scene>,
+    pub main_assets: AssetHandle<AssetCollection>,
 }
 
 impl Entrypoint {
     pub fn new() -> Self {
         Self {
-            main_scene: AssetHandle::<Scene>::new_unchecked(AssetRef::new(vec![
-                "scene.json".into()
+            main_assets: AssetHandle::<AssetCollection>::new_unchecked(AssetRef::new(vec![
+                "asset_collection.json".into(),
             ])),
         }
     }

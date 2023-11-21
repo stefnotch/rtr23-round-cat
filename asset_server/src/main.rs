@@ -1,8 +1,8 @@
 use std::env;
 
 use asset_common::{
+    asset_collection::AssetCollection,
     ipc::{get_ipc_name, ReadWriteLenPrefixed},
-    scene::Scene,
     shader::Shader,
     AssetData, AssetRef,
 };
@@ -46,8 +46,8 @@ async fn main() -> anyhow::Result<()> {
                 let asset_data = asset_server.load_asset::<Shader>(asset_ref)?;
                 let buf = asset_data.to_bytes()?;
                 connection.write_len_prefixed(&buf)?;
-            } else if asset_type_id == Scene::id() {
-                let asset_data = asset_server.load_asset::<Scene>(asset_ref)?;
+            } else if asset_type_id == AssetCollection::id() {
+                let asset_data = asset_server.load_asset::<AssetCollection>(asset_ref)?;
                 let buf = asset_data.to_bytes()?;
                 connection.write_len_prefixed(&buf)?;
             } else {

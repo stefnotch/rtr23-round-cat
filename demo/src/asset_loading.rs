@@ -5,24 +5,24 @@ use asset_client::{
     AssetClient,
 };
 
-pub struct MainScene {
-    pub scene: SceneFile,
+pub struct MainAssets {
+    pub assets: AssetCollectionFile,
     pub asset_client: Arc<AssetClient>,
 }
 
-impl MainScene {
+impl MainAssets {
     pub fn load(asset_client: Arc<AssetClient>) -> Self {
-        let scene_bytes = asset_client.load(&Entrypoint::new().main_scene);
-        let scene = serde_json::from_slice(&scene_bytes.data).unwrap();
+        let data = asset_client.load(&Entrypoint::new().main_assets);
+        let assets = serde_json::from_slice(&data.data).unwrap();
         Self {
-            scene,
+            assets,
             asset_client,
         }
     }
 }
 
 #[derive(serde::Deserialize)]
-pub struct SceneFile {
+pub struct AssetCollectionFile {
     pub gbuffer_frag_shader: AssetHandle<Shader>,
     pub gbuffer_vert_shader: AssetHandle<Shader>,
     pub light_frag_shader: AssetHandle<Shader>,

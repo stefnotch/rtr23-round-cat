@@ -2,16 +2,16 @@ use std::{borrow::Cow, error::Error};
 
 use crate::{AssetData, AssetTypeId, NeverError};
 
-pub struct Scene {
-    /// Deserializing the scene is done by the client who knows what the scene data type actually looks like
+pub struct AssetCollection {
+    /// Deserializing the asset_collection is done by the client who knows what the data type actually looks like
     pub data: Vec<u8>,
 }
-impl AssetData for Scene {
+impl AssetData for AssetCollection {
     fn id() -> AssetTypeId
     where
         Self: Sized,
     {
-        "scene"
+        "asset_collection"
     }
 
     fn to_bytes(&self) -> Result<Cow<[u8]>, impl Error + 'static> {

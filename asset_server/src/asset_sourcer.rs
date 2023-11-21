@@ -1,7 +1,7 @@
-mod scene_sourcer;
+mod asset_collection_sourcer;
 mod shader_sourcer;
 
-pub use scene_sourcer::*;
+pub use asset_collection_sourcer::*;
 pub use shader_sourcer::*;
 
 use crate::{asset::Asset, asset_server::AssetInserter, source_files::SourceFileRef};
