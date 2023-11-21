@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::transform::Transform;
 
 use super::{LoadedMaterial, LoadedMesh};
 
-#[derive(Debug, Archive, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedModel {
     pub transform: Transform,
     pub primitives: Vec<LoadedPrimitive>,
 }
 
-#[derive(Debug, Archive, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedPrimitive {
     // TODO: How does serde handle Arcs?
     pub material: Arc<LoadedMaterial>,

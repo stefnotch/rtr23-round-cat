@@ -2,7 +2,7 @@ pub mod asset_collection;
 pub mod scene;
 pub mod shader;
 
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     error::Error,
@@ -10,7 +10,7 @@ use std::{
 };
 
 /// A reference to an asset.
-#[derive(Clone, Debug, Archive, Deserialize, Serialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, Hash, PartialEq)]
 pub struct AssetRef {
     name: Vec<String>,
 }
@@ -20,14 +20,11 @@ impl AssetRef {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        rkyv::to_bytes::<_, 256>(self).unwrap()
+        bincode::serialize(self).unwrap()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        rkyv::check_archived_root::<Self>(bytes)
-            .unwrap()
-            .deserialize(&mut rkyv::Infallible)
-            .unwrap()
+        bincode::deserialize(bytes).unwrap()
     }
 }
 
@@ -99,5 +96,36 @@ impl<T: AssetData> AssetHandle<T> {
 
     pub fn get_ref(&self) -> &AssetRef {
         &self.key
+    }
+}
+
+impl<'de, T: AssetData> serde::de::Deserialize<'de> for AssetHandle<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(AssetHandleVisitor::<T> {
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+struct AssetHandleVisitor<T: AssetData> {
+    _marker: std::marker::PhantomData<T>,
+}
+impl<'de, T: AssetData> serde::de::Visitor<'de> for AssetHandleVisitor<T> {
+    type Value = AssetHandle<T>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("A string representing an asset reference")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(AssetHandle::new_unchecked(AssetRef::new(
+            v.split('/').map(|s| s.to_string()).collect(),
+        )))
     }
 }

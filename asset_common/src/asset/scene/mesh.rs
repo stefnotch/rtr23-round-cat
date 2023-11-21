@@ -1,11 +1,11 @@
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use ultraviolet::{Vec2, Vec3};
 
 use crate::gpu::Vertex;
 
 use super::{GltfAsset, GltfAssetId};
 
-#[derive(Debug, Archive, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedMesh {
     pub id: GltfAssetId,
     pub vertices: Vec<Vertex>,

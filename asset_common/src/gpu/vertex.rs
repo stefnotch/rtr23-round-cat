@@ -1,4 +1,6 @@
-#[derive(Clone, Debug, Copy)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Vertex {
     pub position: [f32; 3],

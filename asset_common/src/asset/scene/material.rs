@@ -1,9 +1,9 @@
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use ultraviolet::Vec3;
 
 use super::{texture::LoadedTexture, GltfAsset, GltfAssetId};
 
-#[derive(Debug, Archive, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedMaterial {
     pub id: GltfAssetId,
     pub base_color: Vec3,

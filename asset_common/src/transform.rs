@@ -1,9 +1,9 @@
 use std::ops::Mul;
 
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use ultraviolet::{Mat4, Rotor3, Vec3};
 
-#[derive(Clone, Debug, PartialEq, Archive, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Transform {
     pub position: Vec3,
     pub orientation: Rotor3,

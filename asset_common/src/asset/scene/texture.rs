@@ -1,12 +1,16 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
+
+use serde::{Deserialize, Serialize};
 
 use super::{GltfAsset, GltfAssetId};
 
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedTexture {
     pub image: Arc<LoadedImage>,
     pub sampler: Arc<LoadedSampler>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedImage {
     pub id: GltfAssetId,
     pub data: BytesImageData,
@@ -18,6 +22,7 @@ impl GltfAsset for LoadedImage {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct BytesImageData {
     pub dimensions: (u32, u32),
     pub format: ImageFormat,
@@ -25,8 +30,19 @@ pub struct BytesImageData {
     pub bytes: Vec<u8>,
 }
 
+impl fmt::Debug for BytesImageData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BytesImageData")
+            .field("dimensions", &self.dimensions)
+            .field("format", &self.format)
+            .field("color_space", &self.color_space)
+            //.field("bytes", &self.bytes) // explicitly omitted
+            .finish()
+    }
+}
+
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 /// A list of the more common image formats that we actually support.
 pub enum ImageFormat {
     /// 8 bit texture, 1 channel, normalized color space
@@ -39,12 +55,13 @@ pub enum ImageFormat {
     R32G32B32A32_SFLOAT,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum ColorSpace {
     Linear,
     SRGB,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedSampler {
     pub id: GltfAssetId,
     pub sampler_info: SamplerInfo,
@@ -56,7 +73,7 @@ impl GltfAsset for LoadedSampler {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct SamplerInfo {
     pub min_filter: Filter,
     pub mag_filter: Filter,
@@ -64,13 +81,13 @@ pub struct SamplerInfo {
     pub address_mode: [AddressMode; 3],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum Filter {
     Nearest,
     Linear,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum AddressMode {
     Repeat,
     MirroredRepeat,
@@ -78,7 +95,7 @@ pub enum AddressMode {
     ClampToBorder,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum MipmapMode {
     Nearest,
     Linear,
