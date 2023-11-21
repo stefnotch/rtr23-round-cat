@@ -1,4 +1,4 @@
-use std::fs;
+use std::env;
 
 use asset_common::{
     ipc::{get_ipc_name, ReadWriteLenPrefixed},
@@ -6,19 +6,13 @@ use asset_common::{
     shader::Shader,
     AssetData, AssetRef,
 };
-use asset_server::{
-    asset_loader::{SceneLoader, ShaderLoader},
-    asset_server::{load_asset_database, MyAssetServer},
-    asset_sourcer::{SceneSourcer, ShaderSourcer},
-    assets_config::AssetsConfig,
-    create_default_asset_server,
-    source_files::SourceFiles,
-};
+use asset_server::create_default_asset_server;
 use env_logger::Env;
 use interprocess::local_socket::LocalSocketListener;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env::set_var("RUST_BACKTRACE", "1");
     env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
     let mut asset_server = create_default_asset_server()?;
@@ -37,7 +31,13 @@ async fn main() -> anyhow::Result<()> {
     for connection in ipc_socket_server.incoming() {
         let mut connection = connection?;
         loop {
-            let buf = connection.read_len_prefixed()?;
+            let buf = match connection.read_len_prefixed() {
+                Ok(buf) => buf,
+                Err(err) => {
+                    log::info!("User probably disconnected {}", err);
+                    break;
+                }
+            };
             let asset_ref = AssetRef::from_bytes(&buf);
             let buf = connection.read_len_prefixed()?;
             let asset_type_id = std::str::from_utf8(&buf)?;

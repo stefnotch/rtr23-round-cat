@@ -14,7 +14,7 @@ impl AssetLoader for SceneLoader {
         &self,
         asset: &Asset<Self::AssetData>,
         source_files: &SourceFiles,
-        target_path: &std::path::Path,
+        _target_path: &std::path::Path,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
         let files_snapshot = source_files.take_snapshot();
         let data = files_snapshot.read(&asset.main_file.file)?;
@@ -33,7 +33,7 @@ impl AssetLoader for SceneLoader {
         &self,
         compilation_result: &AssetCompilationFile,
         source_files: &SourceFiles,
-        target_path: &std::path::Path,
+        _target_path: &std::path::Path,
     ) -> anyhow::Result<Self::AssetData> {
         let files_snapshot = source_files.take_snapshot();
         let file = &compilation_result.main_file.file;

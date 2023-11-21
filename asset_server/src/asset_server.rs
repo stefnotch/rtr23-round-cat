@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub struct AllAssets {
-    all_assets: HashMap<AssetTypeId, Box<dyn std::any::Any>>,
+    all_assets: HashMap<AssetTypeId, Box<dyn AssetsContainer>>,
 }
 impl AllAssets {
     pub fn new() -> Self {
@@ -27,8 +27,8 @@ impl AllAssets {
         mut self,
         loader: impl AssetLoader<AssetData = T> + 'static,
     ) -> Self {
-        self.all_assets
-            .insert(T::id(), Box::new(Assets::<T>::new(loader)));
+        let assets = Assets::<T>::new(loader);
+        self.all_assets.insert(T::id(), Box::new(assets));
         self
     }
 
@@ -36,6 +36,7 @@ impl AllAssets {
         self.all_assets
             .get_mut(&T::id())
             .expect("Asset type not registered")
+            .as_any_mut()
             .downcast_mut::<Assets<T>>()
             .expect("Asset type mismatch")
     }
@@ -44,18 +45,15 @@ impl AllAssets {
         self.all_assets
             .get(&T::id())
             .expect("Asset type not registered")
+            .as_any()
             .downcast_ref::<Assets<T>>()
             .expect("Asset type mismatch")
     }
 
     pub fn all_asset_keys<'a>(&'a self) -> impl Iterator<Item = &'a AssetRef> {
-        self.all_assets.values().flat_map(|assets| {
-            assets
-                .downcast_ref::<Assets<dyn AssetData>>()
-                .unwrap()
-                .assets
-                .keys()
-        })
+        self.all_assets
+            .values()
+            .flat_map(|assets| assets.get_keys())
     }
 
     pub fn get_asset_mut<'a, T: AssetData + 'static>(
@@ -95,7 +93,25 @@ impl AllAssets {
     }
 }
 
-pub struct Assets<T: AssetData + ?Sized> {
+trait AssetsContainer {
+    fn get_keys(&self) -> Box<dyn Iterator<Item = &AssetRef> + '_>;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl<T: AssetData + 'static> AssetsContainer for Assets<T> {
+    fn get_keys(&self) -> Box<dyn Iterator<Item = &AssetRef> + '_> {
+        Box::new(self.assets.keys())
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+pub struct Assets<T: AssetData + 'static + ?Sized> {
     pub loader: Box<dyn AssetLoader<AssetData = T>>,
     pub assets: HashMap<AssetRef, Asset<T>>,
     pub asset_dependencies_inverse: HashMap<SourceFileRef, Vec<AssetRef>>,

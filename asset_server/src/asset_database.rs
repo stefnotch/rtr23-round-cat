@@ -67,12 +67,12 @@ impl AssetDatabase<AssetDatabaseMigrated> {
         let asset_file_info_tree = transaction.open_table(ASSET_FILE_INFO_TABLE)?;
         let binary_key = bincode::serialize(key).unwrap();
         let asset_file_info = match asset_file_info_tree.get(&binary_key[..])? {
-            Some(data) => bincode::deserialize::<Option<AssetCompilationFile>>(&data.value()),
+            Some(data) => bincode::deserialize::<AssetCompilationFile>(&data.value()),
             None => return Ok(None),
         };
 
         match asset_file_info {
-            Ok(asset_file_info) => Ok(asset_file_info),
+            Ok(asset_file_info) => Ok(Some(asset_file_info)),
             Err(err) => {
                 log::error!("Failed to deserialize asset file info: {:?}", err);
                 Err(err)?
