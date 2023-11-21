@@ -8,11 +8,11 @@ use asset_common::{
 };
 use asset_server::{
     asset_loader::{SceneLoader, ShaderLoader},
+    asset_server::{load_asset_database, MyAssetServer},
     asset_sourcer::{SceneSourcer, ShaderSourcer},
     assets_config::AssetsConfig,
-    load_asset_database,
+    create_default_asset_server,
     source_files::SourceFiles,
-    AllAssets, MyAssetServer,
 };
 use env_logger::Env;
 use interprocess::local_socket::LocalSocketListener;
@@ -21,23 +21,7 @@ use interprocess::local_socket::LocalSocketListener;
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
-    let config = AssetsConfig {
-        version: 0,
-        source: "assets".into(),
-        target: "target-assets".into(),
-    };
-
-    fs::create_dir_all(&config.target)?;
-
-    let asset_database = load_asset_database(&config)?;
-    let mut asset_server = MyAssetServer {
-        source_files: SourceFiles::new(config.source.clone()),
-        asset_sourcers: vec![Box::new(ShaderSourcer {}), Box::new(SceneSourcer {})],
-        asset_database,
-        all_assets: AllAssets::new()
-            .with_asset_type(ShaderLoader {})
-            .with_asset_type(SceneLoader {}),
-    };
+    let mut asset_server = create_default_asset_server()?;
 
     // TODO: start the file watcher *here*
 

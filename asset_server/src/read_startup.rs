@@ -1,10 +1,10 @@
 use walkdir::WalkDir;
 
 use crate::{
+    asset_server::{AssetInserter, MyAssetServer},
     asset_sourcer::{AssetSourcer, CreateAssetInfo},
     file_change::FileTimestamp,
     source_files::{SourceFileRef, SourceFileUpdate, SourceFiles},
-    AssetInserter, MyAssetServer,
 };
 
 fn read_startup(source_files: &mut SourceFiles, asset_sourcers: &[Box<dyn AssetSourcer>]) {

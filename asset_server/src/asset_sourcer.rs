@@ -4,7 +4,7 @@ mod shader_sourcer;
 pub use scene_sourcer::*;
 pub use shader_sourcer::*;
 
-use crate::{asset::Asset, source_files::SourceFileRef, AssetInserter};
+use crate::{asset::Asset, asset_server::AssetInserter, source_files::SourceFileRef};
 
 pub trait AssetSourcer {
     /// Filters out files that are not relevant for this sourcer.

@@ -1,7 +1,8 @@
 use asset_common::{scene::Scene, AssetRef};
 
 use crate::{
-    asset::AssetDependency, file_change::FileTimestamp, source_files::SourceFileRef, AssetInserter,
+    asset::AssetDependency, asset_server::AssetInserter, file_change::FileTimestamp,
+    source_files::SourceFileRef,
 };
 
 use super::{Asset, AssetSourcer, CreateAssetInfo};
