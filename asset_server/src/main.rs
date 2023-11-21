@@ -7,10 +7,10 @@ use asset_common::{
     AssetData, AssetRef,
 };
 use asset_server::{
-    asset_database::{AssetDatabase, AssetDatabaseMigrated},
     asset_loader::{SceneLoader, ShaderLoader},
     asset_sourcer::{SceneSourcer, ShaderSourcer},
     assets_config::AssetsConfig,
+    load_asset_database,
     source_files::SourceFiles,
     AllAssets, MyAssetServer,
 };
@@ -31,7 +31,6 @@ async fn main() -> anyhow::Result<()> {
 
     let asset_database = load_asset_database(&config)?;
     let mut asset_server = MyAssetServer {
-        config: config.clone(),
         source_files: SourceFiles::new(config.source.clone()),
         asset_sourcers: vec![Box::new(ShaderSourcer {}), Box::new(SceneSourcer {})],
         asset_database,
@@ -85,21 +84,4 @@ async fn main() -> anyhow::Result<()> {
 
     // TOOD: https://github.com/typst/comemo or https://github.com/Justice4Joffrey/depends-rs or https://github.com/salsa-rs/salsa
     Ok(())
-}
-
-fn load_asset_database(
-    config: &AssetsConfig,
-) -> anyhow::Result<AssetDatabase<AssetDatabaseMigrated>> {
-    let database_config = redb::Builder::new();
-
-    let mut asset_database =
-        AssetDatabase::new(database_config.create(config.get_asset_cache_db_path())?);
-    if asset_database.needs_migration(config.version) {
-        std::mem::drop(asset_database);
-        fs::remove_dir_all(&config.target)?;
-        fs::create_dir_all(&config.target)?;
-        asset_database =
-            AssetDatabase::new(database_config.create(config.get_asset_cache_db_path())?);
-    }
-    Ok(asset_database.finished_migration())
 }

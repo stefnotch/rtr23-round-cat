@@ -8,7 +8,7 @@ pub mod file_change;
 pub mod json_schema;
 pub mod read_startup;
 pub mod source_files;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 
 use asset_common::{AssetData, AssetRef, AssetTypeId};
 use asset_loader::AssetLoader;
@@ -84,7 +84,6 @@ impl AllAssets {
 
     pub fn load_asset<T: AssetData + 'static>(
         &mut self,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
         asset_database: &AssetDatabase<AssetDatabaseMigrated>,
         request: AssetRef,
@@ -96,7 +95,7 @@ impl AllAssets {
             .get_mut(&request)
             .ok_or_else(|| anyhow::format_err!("Asset not found {:?}", request))?;
 
-        let asset_data = asset.load(loader, asset_database, config, source_files)?;
+        let asset_data = asset.load(loader, asset_database, source_files)?;
 
         Ok(asset_data)
     }
@@ -132,7 +131,6 @@ impl<T: AssetData> Assets<T> {
 }
 
 pub struct MyAssetServer {
-    pub config: AssetsConfig,
     pub source_files: SourceFiles,
     pub asset_sourcers: Vec<Box<dyn AssetSourcer>>,
     pub asset_database: AssetDatabase<AssetDatabaseMigrated>,
@@ -152,17 +150,38 @@ impl MyAssetServer {
         &mut self,
         request: AssetRef,
     ) -> anyhow::Result<Arc<T>> {
-        self.all_assets.load_asset(
-            &self.config,
-            &self.source_files,
-            &self.asset_database,
-            request,
-        )
+        self.all_assets
+            .load_asset(&self.source_files, &self.asset_database, request)
     }
 
     pub fn write_schema_file(&self) -> anyhow::Result<()> {
         let schema = AssetJsonSchema::create_schema(self.all_assets.all_asset_keys());
-        std::fs::write(self.config.get_asset_schema_path(), schema)?;
+        std::fs::write(self.get_asset_schema_path(), schema)?;
         Ok(())
     }
+
+    pub fn get_asset_schema_path(&self) -> PathBuf {
+        self.asset_database.get_target_path().join("schema.json")
+    }
+}
+
+pub fn load_asset_database(
+    config: &AssetsConfig,
+) -> anyhow::Result<AssetDatabase<AssetDatabaseMigrated>> {
+    let database_config = redb::Builder::new();
+
+    let mut asset_database = AssetDatabase::new(
+        database_config.create(config.get_asset_cache_db_path())?,
+        config.target.clone(),
+    );
+    if asset_database.needs_migration(config.version) {
+        std::mem::drop(asset_database);
+        fs::remove_dir_all(&config.target)?;
+        fs::create_dir_all(&config.target)?;
+        asset_database = AssetDatabase::new(
+            database_config.create(config.get_asset_cache_db_path())?,
+            config.target.clone(),
+        );
+    }
+    Ok(asset_database.finished_migration())
 }

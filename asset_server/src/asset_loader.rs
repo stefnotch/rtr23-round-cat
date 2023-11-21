@@ -5,10 +5,7 @@ use asset_common::AssetData;
 pub use scene_loader::*;
 pub use shader_loader::*;
 
-use crate::{
-    asset::Asset, asset_compilation::AssetCompilationFile, assets_config::AssetsConfig,
-    source_files::SourceFiles,
-};
+use crate::{asset::Asset, asset_compilation::AssetCompilationFile, source_files::SourceFiles};
 
 pub trait AssetLoader {
     type AssetData: AssetData;
@@ -18,16 +15,16 @@ pub trait AssetLoader {
     fn compile_asset(
         &self,
         asset: &Asset<Self::AssetData>,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>>;
 
     /// Loads an already compiled asset.
     fn load_asset(
         &self,
         compilation_result: &AssetCompilationFile,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<Self::AssetData>;
 }
 
@@ -37,19 +34,19 @@ impl<Loader: AssetLoader + ?Sized> AssetLoader for Box<Loader> {
     fn compile_asset(
         &self,
         asset: &Asset<Self::AssetData>,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
-        (**self).compile_asset(asset, config, source_files)
+        (**self).compile_asset(asset, source_files, target_path)
     }
 
     fn load_asset(
         &self,
         compilation_result: &AssetCompilationFile,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<Self::AssetData> {
-        (**self).load_asset(compilation_result, config, source_files)
+        (**self).load_asset(compilation_result, source_files, target_path)
     }
 }
 

@@ -8,7 +8,6 @@ use crate::{
     asset::{Asset, AssetDependency},
     asset_compilation::AssetCompilationFile,
     asset_loader::TempFile,
-    assets_config::AssetsConfig,
     source_files::{SourceFileRef, SourceFiles},
 };
 
@@ -17,8 +16,8 @@ use super::{AssetCompileResult, AssetLoader};
 pub struct ShaderLoader {}
 
 impl ShaderLoader {
-    fn get_output_path(id: &Uuid, config: &AssetsConfig) -> PathBuf {
-        config.target.join(id.to_string()).with_extension("spv")
+    fn get_output_path(id: &Uuid, target_path: &std::path::Path) -> PathBuf {
+        target_path.join(id.to_string()).with_extension("spv")
     }
 }
 
@@ -28,8 +27,8 @@ impl AssetLoader for ShaderLoader {
     fn compile_asset(
         &self,
         asset: &Asset<Self::AssetData>,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
         let files_snapshot = source_files.take_snapshot();
         log::info!("Loading asset {:?}", asset.key);
@@ -39,7 +38,7 @@ impl AssetLoader for ShaderLoader {
             .main_file_ref()
             .get_path()
             .to_path(files_snapshot.base_path());
-        let output_path = TempFile::new(ShaderLoader::get_output_path(&id, config));
+        let output_path = TempFile::new(ShaderLoader::get_output_path(&id, target_path));
         let output_d_path = TempFile::new(output_path.path().with_extension("spv.d"));
 
         let shader_compile_result = Command::new("glslc")
@@ -97,10 +96,10 @@ impl AssetLoader for ShaderLoader {
     fn load_asset(
         &self,
         compilation_result: &AssetCompilationFile,
-        config: &AssetsConfig,
         _source_files: &SourceFiles,
+        target_path: &std::path::Path,
     ) -> anyhow::Result<Self::AssetData> {
-        let output_path = ShaderLoader::get_output_path(&compilation_result.id, config);
+        let output_path = ShaderLoader::get_output_path(&compilation_result.id, target_path);
         let data = std::fs::read(output_path)?;
         Ok(Shader { data })
     }

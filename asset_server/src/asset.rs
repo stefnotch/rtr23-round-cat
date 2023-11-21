@@ -7,7 +7,6 @@ use crate::{
     asset_compilation::AssetCompilationFile,
     asset_database::{AssetDatabase, AssetDatabaseMigrated},
     asset_loader::AssetLoader,
-    assets_config::AssetsConfig,
     file_change::FileTimestamp,
     source_files::{SourceFileRef, SourceFiles},
 };
@@ -56,7 +55,6 @@ impl<Data: AssetData> Asset<Data> {
         &mut self,
         loader: &impl AssetLoader<AssetData = Data>,
         asset_database: &AssetDatabase<AssetDatabaseMigrated>,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<AssetCompilationFile> {
         if let Ok(Some(asset_cache_file)) = asset_database.get_asset_compilation_file(&self.key) {
@@ -66,7 +64,8 @@ impl<Data: AssetData> Asset<Data> {
             }
         }
 
-        let compile_result = loader.compile_asset(self, config, source_files)?; // Potentially slow
+        let compile_result =
+            loader.compile_asset(self, source_files, asset_database.get_target_path())?; // Potentially slow
         asset_database.set_asset_compilation_file(&self.key, &compile_result.compilation_file)?;
         self.data = compile_result.data.map(Arc::new);
         Ok(compile_result.compilation_file)
@@ -77,17 +76,19 @@ impl<Data: AssetData> Asset<Data> {
         &mut self,
         loader: &impl AssetLoader<AssetData = Data>,
         asset_database: &AssetDatabase<AssetDatabaseMigrated>,
-        config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<Arc<Data>> {
-        let compile_result =
-            self.compile_if_outdated(loader, asset_database, config, source_files)?; // Potentially slow
+        let compile_result = self.compile_if_outdated(loader, asset_database, source_files)?; // Potentially slow
 
         if let Some(data) = self.data.clone() {
             return Ok(data);
         } else {
             let data = loader
-                .load_asset(&compile_result, config, source_files)
+                .load_asset(
+                    &compile_result,
+                    source_files,
+                    asset_database.get_target_path(),
+                )
                 .map(Arc::new)?; // Potentially slow
             self.data = Some(data.clone());
             return Ok(data);

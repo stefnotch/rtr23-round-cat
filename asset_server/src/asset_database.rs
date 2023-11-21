@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use asset_common::AssetRef;
 use redb::{Database, ReadableTable, TableDefinition};
 
@@ -5,6 +7,7 @@ use crate::asset_compilation::AssetCompilationFile;
 
 pub struct AssetDatabase<State> {
     db: Database,
+    target_path: PathBuf,
     _state: State,
 }
 
@@ -12,9 +15,10 @@ pub struct AssetDatabaseNew;
 pub struct AssetDatabaseMigrated;
 
 impl AssetDatabase<AssetDatabaseNew> {
-    pub fn new(db: Database) -> Self {
+    pub fn new(db: Database, target_path: PathBuf) -> Self {
         Self {
             db,
+            target_path,
             _state: AssetDatabaseNew,
         }
     }
@@ -34,6 +38,7 @@ impl AssetDatabase<AssetDatabaseNew> {
     pub fn finished_migration(self) -> AssetDatabase<AssetDatabaseMigrated> {
         AssetDatabase {
             db: self.db,
+            target_path: self.target_path,
             _state: AssetDatabaseMigrated,
         }
     }
@@ -49,6 +54,10 @@ impl<State> AssetDatabase<State> {
 const ASSET_FILE_INFO_TABLE: TableDefinition<&[u8], Vec<u8>> =
     TableDefinition::new("asset_file_info");
 impl AssetDatabase<AssetDatabaseMigrated> {
+    pub fn get_target_path(&self) -> &Path {
+        &self.target_path
+    }
+
     pub fn get_asset_compilation_file(
         &self,
         key: &AssetRef,
