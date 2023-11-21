@@ -31,14 +31,14 @@ impl AssetLoader for ShaderLoader {
         config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
-        let snapshot_lock = source_files.take_snapshot();
+        let files_snapshot = source_files.take_snapshot();
         log::info!("Loading asset {:?}", asset.key);
 
         let id = Uuid::new_v4();
         let input_path = asset
             .main_file_ref()
             .get_path()
-            .to_path(source_files.base_path());
+            .to_path(files_snapshot.base_path());
         let output_path = TempFile::new(ShaderLoader::get_output_path(&id, config));
         let output_d_path = TempFile::new(output_path.path().with_extension("spv.d"));
 
@@ -67,11 +67,11 @@ impl AssetLoader for ShaderLoader {
             .ok_or_else(|| anyhow::format_err!("Invalid dependency file for {:?}", asset.key))?
             .trim()
             .split(' ')
-            .map(|path| SourceFileRef::new(path, source_files.base_path()));
+            .map(|path| SourceFileRef::new(path, files_snapshot.base_path()));
 
         let mut asset_dependencies = HashSet::new();
         for dependency in dependency_paths {
-            let timestamp = source_files.get(&snapshot_lock, &dependency)?;
+            let timestamp = files_snapshot.get(&dependency)?;
             asset_dependencies.insert(AssetDependency {
                 file: dependency,
                 timestamp,
@@ -85,7 +85,7 @@ impl AssetLoader for ShaderLoader {
             compilation_file: AssetCompilationFile {
                 main_file: AssetDependency {
                     file: asset.main_file.file.clone(),
-                    timestamp: source_files.get(&snapshot_lock, &asset.main_file.file)?,
+                    timestamp: files_snapshot.get(&asset.main_file.file)?,
                 },
                 dependencies: asset_dependencies,
                 id,

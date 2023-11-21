@@ -1,11 +1,7 @@
-use asset_common::AssetRef;
+use asset_common::{scene::Scene, AssetRef};
 
 use crate::{
-    asset::AssetDependency,
-    asset_database::{AssetDatabase, AssetDatabaseMigrated},
-    file_change::FileTimestamp,
-    source_files::SourceFileRef,
-    MyAssetTypes,
+    asset::AssetDependency, file_change::FileTimestamp, source_files::SourceFileRef, AssetInserter,
 };
 
 use super::{Asset, AssetSourcer, CreateAssetInfo};
@@ -21,20 +17,16 @@ impl SceneSourcer {
     }
 }
 
-impl AssetSourcer<MyAssetTypes> for SceneSourcer {
+impl AssetSourcer for SceneSourcer {
     fn might_read(&self, path: &SourceFileRef) -> bool {
         Self::is_scene_file(path)
     }
 
-    fn create(
-        &self,
-        import_request: CreateAssetInfo,
-        asset_database: &AssetDatabase<AssetDatabaseMigrated>,
-    ) -> Vec<MyAssetTypes> {
+    fn create_assets(&self, import_request: CreateAssetInfo, asset_server: &mut AssetInserter) {
         if !Self::is_scene_file(&import_request.file_ref) {
-            return vec![];
+            return;
         }
-        let mut imported_asset = Asset::new(
+        let mut imported_asset = Asset::<Scene>::new(
             AssetRef::new(import_request.asset_name_base),
             AssetDependency {
                 file: import_request.file_ref.clone(),
@@ -43,12 +35,13 @@ impl AssetSourcer<MyAssetTypes> for SceneSourcer {
         );
 
         imported_asset.try_populate_from_cache_file(
-            asset_database
+            asset_server
+                .asset_database
                 .get_asset_compilation_file(imported_asset.get_key())
                 .ok()
                 .flatten(),
         );
 
-        vec![MyAssetTypes::Scene(imported_asset)]
+        asset_server.all_assets.add_asset(imported_asset);
     }
 }

@@ -9,10 +9,10 @@ use asset_common::{
 use asset_server::{
     asset_database::{AssetDatabase, AssetDatabaseMigrated},
     asset_loader::{SceneLoader, ShaderLoader},
-    asset_sourcer::{AssetSourcer, CreateAssetInfo, SceneSourcer, ShaderSourcer},
+    asset_sourcer::{SceneSourcer, ShaderSourcer},
     assets_config::AssetsConfig,
-    source_files::{SourceFiles, SourceFilesMap},
-    AllAssets, MyAssetServer, MyAssetTypes,
+    source_files::SourceFiles,
+    AllAssets, MyAssetServer,
 };
 use env_logger::Env;
 use interprocess::local_socket::LocalSocketListener;
@@ -28,47 +28,26 @@ async fn main() -> anyhow::Result<()> {
     };
 
     fs::create_dir_all(&config.target)?;
+
     let asset_database = load_asset_database(&config)?;
+    let mut asset_server = MyAssetServer {
+        config: config.clone(),
+        source_files: SourceFiles::new(config.source.clone()),
+        asset_sourcers: vec![Box::new(ShaderSourcer {}), Box::new(SceneSourcer {})],
+        asset_database,
+        all_assets: AllAssets::new()
+            .with_asset_type(ShaderLoader {})
+            .with_asset_type(SceneLoader {}),
+    };
 
     // TODO: start the file watcher *here*
 
     // Read the source files and create the assets
-    let asset_sourcers: Vec<Box<dyn AssetSourcer<MyAssetTypes>>> =
-        vec![Box::new(ShaderSourcer {}), Box::new(SceneSourcer {})];
-
-    let mut all_assets = AllAssets::new()
-        .with_asset_type(ShaderLoader {})
-        .with_asset_type(SceneLoader {});
-
-    let source_files = SourceFilesMap::read_startup(&config, &asset_sourcers);
-    for (source_ref, _) in source_files.files.iter() {
-        for asset_sourcer in asset_sourcers.iter() {
-            if !asset_sourcer.might_read(source_ref) {
-                continue;
-            }
-            for asset in asset_sourcer.create(
-                CreateAssetInfo::from_source_file(source_ref.clone()),
-                &asset_database,
-            ) {
-                match asset {
-                    MyAssetTypes::Shader(asset) => all_assets.add_asset(asset),
-                    MyAssetTypes::Scene(asset) => all_assets.add_asset(asset),
-                    // MyAssetTypes::Model(asset) => model_assets.add_asset(asset),
-                }
-            }
-        }
-    }
+    asset_server.load_startup();
 
     // TODO: Start working with the file watcher channel
-    let mut assets_server = MyAssetServer {
-        config,
-        source_files: SourceFiles::new(source_files),
-        asset_sourcers,
-        asset_database,
-        all_assets,
-    };
 
-    assets_server.write_schema_file()?;
+    asset_server.write_schema_file()?;
 
     let ipc_socket_server = LocalSocketListener::bind(get_ipc_name())?;
     // Only 1 client is supported at a time
@@ -81,11 +60,11 @@ async fn main() -> anyhow::Result<()> {
             let asset_type_id = std::str::from_utf8(&buf)?;
 
             if asset_type_id == Shader::id() {
-                let asset_data = assets_server.load_asset::<Shader>(asset_ref)?;
+                let asset_data = asset_server.load_asset::<Shader>(asset_ref)?;
                 let buf = asset_data.to_bytes()?;
                 connection.write_len_prefixed(&buf)?;
             } else if asset_type_id == Scene::id() {
-                let asset_data = assets_server.load_asset::<Scene>(asset_ref)?;
+                let asset_data = asset_server.load_asset::<Scene>(asset_ref)?;
                 let buf = asset_data.to_bytes()?;
                 connection.write_len_prefixed(&buf)?;
             } else {

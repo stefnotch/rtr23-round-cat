@@ -14,4 +14,4 @@ cargo run --bin asset_server
 
 ## Assets Server
 
-![Schema of what the asset server works like](./assets_server.png)
+![Schema of what the asset server works like](./asset_server.png)

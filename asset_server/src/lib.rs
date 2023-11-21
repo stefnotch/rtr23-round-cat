@@ -10,7 +10,7 @@ pub mod read_startup;
 pub mod source_files;
 use std::{collections::HashMap, sync::Arc};
 
-use asset_common::{scene::Scene, shader::Shader, AssetData, AssetRef, AssetTypeId};
+use asset_common::{AssetData, AssetRef, AssetTypeId};
 use asset_loader::AssetLoader;
 use asset_sourcer::AssetSourcer;
 
@@ -22,12 +22,6 @@ use crate::{
     json_schema::AssetJsonSchema,
     source_files::{SourceFileRef, SourceFiles},
 };
-
-pub enum MyAssetTypes {
-    Shader(Asset<Shader>),
-    Scene(Asset<Scene>),
-    // Model(Asset<ModelLoader>),
-}
 
 pub struct AllAssets {
     all_assets: HashMap<AssetTypeId, Box<dyn std::any::Any>>,
@@ -140,11 +134,17 @@ impl<T: AssetData> Assets<T> {
 pub struct MyAssetServer {
     pub config: AssetsConfig,
     pub source_files: SourceFiles,
-    pub asset_sourcers: Vec<Box<dyn AssetSourcer<MyAssetTypes>>>,
+    pub asset_sourcers: Vec<Box<dyn AssetSourcer>>,
     pub asset_database: AssetDatabase<AssetDatabaseMigrated>,
 
     // See also typed registry from https://arxiv.org/pdf/2307.07069.pdf
     pub all_assets: AllAssets,
+}
+
+pub struct AssetInserter<'a> {
+    pub source_files: &'a SourceFiles,
+    pub asset_database: &'a AssetDatabase<AssetDatabaseMigrated>,
+    pub all_assets: &'a mut AllAssets,
 }
 
 impl MyAssetServer {

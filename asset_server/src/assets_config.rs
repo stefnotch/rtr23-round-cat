@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[derive(Clone, Debug)]
 pub struct AssetsConfig {
     pub version: u64,
     pub source: PathBuf,

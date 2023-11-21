@@ -21,13 +21,8 @@ impl AssetLoader for SceneLoader {
         config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
-        let snapshot_lock = source_files.take_snapshot();
-        let data = std::fs::read(
-            asset
-                .main_file_ref()
-                .get_path()
-                .to_path(source_files.base_path()),
-        )?;
+        let files_snapshot = source_files.take_snapshot();
+        let data = files_snapshot.read(&asset.main_file.file)?;
 
         Ok(AssetCompileResult {
             compilation_file: AssetCompilationFile {
@@ -45,10 +40,9 @@ impl AssetLoader for SceneLoader {
         _config: &AssetsConfig,
         source_files: &SourceFiles,
     ) -> anyhow::Result<Self::AssetData> {
-        let snapshot_lock = source_files.take_snapshot();
+        let files_snapshot = source_files.take_snapshot();
         let file = &compilation_result.main_file.file;
-        let data = std::fs::read(file.get_path().to_path(source_files.base_path()))?;
-        source_files.get(&snapshot_lock, file)?;
+        let data = files_snapshot.read(file)?;
         Ok(Scene { data })
     }
 }

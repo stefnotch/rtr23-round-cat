@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{atomic::AtomicU64, Arc, Mutex},
 };
@@ -34,75 +34,106 @@ impl SourceFileRef {
     }
 }
 
-pub struct SourceFilesMap {
-    pub base_path: PathBuf,
-    pub files: HashMap<SourceFileRef, FileTimestamp>,
-}
-impl SourceFilesMap {
-    pub fn new(base_path: PathBuf, files: HashMap<SourceFileRef, FileTimestamp>) -> Self {
-        Self { base_path, files }
-    }
-}
-
-// TODO: This should be like a virtual filesystem, where we can get the file contents.
 #[derive(Clone, Debug)]
 pub struct SourceFiles {
     inner: Arc<SourceFilesInner>,
-    // TODO: Changed file channel https://docs.rs/crossbeam/0.8.2/crossbeam/channel/index.html
 }
 impl SourceFiles {
-    pub fn new(files_map: SourceFilesMap) -> Self {
-        let snapshot_version = 0;
-        let files = files_map
-            .files
-            .into_iter()
-            .map(|(file_ref, timestamp)| {
-                (
-                    file_ref,
-                    SourceFileData {
-                        timestamp,
-                        snapshot_version,
-                    },
-                )
-            })
-            .collect();
+    pub fn new(base_path: PathBuf) -> Self {
         Self {
             inner: Arc::new(SourceFilesInner {
-                base_path: files_map.base_path,
-                snapshot_version: AtomicU64::new(snapshot_version),
-                files: Mutex::new(files),
+                base_path,
+                snapshot_version: AtomicU64::new(0),
+                files: Mutex::new(HashMap::new()),
+                changed_files: Mutex::new(HashSet::new()),
             }),
         }
     }
 
-    pub fn take_snapshot(&self) -> SnapshotLock {
-        SnapshotLock(
-            self.inner
+    pub fn take_snapshot(&self) -> FilesSnapshot {
+        FilesSnapshot {
+            version: self
+                .inner
                 .snapshot_version
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-        )
+            source_files: self.inner.clone(),
+        }
     }
 
+    pub fn update(&self, update: SourceFileUpdate) {
+        let file = update.get_file().clone();
+        let mut files = self.inner.files.lock().unwrap();
+        match update {
+            SourceFileUpdate::Insert(file, timestamp) => {
+                files.insert(
+                    file,
+                    SourceFileData {
+                        timestamp,
+                        snapshot_version: self
+                            .inner
+                            .snapshot_version
+                            .load(std::sync::atomic::Ordering::SeqCst),
+                    },
+                );
+            }
+            SourceFileUpdate::Remove(file) => {
+                files.remove(&file);
+            }
+        };
+        self.inner.changed_files.lock().unwrap().insert(file);
+    }
+
+    pub fn try_take_changed(&self) -> Option<SourceFileRef> {
+        let mut changed_files = self.inner.changed_files.lock().unwrap();
+        let file = changed_files.iter().next().cloned()?;
+        changed_files.remove(&file);
+        Some(file)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum SourceFileUpdate {
+    Insert(SourceFileRef, FileTimestamp),
+    Remove(SourceFileRef),
+}
+
+impl SourceFileUpdate {
+    pub fn get_file(&self) -> &SourceFileRef {
+        match self {
+            SourceFileUpdate::Insert(file, _) => file,
+            SourceFileUpdate::Remove(file) => file,
+        }
+    }
+}
+
+pub struct FilesSnapshot {
+    version: u64,
+    source_files: Arc<SourceFilesInner>,
+}
+
+impl FilesSnapshot {
     pub fn base_path(&self) -> &Path {
-        &self.inner.base_path
+        &self.source_files.base_path
     }
 
-    pub fn get(
-        &self,
-        lock: &SnapshotLock,
-        file: &SourceFileRef,
-    ) -> Result<FileTimestamp, SnapshotReadError> {
-        let files = self.inner.files.lock().unwrap();
+    pub fn get(&self, file: &SourceFileRef) -> Result<FileTimestamp, SnapshotReadError> {
+        let files = self.source_files.files.lock().unwrap();
         let file = files.get(file).ok_or(SnapshotReadError::NotFound)?;
-        if file.snapshot_version <= lock.0 {
+        if file.snapshot_version <= self.version {
             Ok(file.timestamp)
         } else {
             Err(SnapshotReadError::VersionChanged)
         }
     }
-}
 
-pub struct SnapshotLock(u64);
+    pub fn read(&self, file: &SourceFileRef) -> Result<Vec<u8>, SnapshotReadError> {
+        let data = std::fs::read(file.get_path().to_path(self.base_path()))?;
+        // TODO: Technically, this isn't race condition free
+        // The fs watcher could still be reporting the old timestamp, despite the file having changed
+        let _ = self.get(file)?; // check version after read
+        Ok(data)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum SnapshotReadError {
@@ -110,6 +141,8 @@ pub enum SnapshotReadError {
     VersionChanged,
     #[error("The file was not found.")]
     NotFound,
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 #[derive(Debug)]
@@ -119,6 +152,7 @@ struct SourceFilesInner {
     /// (Similar idea as optimistic locking.)
     snapshot_version: AtomicU64,
     files: Mutex<HashMap<SourceFileRef, SourceFileData>>,
+    changed_files: Mutex<HashSet<SourceFileRef>>,
 }
 
 #[derive(Clone, Debug)]
