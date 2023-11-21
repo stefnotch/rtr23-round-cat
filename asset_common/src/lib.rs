@@ -1,5 +1,7 @@
 mod asset;
+pub mod gpu;
 pub mod ipc;
+pub mod transform;
 
 use asset::asset_collection::AssetCollection;
 pub use asset::*;

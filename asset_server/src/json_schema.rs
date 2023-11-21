@@ -41,3 +41,35 @@ struct OneOfValue {
     #[serde(rename = "const")]
     const_value: String,
 }
+
+impl<'de, T: AssetData> de::Deserialize<'de> for AssetHandle<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(AssetHandleVisitor::<T> {
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+struct AssetHandleVisitor<T: AssetData> {
+    _marker: std::marker::PhantomData<T>,
+}
+impl<'de, T: AssetData> de::Visitor<'de> for AssetHandleVisitor<T> {
+    type Value = AssetHandle<T>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("A string representing an asset reference")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AssetHandle {
+            key: AssetRef::new(v.split('/').map(|s| s.to_string()).collect()),
+            _marker: std::marker::PhantomData,
+        })
+    }
+}

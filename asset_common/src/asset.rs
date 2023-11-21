@@ -1,7 +1,8 @@
 pub mod asset_collection;
+pub mod scene;
 pub mod shader;
 
-use serde::{de, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use std::{
     borrow::Cow,
     error::Error,
@@ -9,7 +10,7 @@ use std::{
 };
 
 /// A reference to an asset.
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Archive, Deserialize, Serialize, Eq, Hash, PartialEq)]
 pub struct AssetRef {
     name: Vec<String>,
 }
@@ -19,11 +20,14 @@ impl AssetRef {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
+        rkyv::to_bytes::<_, 256>(self).unwrap()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        bincode::deserialize(bytes).unwrap()
+        rkyv::check_archived_root::<Self>(bytes)
+            .unwrap()
+            .deserialize(&mut rkyv::Infallible)
+            .unwrap()
     }
 }
 
@@ -86,7 +90,7 @@ pub struct AssetHandle<T: AssetData> {
 }
 
 impl<T: AssetData> AssetHandle<T> {
-    pub(crate) fn new_unchecked(key: AssetRef) -> Self {
+    pub fn new_unchecked(key: AssetRef) -> Self {
         Self {
             key,
             _marker: std::marker::PhantomData,
@@ -95,37 +99,5 @@ impl<T: AssetData> AssetHandle<T> {
 
     pub fn get_ref(&self) -> &AssetRef {
         &self.key
-    }
-}
-
-impl<'de, T: AssetData> de::Deserialize<'de> for AssetHandle<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_str(AssetHandleVisitor::<T> {
-            _marker: std::marker::PhantomData,
-        })
-    }
-}
-
-struct AssetHandleVisitor<T: AssetData> {
-    _marker: std::marker::PhantomData<T>,
-}
-impl<'de, T: AssetData> de::Visitor<'de> for AssetHandleVisitor<T> {
-    type Value = AssetHandle<T>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("A string representing an asset reference")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(AssetHandle {
-            key: AssetRef::new(v.split('/').map(|s| s.to_string()).collect()),
-            _marker: std::marker::PhantomData,
-        })
     }
 }
