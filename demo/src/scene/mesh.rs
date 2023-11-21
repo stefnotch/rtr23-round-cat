@@ -1,6 +1,6 @@
-use crate::buffer::Buffer;
+use asset_client::asset_common::gpu::Vertex;
 
-use super::Vertex;
+use crate::buffer::Buffer;
 
 pub struct Mesh {
     pub index_buffer: Buffer<u32>,

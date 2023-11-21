@@ -4,6 +4,7 @@ use ash::{
     util::read_spv,
     vk::{self},
 };
+use asset_client::asset_common::gpu::Vertex;
 use crevice::std140::AsStd140;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, shader_types,
         CameraDescriptorSet, SwapchainIndex,
     },
-    scene::{Scene, Vertex},
+    scene::{Scene, VkVertexDescription},
     swapchain::SwapchainContainer,
 };
 

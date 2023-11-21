@@ -10,7 +10,7 @@ pub use mesh::*;
 pub use model::*;
 pub use texture::*;
 
-use std::{borrow::Cow, error::Error};
+use std::{borrow::Cow, collections::HashMap, error::Error};
 
 use serde::{Deserialize, Serialize};
 
@@ -19,11 +19,21 @@ use crate::{AssetData, AssetTypeId};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedScene {
     pub models: Vec<LoadedModel>,
+    pub(crate) materials: HashMap<LoadedMaterialRef, LoadedMaterial>,
+    pub(crate) meshes: HashMap<LoadedMeshRef, LoadedMesh>,
+    pub(crate) images: HashMap<LoadedImageRef, LoadedImage>,
+    pub(crate) samplers: HashMap<LoadedSamplerRef, LoadedSampler>,
 }
 
 impl LoadedScene {
     pub fn new() -> Self {
-        Self { models: Vec::new() }
+        Self {
+            models: Default::default(),
+            materials: Default::default(),
+            meshes: Default::default(),
+            images: Default::default(),
+            samplers: Default::default(),
+        }
     }
 }
 

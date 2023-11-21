@@ -3,13 +3,25 @@ use ultraviolet::{Vec2, Vec3};
 
 use crate::gpu::Vertex;
 
-use super::{GltfAsset, GltfAssetId};
+use super::{GltfAsset, GltfAssetId, LoadedScene};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedMesh {
     pub id: GltfAssetId,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoadedMeshRef(GltfAssetId);
+impl LoadedMeshRef {
+    pub fn new(id: GltfAssetId) -> Self {
+        Self(id)
+    }
+
+    pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedMesh> {
+        scene.meshes.get(&self)
+    }
 }
 
 impl GltfAsset for LoadedMesh {

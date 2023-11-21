@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 asset_common = { path = "../asset_common" }
-serde = { version = "1.0" }
 interprocess = { version = "1.2.1", default-features = false }

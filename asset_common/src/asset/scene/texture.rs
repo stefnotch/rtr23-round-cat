@@ -1,13 +1,13 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use super::{GltfAsset, GltfAssetId};
+use super::{GltfAsset, GltfAssetId, LoadedScene};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedTexture {
-    pub image: Arc<LoadedImage>,
-    pub sampler: Arc<LoadedSampler>,
+    pub image: LoadedImageRef,
+    pub sampler: LoadedSamplerRef,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -19,6 +19,18 @@ pub struct LoadedImage {
 impl GltfAsset for LoadedImage {
     fn id(&self) -> GltfAssetId {
         self.id
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoadedImageRef(GltfAssetId);
+impl LoadedImageRef {
+    pub fn new(id: GltfAssetId) -> Self {
+        Self(id)
+    }
+
+    pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedImage> {
+        scene.images.get(&self)
     }
 }
 
@@ -70,6 +82,18 @@ pub struct LoadedSampler {
 impl GltfAsset for LoadedSampler {
     fn id(&self) -> GltfAssetId {
         self.id
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoadedSamplerRef(GltfAssetId);
+impl LoadedSamplerRef {
+    pub fn new(id: GltfAssetId) -> Self {
+        Self(id)
+    }
+
+    pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedSampler> {
+        scene.samplers.get(&self)
     }
 }
 

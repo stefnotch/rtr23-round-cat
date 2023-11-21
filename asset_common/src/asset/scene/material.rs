@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ultraviolet::Vec3;
 
-use super::{texture::LoadedTexture, GltfAsset, GltfAssetId};
+use super::{texture::LoadedTexture, GltfAsset, GltfAssetId, LoadedScene};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedMaterial {
@@ -13,6 +13,18 @@ pub struct LoadedMaterial {
     pub metallic_factor: f32,
     pub metallic_roughness_texture: Option<LoadedTexture>,
     pub emissivity: Vec3,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoadedMaterialRef(GltfAssetId);
+impl LoadedMaterialRef {
+    pub fn new(id: GltfAssetId) -> Self {
+        Self(id)
+    }
+
+    pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedMaterial> {
+        scene.materials.get(&self)
+    }
 }
 
 impl LoadedMaterial {

@@ -1,6 +1,5 @@
+use asset_client::asset_common::gpu::Vertex;
 use ultraviolet::{Vec2, Vec3};
-
-use crate::scene::Vertex;
 
 use super::{Asset, AssetId};
 

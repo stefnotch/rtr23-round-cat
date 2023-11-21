@@ -1,8 +1,9 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
+use asset_client::asset_common::gpu::Vertex;
 use gltf::{accessor::Iter, texture::Sampler, Semantic, Texture};
 
-use crate::{scene::Vertex, transform::Transform};
+use crate::transform::Transform;
 
 use super::{
     texture::{

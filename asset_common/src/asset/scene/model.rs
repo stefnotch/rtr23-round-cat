@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 
 use crate::transform::Transform;
 
-use super::{LoadedMaterial, LoadedMesh};
+use super::{LoadedMaterialRef, LoadedMeshRef};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedModel {
@@ -14,7 +12,6 @@ pub struct LoadedModel {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedPrimitive {
-    // TODO: How does serde handle Arcs?
-    pub material: Arc<LoadedMaterial>,
-    pub mesh: Arc<LoadedMesh>,
+    pub material: LoadedMaterialRef,
+    pub mesh: LoadedMeshRef,
 }

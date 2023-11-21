@@ -1,18 +1,15 @@
 use ash::vk;
+use asset_client::asset_common::gpu::Vertex;
 
 use crate::offset_of;
 
-#[derive(Clone, Debug, Copy)]
-#[repr(C)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub uv: [f32; 2],
-    pub tangent: [f32; 4],
+pub trait VkVertexDescription {
+    fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1];
+    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4];
 }
 
-impl Vertex {
-    pub fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+impl VkVertexDescription for Vertex {
+    fn binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
         [vk::VertexInputBindingDescription {
             binding: 0,
             stride: std::mem::size_of::<Self>() as u32,
@@ -20,7 +17,7 @@ impl Vertex {
         }]
     }
 
-    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
+    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
         [
             vk::VertexInputAttributeDescription {
                 location: 0,

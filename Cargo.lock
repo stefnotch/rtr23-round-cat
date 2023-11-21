@@ -139,7 +139,6 @@ version = "0.1.0"
 dependencies = [
  "asset_common",
  "interprocess",
- "serde",
 ]
 
 [[package]]
@@ -160,6 +159,7 @@ dependencies = [
  "asset_common",
  "bincode",
  "env_logger",
+ "gltf",
  "interprocess",
  "ipc-channel",
  "log",

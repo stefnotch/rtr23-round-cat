@@ -1,4 +1,4 @@
-use asset_common::{AssetData, AssetHandle, AssetRef};
+use asset_common::AssetRef;
 use serde::Serialize;
 use serde_json::json;
 
