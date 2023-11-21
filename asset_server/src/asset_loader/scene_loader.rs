@@ -1,40 +1,131 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use asset_common::{
+    gpu::Vertex,
+    scene::{
+        AddressMode, BytesImageData, ColorSpace, Filter, GltfAssetId, ImageFormat, LoadedImage,
+        LoadedImageRef, LoadedMaterial, LoadedMaterialRef, LoadedMesh, LoadedMeshRef, LoadedModel,
+        LoadedPrimitive, LoadedSampler, LoadedSamplerRef, LoadedScene, LoadedTexture, MipmapMode,
+        SamplerInfo,
+    },
+    transform::Transform,
+};
+use uuid::Uuid;
 
-use asset_client::asset_common::gpu::Vertex;
+use crate::{asset::Asset, asset_compilation::AssetCompilationFile, source_files::SourceFiles};
+
+use super::{AssetCompileResult, AssetLoader};
+use std::{collections::HashMap, path::Path};
+
 use gltf::{accessor::Iter, texture::Sampler, Semantic, Texture};
 
-use crate::transform::Transform;
+pub struct SceneLoader {}
 
-use super::{
-    texture::{
-        AddressMode, BytesImageData, Filter, ImageFormat, LoadedImage, LoadedSampler,
-        LoadedTexture, MipmapMode, SamplerInfo,
-    },
-    AssetId, AssetLoader, ColorSpace, LoadedMaterial, LoadedMesh, LoadedModel, LoadedPrimitive,
-    LoadedScene,
-};
+impl AssetLoader for SceneLoader {
+    type AssetData = LoadedScene;
+
+    fn compile_asset(
+        &self,
+        asset: &Asset<Self::AssetData>,
+        _source_files: &SourceFiles,
+        _target_path: &std::path::Path,
+    ) -> anyhow::Result<AssetCompileResult<Self::AssetData>> {
+        Ok(AssetCompileResult {
+            // TODO: Not a real file though
+            compilation_file: AssetCompilationFile {
+                main_file: asset.main_file.clone(),
+                dependencies: Default::default(),
+                id: Uuid::new_v4(),
+            },
+            data: None,
+        })
+    }
+
+    fn load_asset(
+        &self,
+        compilation_result: &AssetCompilationFile,
+        source_files: &SourceFiles,
+        _target_path: &std::path::Path,
+    ) -> anyhow::Result<Self::AssetData> {
+        let files_snapshot = source_files.take_snapshot();
+        let file = &compilation_result.main_file.file;
+
+        let data = GltfAssetLoader::new()
+            .load_scene(file.get_path().to_path(files_snapshot.base_path()))?;
+
+        // Ideally one would check all the gltf dependencies here, but for now we just check the main file
+        let _ = files_snapshot.read(file)?;
+        Ok(data)
+    }
+}
+
+//////////////////////// IMPLEMENTATION ////////////////////////
 
 struct SceneLoadingData {
     scene: LoadedScene,
     buffers: Vec<gltf::buffer::Data>,
     images: HashMap<usize, gltf::image::Data>,
-    material_ids: HashMap<MaterialKey, AssetId>,
-    mesh_ids: HashMap<MeshKey, AssetId>,
-    sampler_ids: HashMap<SamplerKey, AssetId>,
-    image_ids: HashMap<ImageKey, AssetId>,
+    missing_material_ref: LoadedMaterialRef,
+    material_ids: KeyToRefMap<MaterialKey, LoadedMaterialRef>,
+    mesh_ids: KeyToRefMap<MeshKey, LoadedMeshRef>,
+    sampler_ids: KeyToRefMap<SamplerKey, LoadedSamplerRef>,
+    image_ids: KeyToRefMap<ImageKey, LoadedImageRef>,
+}
+
+struct KeyToRefMap<K, Ref> {
+    map: HashMap<K, Ref>,
+    id_counter: u32,
+}
+impl<K, Ref> KeyToRefMap<K, Ref>
+where
+    K: Eq + std::hash::Hash,
+    Ref: From<GltfAssetId> + Clone,
+{
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            id_counter: 0,
+        }
+    }
+
+    fn get_id(&mut self, key: K) -> Ref {
+        self.map
+            .entry(key)
+            .or_insert_with(|| {
+                let id = GltfAssetId::new(self.id_counter);
+                self.id_counter += 1;
+                Ref::from(id)
+            })
+            .clone()
+    }
+
+    fn get_new_id(&mut self) -> Ref {
+        let id = GltfAssetId::new(self.id_counter);
+        self.id_counter += 1;
+        Ref::from(id)
+    }
+}
+impl<K, Ref> Default for KeyToRefMap<K, Ref>
+where
+    K: Eq + std::hash::Hash,
+    Ref: From<GltfAssetId> + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SceneLoadingData {
     fn new(buffers: Vec<gltf::buffer::Data>, images: Vec<gltf::image::Data>) -> Self {
         let images = images.into_iter().enumerate().collect();
+        let mut material_ids = KeyToRefMap::new();
         Self {
             scene: LoadedScene::new(),
             buffers,
             images,
-            material_ids: HashMap::new(),
-            mesh_ids: HashMap::new(),
-            sampler_ids: HashMap::new(),
-            image_ids: HashMap::new(),
+            missing_material_ref: material_ids.get_new_id(),
+            material_ids,
+            mesh_ids: Default::default(),
+            sampler_ids: Default::default(),
+            image_ids: Default::default(),
         }
     }
 }
@@ -62,11 +153,16 @@ struct SamplerKey {
     sampler_data: SamplerInfo,
 }
 
-impl AssetLoader {
-    pub fn load_scene(
-        &mut self,
-        path: impl AsRef<Path>,
-    ) -> Result<LoadedScene, Box<dyn std::error::Error>> {
+pub struct GltfAssetLoader {}
+
+impl GltfAssetLoader {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl GltfAssetLoader {
+    pub fn load_scene(&mut self, path: impl AsRef<Path>) -> anyhow::Result<LoadedScene> {
         let (gltf, buffers, images) = gltf::import(path)?;
 
         let scene = gltf.default_scene().expect("Expected a default scene");
@@ -84,7 +180,10 @@ impl AssetLoader {
         node: &gltf::Node<'_>,
         parent_transform: Transform,
     ) {
-        let local_transform = node.transform().into();
+        let local_transform = {
+            let (position, orientation, scale) = node.transform().decomposed();
+            Transform::from_arrays(position, orientation, scale)
+        };
         let global_transform = &parent_transform * local_transform;
 
         for child in node.children() {
@@ -126,20 +225,25 @@ impl AssetLoader {
         &mut self,
         loading_data: &mut SceneLoadingData,
         material: &gltf::Material<'_>,
-    ) -> std::sync::Arc<LoadedMaterial> {
+    ) -> LoadedMaterialRef {
         let material_key = match material.index() {
             Some(index) => MaterialKey { index },
-            None => return Arc::new(LoadedMaterial::missing_material(self.id_generator.next())),
+            None => {
+                loading_data
+                    .scene
+                    .materials
+                    .entry(loading_data.missing_material_ref)
+                    .or_insert_with(|| {
+                        LoadedMaterial::missing_material(loading_data.missing_material_ref)
+                    });
+                return loading_data.missing_material_ref;
+            }
         };
 
-        let id = loading_data
-            .material_ids
-            .entry(material_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = loading_data.material_ids.get_id(material_key);
 
-        if let Some(material) = self.materials.assets.get(&id) {
-            material.clone()
+        if let Some(_material) = loading_data.scene.materials.get(&id) {
+            id
         } else {
             let material_pbr = material.pbr_metallic_roughness();
             let emissive_factor = material.emissive_factor();
@@ -186,7 +290,7 @@ impl AssetLoader {
                         LoadedTexture { image, sampler }
                     });
 
-            let material = Arc::new(LoadedMaterial {
+            let material = LoadedMaterial {
                 id,
                 base_color,
                 base_color_texture,
@@ -195,10 +299,10 @@ impl AssetLoader {
                 metallic_roughness_texture,
                 emissivity,
                 normal_texture,
-            });
+            };
 
-            self.materials.assets.insert(id, material.clone());
-            material
+            loading_data.scene.materials.insert(id, material);
+            id
         }
     }
 
@@ -206,7 +310,7 @@ impl AssetLoader {
         &mut self,
         loading_data: &mut SceneLoadingData,
         primitive: &gltf::Primitive<'_>,
-    ) -> std::sync::Arc<LoadedMesh> {
+    ) -> LoadedMeshRef {
         assert_eq!(primitive.mode(), gltf::mesh::Mode::Triangles);
 
         let mesh_key = MeshKey {
@@ -216,60 +320,54 @@ impl AssetLoader {
             vertex_buffer_uvs_id: primitive.get(&Semantic::TexCoords(0)).map(|a| a.index()),
         };
 
-        let id = loading_data
-            .mesh_ids
-            .entry(mesh_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = loading_data.mesh_ids.get_id(mesh_key);
 
-        self.meshes
-            .assets
-            .entry(id)
-            .or_insert_with(|| {
-                let reader = primitive
-                    .reader(|buffer| loading_data.buffers.get(buffer.index()).map(|v| &v.0[..]));
-                let positions = reader.read_positions().unwrap();
-                let normals = reader.read_normals().unwrap();
-                let tex_coords: Box<dyn Iterator<Item = _>> =
-                    if let Some(read_tex_coords) = reader.read_tex_coords(0) {
-                        Box::new(read_tex_coords.into_f32())
-                    } else {
-                        Box::new(std::iter::repeat([0.0f32, 0.0f32]))
-                    };
-                let tangents: Box<dyn Iterator<Item = _>> =
-                    if let Some(Iter::Standard(tangents)) = reader.read_tangents() {
-                        Box::new(tangents)
-                    } else {
-                        // TODO: calculate tangents if they are not provided in the gltf model
-                        Box::new(std::iter::repeat([0.0f32; 4]))
-                    };
+        loading_data.scene.meshes.entry(id).or_insert_with(|| {
+            let reader = primitive
+                .reader(|buffer| loading_data.buffers.get(buffer.index()).map(|v| &v.0[..]));
+            let positions = reader.read_positions().unwrap();
+            let normals = reader.read_normals().unwrap();
+            let tex_coords: Box<dyn Iterator<Item = _>> =
+                if let Some(read_tex_coords) = reader.read_tex_coords(0) {
+                    Box::new(read_tex_coords.into_f32())
+                } else {
+                    Box::new(std::iter::repeat([0.0f32, 0.0f32]))
+                };
+            let tangents: Box<dyn Iterator<Item = _>> =
+                if let Some(Iter::Standard(tangents)) = reader.read_tangents() {
+                    Box::new(tangents)
+                } else {
+                    // TODO: calculate tangents if they are not provided in the gltf model
+                    Box::new(std::iter::repeat([0.0f32; 4]))
+                };
 
-                let mut vertices = vec![];
+            let mut vertices = vec![];
 
-                // zippy zip https://stackoverflow.com/a/71494478/3492994
-                for (position, (normal, (tex_coord, tangent))) in
-                    positions.zip(normals.zip(tex_coords.zip(tangents)))
-                {
-                    vertices.push(Vertex {
-                        position,
-                        normal,
-                        uv: tex_coord,
-                        tangent,
-                    });
-                }
+            // zippy zip https://stackoverflow.com/a/71494478/3492994
+            for (position, (normal, (tex_coord, tangent))) in
+                positions.zip(normals.zip(tex_coords.zip(tangents)))
+            {
+                vertices.push(Vertex {
+                    position,
+                    normal,
+                    uv: tex_coord,
+                    tangent,
+                });
+            }
 
-                let indices = reader
-                    .read_indices()
-                    .map(|indices| indices.into_u32().collect())
-                    .unwrap_or_else(|| (0..(vertices.len() as u32)).collect());
+            let indices = reader
+                .read_indices()
+                .map(|indices| indices.into_u32().collect())
+                .unwrap_or_else(|| (0..(vertices.len() as u32)).collect());
 
-                Arc::new(LoadedMesh {
-                    id,
-                    vertices,
-                    indices,
-                })
-            })
-            .clone()
+            LoadedMesh {
+                id,
+                vertices,
+                indices,
+            }
+        });
+
+        id
     }
 
     fn load_images(
@@ -277,44 +375,36 @@ impl AssetLoader {
         loading_data: &mut SceneLoadingData,
         texture: Texture,
         color_space: ColorSpace,
-    ) -> Arc<LoadedImage> {
+    ) -> LoadedImageRef {
         let texture_index = texture.source().index();
         let texture_key = ImageKey {
             index: texture_index,
         };
 
-        let id = loading_data
-            .image_ids
-            .entry(texture_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = loading_data.image_ids.get_id(texture_key);
 
-        self.images
-            .assets
-            .entry(id)
-            .or_insert_with(|| {
-                let image = loading_data.images.remove(&texture_index).unwrap();
-                let (bytes, format) =
-                    gltf_image_format_to_vulkan_format(image.pixels, &image.format);
+        loading_data.scene.images.entry(id).or_insert_with(|| {
+            let image = loading_data.images.remove(&texture_index).unwrap();
+            let (bytes, format) = gltf_image_format_to_vulkan_format(image.pixels, &image.format);
 
-                Arc::new(LoadedImage {
-                    id,
-                    data: BytesImageData {
-                        dimensions: (image.width, image.height),
-                        format,
-                        color_space,
-                        bytes,
-                    },
-                })
-            })
-            .clone()
+            LoadedImage {
+                id,
+                data: BytesImageData {
+                    dimensions: (image.width, image.height),
+                    format,
+                    color_space,
+                    bytes,
+                },
+            }
+        });
+        id
     }
 
     fn load_sampler(
         &mut self,
         loading_data: &mut SceneLoadingData,
         sampler: Sampler,
-    ) -> Arc<LoadedSampler> {
+    ) -> LoadedSamplerRef {
         let FilterAndMipmapMode {
             min_filter,
             mipmap_mode,
@@ -322,14 +412,15 @@ impl AssetLoader {
             .min_filter()
             .unwrap_or(gltf::texture::MinFilter::Linear)
             .into();
-        let mag_filter = sampler
-            .mag_filter()
-            .unwrap_or(gltf::texture::MagFilter::Linear)
-            .into();
+        let mag_filter = from_gltf_filter(
+            sampler
+                .mag_filter()
+                .unwrap_or(gltf::texture::MagFilter::Linear),
+        );
 
-        let address_mode: [AddressMode; 3] = [
-            sampler.wrap_s().into(),
-            sampler.wrap_s().into(),
+        let address_mode = [
+            from_gltf_address_mode(sampler.wrap_s()),
+            from_gltf_address_mode(sampler.wrap_s()),
             AddressMode::ClampToEdge,
         ];
         let sampler_info = SamplerInfo {
@@ -339,38 +430,32 @@ impl AssetLoader {
             address_mode,
         };
 
-        let id = loading_data
-            .sampler_ids
-            .entry(SamplerKey {
-                sampler_data: sampler_info,
-            })
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = loading_data.sampler_ids.get_id(SamplerKey {
+            sampler_data: sampler_info,
+        });
 
-        self.samplers
-            .assets
+        loading_data
+            .scene
+            .samplers
             .entry(id)
-            .or_insert_with(|| Arc::new(LoadedSampler { id, sampler_info }))
-            .clone()
+            .or_insert_with(|| LoadedSampler { id, sampler_info });
+
+        id
     }
 }
 
-impl From<gltf::texture::WrappingMode> for AddressMode {
-    fn from(wrapping_mode: gltf::texture::WrappingMode) -> Self {
-        match wrapping_mode {
-            gltf::texture::WrappingMode::ClampToEdge => AddressMode::ClampToEdge,
-            gltf::texture::WrappingMode::MirroredRepeat => AddressMode::MirroredRepeat,
-            gltf::texture::WrappingMode::Repeat => AddressMode::Repeat,
-        }
+fn from_gltf_address_mode(wrapping_mode: gltf::texture::WrappingMode) -> AddressMode {
+    match wrapping_mode {
+        gltf::texture::WrappingMode::ClampToEdge => AddressMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => AddressMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => AddressMode::Repeat,
     }
 }
 
-impl From<gltf::texture::MagFilter> for Filter {
-    fn from(linear: gltf::texture::MagFilter) -> Self {
-        match linear {
-            gltf::texture::MagFilter::Nearest => Filter::Nearest,
-            gltf::texture::MagFilter::Linear => Filter::Linear,
-        }
+fn from_gltf_filter(linear: gltf::texture::MagFilter) -> Filter {
+    match linear {
+        gltf::texture::MagFilter::Nearest => Filter::Nearest,
+        gltf::texture::MagFilter::Linear => Filter::Linear,
     }
 }
 

@@ -3,12 +3,12 @@ mod mesh;
 mod texture;
 mod vertex;
 
+use asset_client::asset_common::transform::Transform;
 pub use material::*;
 pub use mesh::*;
 pub use texture::*;
 pub use vertex::*;
 
-use crate::transform::Transform;
 use std::sync::Arc;
 
 pub struct Scene {

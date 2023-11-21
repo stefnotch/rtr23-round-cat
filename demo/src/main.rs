@@ -7,19 +7,16 @@ mod descriptor_set;
 mod image;
 mod image_view;
 mod input_map;
-mod loader;
 mod render;
 mod sampler;
 mod scene;
 mod scene_uploader;
 mod swapchain;
 mod time;
-mod transform;
 mod utility;
 
 use asset_client::AssetClient;
 use gpu_allocator::vulkan::*;
-use loader::AssetLoader;
 use render::{MainRenderer, SwapchainIndex};
 use scene::Scene;
 use std::mem::ManuallyDrop;
@@ -84,7 +81,7 @@ impl CatDemo {
         let mut config_file_loader = config_loader::ConfigFileLoader::new("config.json");
         let config = config_file_loader.load_config();
         let asset_client = Arc::new(AssetClient::new());
-        let main_scene = MainAssets::load(asset_client.clone());
+        let main_assets = MainAssets::load(asset_client.clone());
         let (window_width, window_height) = (800, 600);
 
         let window = WindowBuilder::new()
@@ -96,10 +93,7 @@ impl CatDemo {
             .build(event_loop)
             .expect("Could not create window");
 
-        let mut asset_loader = AssetLoader::new();
-        let loaded_scene = asset_loader
-            .load_scene(&config.scene_path)
-            .expect("Could not load scene");
+        let loaded_scene = asset_client.load(&main_assets.assets.scene);
         println!("Loaded scene : {:?}", loaded_scene.models.len());
 
         let mut freecam_controller = FreecamController::new(5.0, 0.01);
@@ -198,7 +192,7 @@ impl CatDemo {
             descriptor_pool,
             &descriptor_set_layout_cache,
             &swapchain,
-            &main_scene,
+            &main_assets,
         );
 
         let fence = {
@@ -230,7 +224,7 @@ impl CatDemo {
         );
         let time = Time::new();
         Self {
-            main_scene,
+            main_scene: main_assets,
             window,
             context,
             swapchain,

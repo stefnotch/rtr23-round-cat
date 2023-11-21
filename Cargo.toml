@@ -10,3 +10,10 @@ members = [
 
 [profile.dev.package.gltf]
 opt-level = 2
+
+
+[profile.dev.package.bincode]
+opt-level = 2
+
+[profile.dev.package.serde]
+opt-level = 2

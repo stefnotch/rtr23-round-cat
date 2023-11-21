@@ -19,10 +19,10 @@ use crate::{AssetData, AssetTypeId};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedScene {
     pub models: Vec<LoadedModel>,
-    pub(crate) materials: HashMap<LoadedMaterialRef, LoadedMaterial>,
-    pub(crate) meshes: HashMap<LoadedMeshRef, LoadedMesh>,
-    pub(crate) images: HashMap<LoadedImageRef, LoadedImage>,
-    pub(crate) samplers: HashMap<LoadedSamplerRef, LoadedSampler>,
+    pub materials: HashMap<LoadedMaterialRef, LoadedMaterial>,
+    pub meshes: HashMap<LoadedMeshRef, LoadedMesh>,
+    pub images: HashMap<LoadedImageRef, LoadedImage>,
+    pub samplers: HashMap<LoadedSamplerRef, LoadedSampler>,
 }
 
 impl LoadedScene {

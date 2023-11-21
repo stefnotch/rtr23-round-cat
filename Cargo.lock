@@ -482,7 +482,6 @@ dependencies = [
  "crevice",
  "egui",
  "egui-winit-ash-integration",
- "gltf",
  "gpu-allocator",
  "raw-window-handle",
  "serde",

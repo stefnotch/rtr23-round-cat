@@ -32,7 +32,12 @@ impl AssetClient {
     }
 
     pub fn load<T: AssetData>(&self, handle: &AssetHandle<T>) -> T {
+        let instant = std::time::Instant::now();
         let buf = self.request_bytes(handle.get_ref(), T::id());
-        T::from_bytes(&buf).unwrap()
+        println!("requested in {:?}", instant.elapsed());
+        let instant = std::time::Instant::now();
+        let x = T::from_bytes(&buf).unwrap();
+        println!("ser {:?} in {:?}", buf.len(), instant.elapsed());
+        x
     }
 }

@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 use ultraviolet::Vec3;
 
-use super::{texture::LoadedTexture, GltfAsset, GltfAssetId, LoadedScene};
+use super::{texture::LoadedTexture, GltfAssetId, LoadedScene};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedMaterial {
-    pub id: GltfAssetId,
+    pub id: LoadedMaterialRef,
     pub base_color: Vec3,
     pub base_color_texture: Option<LoadedTexture>,
     pub normal_texture: Option<LoadedTexture>,
@@ -26,9 +26,14 @@ impl LoadedMaterialRef {
         scene.materials.get(&self)
     }
 }
+impl From<GltfAssetId> for LoadedMaterialRef {
+    fn from(id: GltfAssetId) -> Self {
+        Self::new(id)
+    }
+}
 
 impl LoadedMaterial {
-    pub fn missing_material(id: GltfAssetId) -> Self {
+    pub fn missing_material(id: LoadedMaterialRef) -> Self {
         Self {
             id,
             base_color: Vec3::new(0.8, 0.8, 0.0),
@@ -39,11 +44,5 @@ impl LoadedMaterial {
             metallic_factor: 0.0,
             emissivity: Vec3::zero(),
         }
-    }
-}
-
-impl GltfAsset for LoadedMaterial {
-    fn id(&self) -> GltfAssetId {
-        self.id
     }
 }

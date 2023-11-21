@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use asset_client::{
-    asset_common::{shader::Shader, AssetHandle, Entrypoint},
+    asset_common::{scene::LoadedScene, shader::Shader, AssetHandle, Entrypoint},
     AssetClient,
 };
 
@@ -27,4 +27,5 @@ pub struct AssetCollectionFile {
     pub gbuffer_vert_shader: AssetHandle<Shader>,
     pub light_frag_shader: AssetHandle<Shader>,
     pub light_vert_shader: AssetHandle<Shader>,
+    pub scene: AssetHandle<LoadedScene>,
 }

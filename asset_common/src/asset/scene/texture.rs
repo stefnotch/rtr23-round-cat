@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use super::{GltfAsset, GltfAssetId, LoadedScene};
+use super::{GltfAssetId, LoadedScene};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedTexture {
@@ -12,14 +12,8 @@ pub struct LoadedTexture {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedImage {
-    pub id: GltfAssetId,
+    pub id: LoadedImageRef,
     pub data: BytesImageData,
-}
-
-impl GltfAsset for LoadedImage {
-    fn id(&self) -> GltfAssetId {
-        self.id
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
@@ -31,6 +25,11 @@ impl LoadedImageRef {
 
     pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedImage> {
         scene.images.get(&self)
+    }
+}
+impl From<GltfAssetId> for LoadedImageRef {
+    fn from(id: GltfAssetId) -> Self {
+        Self::new(id)
     }
 }
 
@@ -75,14 +74,8 @@ pub enum ColorSpace {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadedSampler {
-    pub id: GltfAssetId,
+    pub id: LoadedSamplerRef,
     pub sampler_info: SamplerInfo,
-}
-
-impl GltfAsset for LoadedSampler {
-    fn id(&self) -> GltfAssetId {
-        self.id
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
@@ -94,6 +87,11 @@ impl LoadedSamplerRef {
 
     pub fn get<'a>(&'a self, scene: &'a LoadedScene) -> Option<&'a LoadedSampler> {
         scene.samplers.get(&self)
+    }
+}
+impl From<GltfAssetId> for LoadedSamplerRef {
+    fn from(id: GltfAssetId) -> Self {
+        Self::new(id)
     }
 }
 

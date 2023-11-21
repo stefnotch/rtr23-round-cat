@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use ash::vk::{self, ImageUsageFlags};
+use asset_client::asset_common::scene::{self, LoadedImage, LoadedSampler, LoadedScene};
 use crevice::std140::AsStd140;
 
 use crate::{
@@ -9,14 +10,13 @@ use crate::{
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
     image::Image,
     image_view::ImageView,
-    loader::{self, Asset, LoadedImage, LoadedSampler},
     render::{set_layout_cache::DescriptorSetLayoutCache, shader_types},
     sampler::Sampler,
     scene::{Material, Mesh, Model, Primitive, Scene, Texture},
 };
 
 pub fn setup(
-    loaded_scene: loader::LoadedScene,
+    mut loaded_scene: LoadedScene,
     context: Arc<Context>,
     descriptor_pool: vk::DescriptorPool,
     set_layout_cache: &DescriptorSetLayoutCache,
@@ -115,13 +115,14 @@ pub fn setup(
     let mut sampler_map = HashMap::new();
     let mut texture_map = HashMap::new();
     let mut material_map = HashMap::new();
-    let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
+    let mut model_map = HashMap::new();
 
     let mut staging_vertex_buffers = vec![];
     let mut staging_index_buffers = vec![];
 
     let mut scene = Scene { models: vec![] };
-    for loaded_model in loaded_scene.models {
+    let models = std::mem::take(&mut loaded_scene.models);
+    for loaded_model in models {
         let mut model = Model {
             transform: loaded_model.transform,
             primitives: vec![],
@@ -129,19 +130,19 @@ pub fn setup(
 
         for loaded_primitive in loaded_model.primitives {
             let material = material_map
-                .entry(loaded_primitive.material.id())
+                .entry(loaded_primitive.material)
                 .or_insert_with(|| {
-                    let base_color_texture = loaded_primitive
-                        .material
-                        .as_ref()
+                    let loaded_material = loaded_primitive.material.get(&loaded_scene).unwrap();
+
+                    let base_color_texture = loaded_material
                         .base_color_texture
                         .as_ref()
                         .map(|v| {
                             let image_view = texture_map
-                                .entry(v.image.id())
+                                .entry(v.image)
                                 .or_insert_with(|| {
                                     create_image(
-                                        v.image.clone(),
+                                        v.image.get(&loaded_scene).unwrap(),
                                         context.clone(),
                                         setup_command_buffer,
                                         &mut image_data_buffers,
@@ -150,9 +151,12 @@ pub fn setup(
                                 })
                                 .clone();
                             let sampler = sampler_map
-                                .entry(v.sampler.id())
+                                .entry(v.sampler)
                                 .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
+                                    create_sampler(
+                                        v.sampler.get(&loaded_scene).unwrap(),
+                                        context.clone(),
+                                    )
                                 })
                                 .clone();
                             Texture {
@@ -165,18 +169,16 @@ pub fn setup(
                             sampler: default_sampler.clone(),
                         });
 
-                    let normal_texture = loaded_primitive
-                        .material
-                        .as_ref()
+                    let normal_texture = loaded_material
                         .normal_texture
                         .as_ref()
                         .map(|v| {
                             // TODO: remove code duplication
                             let image_view = texture_map
-                                .entry(v.image.id())
+                                .entry(v.image)
                                 .or_insert_with(|| {
                                     create_image(
-                                        v.image.clone(),
+                                        v.image.get(&loaded_scene).unwrap(),
                                         context.clone(),
                                         setup_command_buffer,
                                         &mut image_data_buffers,
@@ -185,9 +187,12 @@ pub fn setup(
                                 })
                                 .clone();
                             let sampler = sampler_map
-                                .entry(v.sampler.id())
+                                .entry(v.sampler)
                                 .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
+                                    create_sampler(
+                                        v.sampler.get(&loaded_scene).unwrap(),
+                                        context.clone(),
+                                    )
                                 })
                                 .clone();
                             Texture {
@@ -200,18 +205,16 @@ pub fn setup(
                             sampler: default_sampler.clone(),
                         });
 
-                    let metallic_roughness_texture = loaded_primitive
-                        .material
-                        .as_ref()
+                    let metallic_roughness_texture = loaded_material
                         .metallic_roughness_texture
                         .as_ref()
                         .map(|v| {
                             // TODO: remove code duplication
                             let image_view = texture_map
-                                .entry(v.image.id())
+                                .entry(v.image)
                                 .or_insert_with(|| {
                                     create_image(
-                                        v.image.clone(),
+                                        v.image.get(&loaded_scene).unwrap(),
                                         context.clone(),
                                         setup_command_buffer,
                                         &mut image_data_buffers,
@@ -220,9 +223,12 @@ pub fn setup(
                                 })
                                 .clone();
                             let sampler = sampler_map
-                                .entry(v.sampler.id())
+                                .entry(v.sampler)
                                 .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
+                                    create_sampler(
+                                        v.sampler.get(&loaded_scene).unwrap(),
+                                        context.clone(),
+                                    )
                                 })
                                 .clone();
                             Texture {
@@ -244,10 +250,10 @@ pub fn setup(
                     );
 
                     let material = shader_types::Material {
-                        base_color: loaded_primitive.material.base_color,
-                        emissivity: loaded_primitive.material.emissivity,
-                        roughness: loaded_primitive.material.roughness_factor,
-                        metallic: loaded_primitive.material.metallic_factor,
+                        base_color: loaded_material.base_color,
+                        emissivity: loaded_material.emissivity,
+                        roughness: loaded_material.roughness_factor,
+                        metallic: loaded_material.metallic_factor,
                     };
                     material_buffer.copy_data(&material.as_std140());
 
@@ -276,23 +282,24 @@ pub fn setup(
                     );
 
                     Arc::new(Material {
-                        base_color: loaded_primitive.material.base_color,
+                        base_color: loaded_material.base_color,
                         base_color_texture: base_color_texture.clone(),
                         normal_texture: normal_texture.clone(),
-                        roughness_factor: loaded_primitive.material.roughness_factor,
-                        metallic_factor: loaded_primitive.material.metallic_factor,
+                        roughness_factor: loaded_material.roughness_factor,
+                        metallic_factor: loaded_material.metallic_factor,
                         metallic_roughness_texture: metallic_roughness_texture.clone(),
-                        emissivity: loaded_primitive.material.emissivity,
+                        emissivity: loaded_material.emissivity,
                         descriptor_set,
                         descriptor_set_buffer: material_buffer,
                     })
                 })
                 .clone();
             let mesh = model_map
-                .entry(loaded_primitive.mesh.id())
+                .entry(loaded_primitive.mesh)
                 .or_insert_with(|| {
+                    let loaded_mesh = loaded_primitive.mesh.get(&loaded_scene).unwrap();
                     let vertex_buffer = {
-                        let vertices = &loaded_primitive.mesh.vertices;
+                        let vertices = &loaded_mesh.vertices;
                         let staging_buffer = Buffer::new(
                             context.clone(),
                             vertices.get_vec_size(),
@@ -315,7 +322,7 @@ pub fn setup(
                     };
 
                     let index_buffer = {
-                        let indices = &loaded_primitive.mesh.indices;
+                        let indices = &loaded_mesh.indices;
                         let staging_buffer = Buffer::new(
                             context.clone(),
                             indices.get_vec_size(),
@@ -339,7 +346,7 @@ pub fn setup(
                     Arc::new(Mesh {
                         index_buffer,
                         vertex_buffer,
-                        num_indices: loaded_primitive.mesh.indices.len() as u32,
+                        num_indices: loaded_mesh.indices.len() as u32,
                     })
                 })
                 .clone();
@@ -368,19 +375,19 @@ pub fn setup(
     scene
 }
 
-fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> Arc<Sampler> {
-    fn convert_filter(filter: &loader::Filter) -> vk::Filter {
+fn create_sampler(loaded_sampler: &LoadedSampler, context: Arc<Context>) -> Arc<Sampler> {
+    fn convert_filter(filter: &scene::Filter) -> vk::Filter {
         match filter {
-            loader::Filter::Nearest => vk::Filter::NEAREST,
-            loader::Filter::Linear => vk::Filter::LINEAR,
+            scene::Filter::Nearest => vk::Filter::NEAREST,
+            scene::Filter::Linear => vk::Filter::LINEAR,
         }
     }
-    fn convert_address_mode(address_mode: &loader::AddressMode) -> vk::SamplerAddressMode {
+    fn convert_address_mode(address_mode: &scene::AddressMode) -> vk::SamplerAddressMode {
         match address_mode {
-            loader::AddressMode::ClampToEdge => vk::SamplerAddressMode::CLAMP_TO_EDGE,
-            loader::AddressMode::MirroredRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
-            loader::AddressMode::Repeat => vk::SamplerAddressMode::REPEAT,
-            loader::AddressMode::ClampToBorder => vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            scene::AddressMode::ClampToEdge => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            scene::AddressMode::MirroredRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
+            scene::AddressMode::Repeat => vk::SamplerAddressMode::REPEAT,
+            scene::AddressMode::ClampToBorder => vk::SamplerAddressMode::CLAMP_TO_BORDER,
         }
     }
 
@@ -389,8 +396,8 @@ fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> 
         .mag_filter(convert_filter(&loaded_sampler.sampler_info.mag_filter))
         .min_filter(convert_filter(&loaded_sampler.sampler_info.min_filter))
         .mipmap_mode(match &loaded_sampler.sampler_info.mipmap_mode {
-            loader::MipmapMode::Nearest => vk::SamplerMipmapMode::NEAREST,
-            loader::MipmapMode::Linear => vk::SamplerMipmapMode::LINEAR,
+            scene::MipmapMode::Nearest => vk::SamplerMipmapMode::NEAREST,
+            scene::MipmapMode::Linear => vk::SamplerMipmapMode::LINEAR,
         })
         .address_mode_u(convert_address_mode(
             &loaded_sampler.sampler_info.address_mode[0],
@@ -410,45 +417,45 @@ fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> 
 }
 
 fn create_image(
-    loaded_image: Arc<LoadedImage>,
+    loaded_image: &LoadedImage,
     context: Arc<Context>,
     setup_command_buffer: vk::CommandBuffer,
     image_data_buffers: &mut Vec<Buffer<u8>>,
     create_mipmapping: bool,
 ) -> Arc<ImageView> {
-    fn convert_format(format: (loader::ImageFormat, loader::ColorSpace)) -> vk::Format {
+    fn convert_format(format: (scene::ImageFormat, scene::ColorSpace)) -> vk::Format {
         match format {
-            (loader::ImageFormat::R8_UNORM, loader::ColorSpace::Linear) => vk::Format::R8_UNORM,
-            (loader::ImageFormat::R8G8_UNORM, loader::ColorSpace::Linear) => vk::Format::R8G8_UNORM,
-            (loader::ImageFormat::R8G8B8A8_UNORM, loader::ColorSpace::Linear) => {
+            (scene::ImageFormat::R8_UNORM, scene::ColorSpace::Linear) => vk::Format::R8_UNORM,
+            (scene::ImageFormat::R8G8_UNORM, scene::ColorSpace::Linear) => vk::Format::R8G8_UNORM,
+            (scene::ImageFormat::R8G8B8A8_UNORM, scene::ColorSpace::Linear) => {
                 vk::Format::R8G8B8A8_UNORM
             }
-            (loader::ImageFormat::R16_UNORM, loader::ColorSpace::Linear) => vk::Format::R16_UNORM,
-            (loader::ImageFormat::R16G16_UNORM, loader::ColorSpace::Linear) => {
+            (scene::ImageFormat::R16_UNORM, scene::ColorSpace::Linear) => vk::Format::R16_UNORM,
+            (scene::ImageFormat::R16G16_UNORM, scene::ColorSpace::Linear) => {
                 vk::Format::R16G16_UNORM
             }
-            (loader::ImageFormat::R16G16B16A16_UNORM, loader::ColorSpace::Linear) => {
+            (scene::ImageFormat::R16G16B16A16_UNORM, scene::ColorSpace::Linear) => {
                 vk::Format::R16G16B16A16_UNORM
             }
-            (loader::ImageFormat::R32G32B32A32_SFLOAT, loader::ColorSpace::Linear) => {
+            (scene::ImageFormat::R32G32B32A32_SFLOAT, scene::ColorSpace::Linear) => {
                 vk::Format::R32G32B32A32_SFLOAT
             }
 
-            (loader::ImageFormat::R8_UNORM, loader::ColorSpace::SRGB) => vk::Format::R8_SRGB,
-            (loader::ImageFormat::R8G8_UNORM, loader::ColorSpace::SRGB) => vk::Format::R8G8_SRGB,
-            (loader::ImageFormat::R8G8B8A8_UNORM, loader::ColorSpace::SRGB) => {
+            (scene::ImageFormat::R8_UNORM, scene::ColorSpace::SRGB) => vk::Format::R8_SRGB,
+            (scene::ImageFormat::R8G8_UNORM, scene::ColorSpace::SRGB) => vk::Format::R8G8_SRGB,
+            (scene::ImageFormat::R8G8B8A8_UNORM, scene::ColorSpace::SRGB) => {
                 vk::Format::R8G8B8A8_SRGB
             }
-            (loader::ImageFormat::R16_UNORM, loader::ColorSpace::SRGB) => {
+            (scene::ImageFormat::R16_UNORM, scene::ColorSpace::SRGB) => {
                 panic!("Unsupported texture format")
             }
-            (loader::ImageFormat::R16G16_UNORM, loader::ColorSpace::SRGB) => {
+            (scene::ImageFormat::R16G16_UNORM, scene::ColorSpace::SRGB) => {
                 panic!("Unsupported texture format")
             }
-            (loader::ImageFormat::R16G16B16A16_UNORM, loader::ColorSpace::SRGB) => {
+            (scene::ImageFormat::R16G16B16A16_UNORM, scene::ColorSpace::SRGB) => {
                 panic!("Unsupported texture format")
             }
-            (loader::ImageFormat::R32G32B32A32_SFLOAT, loader::ColorSpace::SRGB) => {
+            (scene::ImageFormat::R32G32B32A32_SFLOAT, scene::ColorSpace::SRGB) => {
                 panic!("Unsupported texture format")
             }
         }

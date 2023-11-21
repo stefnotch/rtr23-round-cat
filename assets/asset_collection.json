@@ -3,5 +3,6 @@
   "gbuffer_frag_shader": "shaders/g_buffer.frag",
   "gbuffer_vert_shader": "shaders/g_buffer.vert",
   "light_frag_shader": "shaders/base.frag",
-  "light_vert_shader": "shaders/base.vert"
+  "light_vert_shader": "shaders/base.vert",
+  "scene": "scene-local/Models/Sponza/glTF/Sponza.gltf"
 }

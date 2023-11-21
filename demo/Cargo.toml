@@ -12,7 +12,6 @@ ultraviolet = { version = "0.9.2", features = ["serde"] }
 gpu-allocator = { version = "0.23", default-features = false, features = ["vulkan"] }
 egui = "0.23.0"
 crevice = { git = "https://github.com/YouSafe/crevice", branch = "main", features = ["ultraviolet"] }
-gltf = { version = "1.3.0", default-features = false, features = ["import", "utils", "names", "KHR_lights_punctual", "KHR_materials_emissive_strength"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 asset_client = { path = "../asset_client" }

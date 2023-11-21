@@ -11,6 +11,14 @@ pub struct Transform {
 }
 
 impl Transform {
+    pub fn from_arrays(position: [f32; 3], orientation: [f32; 4], scale: [f32; 3]) -> Self {
+        Self {
+            position: Vec3::from(position),
+            orientation: Rotor3::from_quaternion_array(orientation),
+            scale: Vec3::from(scale),
+        }
+    }
+
     fn transform_point(&self, point: Vec3) -> Vec3 {
         self.position + (self.orientation * (point * self.scale))
     }
