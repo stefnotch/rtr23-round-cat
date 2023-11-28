@@ -9,13 +9,13 @@ use ash::{
 };
 
 use crate::{
-    context::Context,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
         SceneDescriptorSet, SwapchainIndex,
     },
-    swapchain::SwapchainContainer,
 };
+use crate::vulkan::context::Context;
+use crate::vulkan::swapchain::SwapchainContainer;
 
 pub struct LightingPass {
     render_pass: vk::RenderPass,

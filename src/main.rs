@@ -1,20 +1,14 @@
-mod buffer;
 mod camera;
 mod config_loader;
-mod context;
-mod descriptor_set;
-mod image;
-mod image_view;
 mod input_map;
 mod loader;
 mod render;
-mod sampler;
 mod scene;
 mod scene_uploader;
-mod swapchain;
 mod time;
 mod transform;
 mod utility;
+mod vulkan;
 
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
@@ -26,9 +20,7 @@ use std::sync::{Arc, Mutex};
 use ash::{self, vk};
 use camera::freecam_controller::FreecamController;
 use camera::Camera;
-use context::Context;
 use input_map::InputMap;
-use swapchain::SwapchainContainer;
 use time::Time;
 use ultraviolet::Vec2;
 use winit::dpi::{self, PhysicalSize};
@@ -39,6 +31,8 @@ use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 use crate::render::set_layout_cache::DescriptorSetLayoutCache;
+use crate::vulkan::context::Context;
+use crate::vulkan::swapchain::SwapchainContainer;
 
 // Rust will drop these fields in the order they are declared
 struct CatDemo {

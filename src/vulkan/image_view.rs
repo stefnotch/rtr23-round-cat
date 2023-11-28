@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use ash::vk;
-
-use crate::{context::Context, image::Image};
+use crate::vulkan::context::Context;
+use crate::vulkan::image::Image;
 
 pub struct ImageView {
     pub inner: vk::ImageView,

@@ -3,15 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
 
+use crate::vulkan::buffer::Buffer;
+use crate::vulkan::context::Context;
+use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
+use crate::vulkan::image::Image;
+use crate::vulkan::image_view::ImageView;
+use crate::vulkan::sampler::Sampler;
 use crate::{
-    buffer::Buffer,
-    context::Context,
-    descriptor_set::{DescriptorSet, WriteDescriptorSet},
-    image::Image,
-    image_view::ImageView,
     loader::{self, Asset, LoadedImage, LoadedSampler},
     render::{set_layout_cache::DescriptorSetLayoutCache, shader_types},
-    sampler::Sampler,
     scene::{Material, Mesh, Model, Primitive, Scene, Texture},
 };
 

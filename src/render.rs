@@ -10,15 +10,15 @@ use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
 
 use crate::{
-    buffer::Buffer,
     camera::Camera,
-    context::Context,
-    descriptor_set::{DescriptorSet, WriteDescriptorSet},
-    image::{simple_image_create_info, Image},
-    image_view::ImageView,
     scene::Scene,
-    swapchain::SwapchainContainer,
 };
+use crate::vulkan::buffer::Buffer;
+use crate::vulkan::context::Context;
+use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
+use crate::vulkan::image::{Image, simple_image_create_info};
+use crate::vulkan::image_view::ImageView;
+use crate::vulkan::swapchain::SwapchainContainer;
 
 use self::{
     pass::{geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass},

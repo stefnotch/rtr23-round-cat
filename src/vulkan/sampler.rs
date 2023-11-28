@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::context::Context;
+use crate::vulkan::context::Context;
 
 pub struct Sampler {
     pub inner: vk::Sampler,

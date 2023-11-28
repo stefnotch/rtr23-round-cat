@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
-
-use crate::context::Context;
+use crate::vulkan::context::Context;
 
 pub struct DescriptorSetLayoutCache {
     scene_descriptor_set_layout: vk::DescriptorSetLayout,

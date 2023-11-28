@@ -2,7 +2,8 @@ use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
-use crate::{context::Context, find_memorytype_index};
+use crate::{find_memorytype_index};
+use crate::vulkan::context::Context;
 
 pub trait IntoSlice<T> {
     fn as_sliced(&self) -> &[T];

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use ash::vk::{self, SwapchainCreateInfoKHR};
 use winit::dpi::PhysicalSize;
-
-use crate::context::Context;
+use crate::vulkan::context::Context;
 
 pub struct SwapchainContainer {
     pub loader: ash::extensions::khr::Swapchain,

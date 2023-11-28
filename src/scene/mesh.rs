@@ -1,5 +1,4 @@
-use crate::buffer::Buffer;
-
+use crate::vulkan::buffer::Buffer;
 use super::Vertex;
 
 pub struct Mesh {

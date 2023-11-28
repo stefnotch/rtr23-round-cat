@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use ash::vk::{self, ImageAspectFlags};
+use crate::vulkan::context::Context;
+use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
+use crate::vulkan::image::{Image, simple_image_create_info};
+use crate::vulkan::image_view::ImageView;
 
-use crate::{
-    context::Context,
-    descriptor_set::{DescriptorSet, WriteDescriptorSet},
-    image::{simple_image_create_info, Image},
-    image_view::ImageView,
-    sampler::Sampler,
-};
+use crate::vulkan::sampler::Sampler;
 
 pub struct GBuffer {
     pub position_buffer: Arc<ImageView>,

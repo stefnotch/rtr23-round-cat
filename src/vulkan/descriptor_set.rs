@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use ash::vk;
-
-use crate::{buffer::Buffer, context::Context, image_view::ImageView, sampler::Sampler};
+use crate::vulkan::buffer::Buffer;
+use crate::vulkan::context::Context;
+use crate::vulkan::image_view::ImageView;
+use crate::vulkan::sampler::Sampler;
 
 pub struct DescriptorSet {
     pub inner: vk::DescriptorSet,

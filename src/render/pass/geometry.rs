@@ -7,15 +7,15 @@ use ash::{
 use crevice::std140::AsStd140;
 
 use crate::{
-    context::Context,
-    image_view::ImageView,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, shader_types,
         CameraDescriptorSet, SwapchainIndex,
     },
     scene::{Scene, Vertex},
-    swapchain::SwapchainContainer,
 };
+use crate::vulkan::context::Context;
+use crate::vulkan::image_view::ImageView;
+use crate::vulkan::swapchain::SwapchainContainer;
 
 pub struct GeometryPass {
     render_pass: vk::RenderPass,

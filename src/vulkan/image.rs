@@ -4,8 +4,9 @@ use ash::vk::{
     self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageSubresourceRange, ImageTiling,
     ImageType, ImageUsageFlags, SampleCountFlags, SharingMode,
 };
-
-use crate::{buffer::Buffer, context::Context, find_memorytype_index};
+use crate::find_memorytype_index;
+use crate::vulkan::buffer::Buffer;
+use crate::vulkan::context::Context;
 
 pub struct Image {
     pub inner: vk::Image,
