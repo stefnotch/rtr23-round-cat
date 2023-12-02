@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
 
+use crate::loader::LoadedTexture;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
@@ -131,109 +132,49 @@ pub fn setup(
             let material = material_map
                 .entry(loaded_primitive.material.id())
                 .or_insert_with(|| {
-                    let base_color_texture = loaded_primitive
-                        .material
-                        .as_ref()
-                        .base_color_texture
-                        .as_ref()
-                        .map(|v| {
-                            let image_view = texture_map
-                                .entry(v.image.id())
-                                .or_insert_with(|| {
-                                    create_image(
-                                        v.image.clone(),
-                                        context.clone(),
-                                        setup_command_buffer,
-                                        &mut image_data_buffers,
-                                        true,
-                                    )
-                                })
-                                .clone();
-                            let sampler = sampler_map
-                                .entry(v.sampler.id())
-                                .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
-                                })
-                                .clone();
-                            Texture {
-                                image_view,
-                                sampler,
-                            }
-                        })
-                        .unwrap_or_else(|| Texture {
-                            image_view: default_base_color_image_view.clone(),
-                            sampler: default_sampler.clone(),
-                        });
+                    let base_color_texture = load_texture(
+                        context.clone(),
+                        setup_command_buffer,
+                        loaded_primitive
+                            .material
+                            .as_ref()
+                            .base_color_texture
+                            .as_ref(),
+                        &mut texture_map,
+                        &mut image_data_buffers,
+                        &mut sampler_map,
+                        default_base_color_image_view.clone(),
+                        default_sampler.clone(),
+                        true,
+                    );
 
-                    let normal_texture = loaded_primitive
-                        .material
-                        .as_ref()
-                        .normal_texture
-                        .as_ref()
-                        .map(|v| {
-                            // TODO: remove code duplication
-                            let image_view = texture_map
-                                .entry(v.image.id())
-                                .or_insert_with(|| {
-                                    create_image(
-                                        v.image.clone(),
-                                        context.clone(),
-                                        setup_command_buffer,
-                                        &mut image_data_buffers,
-                                        false,
-                                    )
-                                })
-                                .clone();
-                            let sampler = sampler_map
-                                .entry(v.sampler.id())
-                                .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
-                                })
-                                .clone();
-                            Texture {
-                                image_view,
-                                sampler,
-                            }
-                        })
-                        .unwrap_or_else(|| Texture {
-                            image_view: default_normal_map_image_view.clone(),
-                            sampler: default_sampler.clone(),
-                        });
+                    let normal_texture = load_texture(
+                        context.clone(),
+                        setup_command_buffer,
+                        loaded_primitive.material.as_ref().normal_texture.as_ref(),
+                        &mut texture_map,
+                        &mut image_data_buffers,
+                        &mut sampler_map,
+                        default_normal_map_image_view.clone(),
+                        default_sampler.clone(),
+                        false,
+                    );
 
-                    let metallic_roughness_texture = loaded_primitive
-                        .material
-                        .as_ref()
-                        .metallic_roughness_texture
-                        .as_ref()
-                        .map(|v| {
-                            // TODO: remove code duplication
-                            let image_view = texture_map
-                                .entry(v.image.id())
-                                .or_insert_with(|| {
-                                    create_image(
-                                        v.image.clone(),
-                                        context.clone(),
-                                        setup_command_buffer,
-                                        &mut image_data_buffers,
-                                        false,
-                                    )
-                                })
-                                .clone();
-                            let sampler = sampler_map
-                                .entry(v.sampler.id())
-                                .or_insert_with(|| {
-                                    create_sampler(v.sampler.clone(), context.clone())
-                                })
-                                .clone();
-                            Texture {
-                                image_view,
-                                sampler,
-                            }
-                        })
-                        .unwrap_or_else(|| Texture {
-                            image_view: default_base_color_image_view.clone(),
-                            sampler: default_sampler.clone(),
-                        });
+                    let metallic_roughness_texture = load_texture(
+                        context.clone(),
+                        setup_command_buffer,
+                        loaded_primitive
+                            .material
+                            .as_ref()
+                            .metallic_roughness_texture
+                            .as_ref(),
+                        &mut texture_map,
+                        &mut image_data_buffers,
+                        &mut sampler_map,
+                        default_base_color_image_view.clone(),
+                        default_sampler.clone(),
+                        false,
+                    );
 
                     let material_buffer = Buffer::new(
                         context.clone(),
@@ -366,6 +307,46 @@ pub fn setup(
     unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
 
     scene
+}
+
+fn load_texture(
+    context: Arc<Context>,
+    setup_command_buffer: vk::CommandBuffer,
+    loaded_texture: Option<&LoadedTexture>,
+    texture_map: &mut HashMap<loader::AssetId, Arc<ImageView>>,
+    image_data_buffers: &mut Vec<Buffer<u8>>,
+    sampler_map: &mut HashMap<loader::AssetId, Arc<Sampler>>,
+    default_base_color_image_view: Arc<ImageView>,
+    default_sampler: Arc<Sampler>,
+    create_mipmapping: bool,
+) -> Texture {
+    loaded_texture
+        .map(|v| {
+            let image_view = texture_map
+                .entry(v.image.id())
+                .or_insert_with(|| {
+                    create_image(
+                        v.image.clone(),
+                        context.clone(),
+                        setup_command_buffer,
+                        image_data_buffers,
+                        create_mipmapping,
+                    )
+                })
+                .clone();
+            let sampler = sampler_map
+                .entry(v.sampler.id())
+                .or_insert_with(|| create_sampler(v.sampler.clone(), context.clone()))
+                .clone();
+            Texture {
+                image_view,
+                sampler,
+            }
+        })
+        .unwrap_or_else(|| Texture {
+            image_view: default_base_color_image_view.clone(),
+            sampler: default_sampler.clone(),
+        })
 }
 
 fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> Arc<Sampler> {
