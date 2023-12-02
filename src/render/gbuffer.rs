@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use ash::vk::{self, ImageAspectFlags};
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
-use crate::vulkan::image::{Image, simple_image_create_info};
+use crate::vulkan::image::{simple_image_create_info, Image};
 use crate::vulkan::image_view::ImageView;
+use ash::vk::{self, ImageAspectFlags};
 
 use crate::vulkan::sampler::Sampler;
 
@@ -13,6 +13,7 @@ pub struct GBuffer {
     pub albedo_buffer: Arc<ImageView>,
     pub normals_buffer: Arc<ImageView>,
     pub metallic_roughness_buffer: Arc<ImageView>,
+    pub depth_buffer: Arc<ImageView>,
 
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
@@ -36,6 +37,7 @@ impl GBuffer {
     pub const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     pub const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
     pub const METALLIC_ROUGHNESS_FORMAT: vk::Format = vk::Format::R8G8_UNORM;
+    pub const DEPTH_FORMAT: vk::Format = vk::Format::D16_UNORM;
 
     pub fn new(
         context: Arc<Context>,
@@ -124,6 +126,27 @@ impl GBuffer {
             context.clone(),
             metallic_roughness_buffer_image.clone(),
             ImageAspectFlags::COLOR,
+        ));
+
+        let depth_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                },
+                format: GBuffer::DEPTH_FORMAT,
+                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let depth_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            depth_buffer_image.clone(),
+            ImageAspectFlags::DEPTH,
         ));
 
         let descriptor_set_layout = {
@@ -224,6 +247,7 @@ impl GBuffer {
             albedo_buffer: albedo_buffer_imageview,
             normals_buffer: normals_buffer_imageview,
             metallic_roughness_buffer: metallic_roughness_buffer_imageview,
+            depth_buffer: depth_buffer_imageview,
             descriptor_set,
             sampler,
             descriptor_set_layout,

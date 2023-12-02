@@ -5,20 +5,15 @@ pub mod shader_types;
 
 use std::sync::Arc;
 
-use ash::vk::{self, ImageAspectFlags};
+use ash::vk;
 use crevice::std140::AsStd140;
 use ultraviolet::Vec3;
 
-use crate::{
-    camera::Camera,
-    scene::Scene,
-};
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
-use crate::vulkan::image::{Image, simple_image_create_info};
-use crate::vulkan::image_view::ImageView;
 use crate::vulkan::swapchain::SwapchainContainer;
+use crate::{camera::Camera, scene::Scene};
 
 use self::{
     pass::{geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass},
@@ -51,10 +46,6 @@ pub struct MainRenderer {
 
     scene_descriptor_set: SceneDescriptorSet,
     camera_descriptor_set: CameraDescriptorSet,
-
-    depth_buffer_imageview: ImageView,
-
-    context: Arc<Context>,
 }
 
 impl MainRenderer {
@@ -64,8 +55,6 @@ impl MainRenderer {
         set_layout_cache: &DescriptorSetLayoutCache,
         swapchain: &SwapchainContainer,
     ) -> Self {
-        let depth_buffer_imageview = create_depth_buffer(context.clone(), swapchain.extent);
-
         let scene_descriptor_set = {
             let buffer = Buffer::new(
                 context.clone(),
@@ -111,7 +100,6 @@ impl MainRenderer {
         let geometry_pass = GeometryPass::new(
             context.clone(),
             swapchain,
-            &depth_buffer_imageview,
             descriptor_pool,
             set_layout_cache,
         );
@@ -127,12 +115,9 @@ impl MainRenderer {
             geometry_pass,
             lighting_pass,
             post_processing_pass,
-            depth_buffer_imageview,
 
             scene_descriptor_set,
             camera_descriptor_set,
-
-            context,
         }
     }
 
@@ -196,39 +181,8 @@ impl MainRenderer {
     }
 
     pub fn resize(&mut self, swapchain: &SwapchainContainer) {
-        // the resize calls of the passes assume that the depth buffer is already updated
-        self.depth_buffer_imageview = create_depth_buffer(self.context.clone(), swapchain.extent);
-
-        self.geometry_pass
-            .resize(&self.depth_buffer_imageview, swapchain);
+        self.geometry_pass.resize(swapchain);
         self.lighting_pass.resize(swapchain);
         self.post_processing_pass.resize();
     }
-}
-
-impl Drop for MainRenderer {
-    fn drop(&mut self) {}
-}
-
-fn create_depth_buffer(context: Arc<Context>, extent: vk::Extent2D) -> ImageView {
-    let depth_buffer_image = {
-        let create_info = vk::ImageCreateInfo {
-            extent: vk::Extent3D {
-                width: extent.width,
-                height: extent.height,
-                depth: 1,
-            },
-            format: vk::Format::D32_SFLOAT,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            ..simple_image_create_info()
-        };
-
-        Arc::new(Image::new(context.clone(), &create_info))
-    };
-
-    ImageView::new_default(
-        context.clone(),
-        depth_buffer_image.clone(),
-        ImageAspectFlags::DEPTH,
-    )
 }
