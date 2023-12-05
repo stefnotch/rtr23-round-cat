@@ -7,7 +7,7 @@ use super::{buffer::Buffer, command_pool::CommandPool, context::Context};
 pub struct OneTimeCommandBuffer {
     pub inner: vk::CommandBuffer,
     command_pool: CommandPool,
-    staging_buffers: Vec<Box<dyn StagingBuffer>>,
+    staging_buffers: Vec<Arc<dyn StagingBuffer>>,
 }
 
 trait StagingBuffer {}
@@ -45,7 +45,7 @@ impl OneTimeCommandBuffer {
     where
         T: 'static,
     {
-        self.staging_buffers.push(Box::new(buffer));
+        self.staging_buffers.push(Arc::new(buffer));
     }
 
     pub fn end(&self) {
