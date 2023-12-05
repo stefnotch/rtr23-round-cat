@@ -6,6 +6,8 @@ use ash::{
 };
 use crevice::std140::AsStd140;
 
+use crate::vulkan::context::Context;
+use crate::vulkan::swapchain::SwapchainContainer;
 use crate::{
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, shader_types,
@@ -13,9 +15,6 @@ use crate::{
     },
     scene::{Scene, Vertex},
 };
-use crate::vulkan::context::Context;
-use crate::vulkan::image_view::ImageView;
-use crate::vulkan::swapchain::SwapchainContainer;
 
 pub struct GeometryPass {
     render_pass: vk::RenderPass,
@@ -33,7 +32,6 @@ impl GeometryPass {
     pub fn new(
         context: Arc<Context>,
         swapchain: &SwapchainContainer,
-        depth_buffer_imageview: &ImageView,
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
     ) -> Self {
@@ -46,13 +44,7 @@ impl GeometryPass {
 
         let gbuffer = GBuffer::new(context.clone(), swapchain.extent, descriptor_pool);
 
-        let framebuffers = create_framebuffers(
-            context.clone(),
-            depth_buffer_imageview,
-            swapchain,
-            &gbuffer,
-            render_pass,
-        );
+        let framebuffers = create_framebuffers(context.clone(), swapchain, &gbuffer, render_pass);
 
         GeometryPass {
             render_pass,
@@ -211,7 +203,7 @@ impl GeometryPass {
         unsafe { self.context.device.cmd_end_render_pass(command_buffer) };
     }
 
-    pub fn resize(&mut self, depth_buffer_imageview: &ImageView, swapchain: &SwapchainContainer) {
+    pub fn resize(&mut self, swapchain: &SwapchainContainer) {
         let device = &self.context.device;
         let render_pass = self.render_pass;
 
@@ -221,13 +213,8 @@ impl GeometryPass {
 
         let gbuffer = GBuffer::new(self.context.clone(), swapchain.extent, self.descriptor_pool);
 
-        let framebuffers = create_framebuffers(
-            self.context.clone(),
-            depth_buffer_imageview,
-            swapchain,
-            &gbuffer,
-            render_pass,
-        );
+        let framebuffers =
+            create_framebuffers(self.context.clone(), swapchain, &gbuffer, render_pass);
 
         self.gbuffer = gbuffer;
         self.framebuffers = framebuffers;
@@ -254,7 +241,6 @@ impl Drop for GeometryPass {
 
 fn create_framebuffers(
     context: Arc<Context>,
-    depth_buffer_imageview: &ImageView,
     swapchain: &SwapchainContainer,
     gbuffer: &GBuffer,
     render_pass: vk::RenderPass,
@@ -271,7 +257,7 @@ fn create_framebuffers(
                     gbuffer.albedo_buffer.inner,
                     gbuffer.normals_buffer.inner,
                     gbuffer.metallic_roughness_buffer.inner,
-                    depth_buffer_imageview.inner,
+                    gbuffer.depth_buffer.inner,
                 ];
 
                 let create_info = vk::FramebufferCreateInfo::builder()

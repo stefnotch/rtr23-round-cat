@@ -30,6 +30,10 @@ impl FreecamController {
         }
 
         self.update_position(input_to_direction(input_map), delta_time);
+
+        // normalize yaw
+        const TWO_PI: f32 = std::f32::consts::PI * 2.0;
+        self.yaw = self.yaw.rem_euclid(TWO_PI);
     }
 
     fn update_orientation(&mut self, mouse_delta: Vec2) {
