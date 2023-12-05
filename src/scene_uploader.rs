@@ -130,11 +130,7 @@ pub fn setup(
                     let base_color_texture = load_texture(
                         context.clone(),
                         *setup_command_buffer,
-                        loaded_primitive
-                            .material
-                            .as_ref()
-                            .base_color_texture
-                            .as_ref(),
+                        loaded_primitive.material.base_color_texture.as_ref(),
                         &mut texture_map,
                         &mut image_data_buffers,
                         &mut sampler_map,
@@ -146,7 +142,7 @@ pub fn setup(
                     let normal_texture = load_texture(
                         context.clone(),
                         *setup_command_buffer,
-                        loaded_primitive.material.as_ref().normal_texture.as_ref(),
+                        loaded_primitive.material.normal_texture.as_ref(),
                         &mut texture_map,
                         &mut image_data_buffers,
                         &mut sampler_map,
@@ -160,7 +156,6 @@ pub fn setup(
                         *setup_command_buffer,
                         loaded_primitive
                             .material
-                            .as_ref()
                             .metallic_roughness_texture
                             .as_ref(),
                         &mut texture_map,
