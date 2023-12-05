@@ -472,12 +472,3 @@ impl<T> GetVecSize for Vec<T> {
         std::mem::size_of::<T>() as u64 * self.len() as u64
     }
 }
-
-impl From<loader::Filter> for vk::Filter {
-    fn from(filter: loader::Filter) -> Self {
-        match filter {
-            loader::Filter::Nearest => vk::Filter::NEAREST,
-            loader::Filter::Linear => vk::Filter::LINEAR,
-        }
-    }
-}
