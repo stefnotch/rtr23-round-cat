@@ -31,6 +31,7 @@ use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 use crate::render::set_layout_cache::DescriptorSetLayoutCache;
+use crate::vulkan::command_pool::CommandPool;
 use crate::vulkan::context::Context;
 use crate::vulkan::swapchain::SwapchainContainer;
 
@@ -50,7 +51,7 @@ struct CatDemo {
     // Low level Vulkan stuff
     descriptor_set_pool: vk::DescriptorPool,
     descriptor_set_layout_cache: DescriptorSetLayoutCache,
-    command_pool: vk::CommandPool,
+    command_pool: CommandPool,
 
     command_buffers: Vec<vk::CommandBuffer>,
     should_recreate_swapchain: bool,
@@ -119,17 +120,7 @@ impl CatDemo {
         })
         .expect("Could not create allocator");
 
-        let command_pool = {
-            let create_info = vk::CommandPoolCreateInfo::builder()
-                .queue_family_index(context.queue_family_index)
-                .flags(
-                    vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER
-                        | vk::CommandPoolCreateFlags::TRANSIENT,
-                );
-
-            unsafe { device.create_command_pool(&create_info, None) }
-                .expect("Could not create command pool")
-        };
+        let command_pool = CommandPool::new(context.clone());
 
         let descriptor_pool = {
             let pool_sizes = [
@@ -154,7 +145,7 @@ impl CatDemo {
         let command_buffers = {
             let allocate_info = vk::CommandBufferAllocateInfo::builder()
                 .command_buffer_count(swapchain.images.len() as u32)
-                .command_pool(command_pool)
+                .command_pool(*command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY);
 
             unsafe { device.allocate_command_buffers(&allocate_info) }
@@ -213,7 +204,7 @@ impl CatDemo {
             descriptor_pool,
             &descriptor_set_layout_cache,
             context.queue,
-            command_pool,
+            command_pool.clone(),
         );
         let time = Time::new();
         Self {
@@ -590,8 +581,7 @@ impl Drop for CatDemo {
         unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };
         unsafe { device.destroy_fence(self.draw_fence, None) };
 
-        unsafe { device.free_command_buffers(self.command_pool, &self.command_buffers) };
-        unsafe { device.destroy_command_pool(self.command_pool, None) };
+        unsafe { device.free_command_buffers(*self.command_pool, &self.command_buffers) };
         unsafe { device.destroy_descriptor_pool(self.descriptor_set_pool, None) };
     }
 }

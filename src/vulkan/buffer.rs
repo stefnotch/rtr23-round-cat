@@ -2,8 +2,10 @@ use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
-use crate::{find_memorytype_index};
+use crate::find_memorytype_index;
 use crate::vulkan::context::Context;
+
+use super::command_buffer::OneTimeCommandBuffer;
 
 pub trait IntoSlice<T> {
     fn as_sliced(&self) -> &[T];
@@ -112,6 +114,26 @@ impl<T> Buffer<T> {
                 &[buffer_copy_info.build()],
             )
         }
+    }
+
+    pub fn copy_from_host<U: IntoSlice<T>>(
+        &self,
+        command_buffer: &mut OneTimeCommandBuffer,
+        data: &U,
+        data_size: vk::DeviceSize,
+    ) where
+        T: 'static,
+    {
+        let staging_buffer = Buffer::new(
+            command_buffer.context().clone(),
+            data_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+        staging_buffer.copy_data(data);
+
+        self.copy_from(command_buffer.inner, &staging_buffer);
+        command_buffer.add_staging_buffer(staging_buffer);
     }
 }
 

@@ -9,8 +9,8 @@ use super::{
         AddressMode, BytesImageData, Filter, ImageFormat, LoadedImage, LoadedSampler,
         LoadedTexture, MipmapMode, SamplerInfo,
     },
-    AssetId, AssetLoader, ColorSpace, LoadedMaterial, LoadedMesh, LoadedModel, LoadedPrimitive,
-    LoadedScene,
+    AssetId, AssetIdGenerator, AssetLoader, ColorSpace, LoadedMaterial, LoadedMesh, LoadedModel,
+    LoadedPrimitive, LoadedScene,
 };
 
 struct SceneLoadingData {
@@ -21,10 +21,15 @@ struct SceneLoadingData {
     mesh_ids: HashMap<MeshKey, AssetId>,
     sampler_ids: HashMap<SamplerKey, AssetId>,
     image_ids: HashMap<ImageKey, AssetId>,
+    id_generator: AssetIdGenerator,
 }
 
 impl SceneLoadingData {
-    fn new(buffers: Vec<gltf::buffer::Data>, images: Vec<gltf::image::Data>) -> Self {
+    fn new(
+        buffers: Vec<gltf::buffer::Data>,
+        images: Vec<gltf::image::Data>,
+        id_generator: AssetIdGenerator,
+    ) -> Self {
         let images = images.into_iter().enumerate().collect();
         Self {
             scene: LoadedScene::new(),
@@ -34,13 +39,27 @@ impl SceneLoadingData {
             mesh_ids: HashMap::new(),
             sampler_ids: HashMap::new(),
             image_ids: HashMap::new(),
+            id_generator,
         }
     }
+}
+
+trait ToAssetId {
+    fn to_asset_id(self, loading_data: &mut SceneLoadingData) -> AssetId;
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 struct MaterialKey {
     index: usize,
+}
+
+impl ToAssetId for MaterialKey {
+    fn to_asset_id(self, loading_data: &mut SceneLoadingData) -> AssetId {
+        *loading_data
+            .material_ids
+            .entry(self)
+            .or_insert_with(|| loading_data.id_generator.next())
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -51,9 +70,27 @@ struct MeshKey {
     vertex_buffer_uvs_id: Option<usize>,
 }
 
+impl ToAssetId for MeshKey {
+    fn to_asset_id(self, loading_data: &mut SceneLoadingData) -> AssetId {
+        *loading_data
+            .mesh_ids
+            .entry(self)
+            .or_insert_with(|| loading_data.id_generator.next())
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Debug)]
 struct ImageKey {
     index: usize,
+}
+
+impl ToAssetId for ImageKey {
+    fn to_asset_id(self, loading_data: &mut SceneLoadingData) -> AssetId {
+        *loading_data
+            .image_ids
+            .entry(self)
+            .or_insert_with(|| loading_data.id_generator.next())
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -61,16 +98,21 @@ struct SamplerKey {
     sampler_data: SamplerInfo,
 }
 
+impl ToAssetId for SamplerKey {
+    fn to_asset_id(self, loading_data: &mut SceneLoadingData) -> AssetId {
+        *loading_data
+            .sampler_ids
+            .entry(self)
+            .or_insert_with(|| loading_data.id_generator.next())
+    }
+}
+
 impl AssetLoader {
-    // TODO: Fix the error type
-    pub fn load_scene(
-        &mut self,
-        path: impl AsRef<Path>,
-    ) -> Result<LoadedScene, Box<dyn std::error::Error>> {
+    pub fn load_scene(&mut self, path: impl AsRef<Path>) -> anyhow::Result<LoadedScene> {
         let (gltf, buffers, images) = gltf::import(path)?;
 
         let scene = gltf.default_scene().expect("Expected a default scene");
-        let mut loading_data = SceneLoadingData::new(buffers, images);
+        let mut loading_data = SceneLoadingData::new(buffers, images, self.id_generator.clone());
         for node in scene.nodes() {
             self.load_node(&mut loading_data, &node, Transform::default());
         }
@@ -127,79 +169,71 @@ impl AssetLoader {
         loading_data: &mut SceneLoadingData,
         material: &gltf::Material<'_>,
     ) -> std::sync::Arc<LoadedMaterial> {
-        let material_key = match material.index() {
-            Some(index) => MaterialKey { index },
+        let id = match material.index() {
+            Some(index) => MaterialKey { index }.to_asset_id(loading_data),
             None => return Arc::new(LoadedMaterial::missing_material(self.id_generator.next())),
         };
 
-        let id = loading_data
-            .material_ids
-            .entry(material_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
-
         if let Some(material) = self.materials.assets.get(&id) {
-            material.clone()
-        } else {
-            let material_pbr = material.pbr_metallic_roughness();
-            let emissive_factor = material.emissive_factor();
-            let emissivity = material
-                .emissive_strength()
-                .map(|value| emissive_factor.map(|v| v * value))
-                .unwrap_or([0.0; 3])
-                .into();
-
-            let base_color = {
-                let [r, g, b, _] = material_pbr.base_color_factor();
-                [r, g, b].into()
-            };
-            let base_color_texture = material_pbr.base_color_texture().map(|info| {
-                let sampler = self.load_sampler(loading_data, info.texture().sampler());
-                let image = self.load_images(loading_data, info.texture(), ColorSpace::SRGB);
-
-                LoadedTexture { image, sampler }
-            });
-
-            let normal_texture = material.normal_texture().map(|normal_texture| {
-                let image =
-                    self.load_images(loading_data, normal_texture.texture(), ColorSpace::Linear);
-                let sampler = self.load_sampler(loading_data, normal_texture.texture().sampler());
-                LoadedTexture { image, sampler }
-            });
-
-            let roughness_factor = material_pbr.roughness_factor();
-            let metallic_factor = material_pbr.metallic_factor();
-
-            let metallic_roughness_texture =
-                material_pbr
-                    .metallic_roughness_texture()
-                    .map(|metallic_roughness_texture| {
-                        let image = self.load_images(
-                            loading_data,
-                            metallic_roughness_texture.texture(),
-                            ColorSpace::Linear,
-                        );
-                        let sampler = self.load_sampler(
-                            loading_data,
-                            metallic_roughness_texture.texture().sampler(),
-                        );
-                        LoadedTexture { image, sampler }
-                    });
-
-            let material = Arc::new(LoadedMaterial {
-                id,
-                base_color,
-                base_color_texture,
-                roughness_factor,
-                metallic_factor,
-                metallic_roughness_texture,
-                emissivity,
-                normal_texture,
-            });
-
-            self.materials.assets.insert(id, material.clone());
-            material
+            return material.clone();
         }
+
+        let material_pbr = material.pbr_metallic_roughness();
+        let emissive_factor = material.emissive_factor();
+        let emissivity = material
+            .emissive_strength()
+            .map(|value| emissive_factor.map(|v| v * value))
+            .unwrap_or([0.0; 3])
+            .into();
+
+        let base_color = {
+            let [r, g, b, _] = material_pbr.base_color_factor();
+            [r, g, b].into()
+        };
+        let base_color_texture = material_pbr.base_color_texture().map(|info| {
+            let sampler = self.load_sampler(loading_data, info.texture().sampler());
+            let image = self.load_images(loading_data, info.texture(), ColorSpace::SRGB);
+
+            LoadedTexture { image, sampler }
+        });
+
+        let normal_texture = material.normal_texture().map(|normal_texture| {
+            let image =
+                self.load_images(loading_data, normal_texture.texture(), ColorSpace::Linear);
+            let sampler = self.load_sampler(loading_data, normal_texture.texture().sampler());
+            LoadedTexture { image, sampler }
+        });
+
+        let roughness_factor = material_pbr.roughness_factor();
+        let metallic_factor = material_pbr.metallic_factor();
+
+        let metallic_roughness_texture =
+            material_pbr
+                .metallic_roughness_texture()
+                .map(|metallic_roughness_texture| {
+                    let image = self.load_images(
+                        loading_data,
+                        metallic_roughness_texture.texture(),
+                        ColorSpace::Linear,
+                    );
+                    let sampler = self
+                        .load_sampler(loading_data, metallic_roughness_texture.texture().sampler());
+                    LoadedTexture { image, sampler }
+                });
+
+        let material = Arc::new(LoadedMaterial {
+            id,
+            base_color,
+            base_color_texture,
+            roughness_factor,
+            metallic_factor,
+            metallic_roughness_texture,
+            emissivity,
+            normal_texture,
+        });
+
+        self.materials.assets.insert(id, material.clone());
+        material
     }
 
     fn load_mesh(
@@ -209,18 +243,13 @@ impl AssetLoader {
     ) -> std::sync::Arc<LoadedMesh> {
         assert_eq!(primitive.mode(), gltf::mesh::Mode::Triangles);
 
-        let mesh_key = MeshKey {
+        let id = MeshKey {
             index_buffer_id: primitive.indices().unwrap().index(),
             vertex_buffer_positions_id: primitive.get(&Semantic::Positions).unwrap().index(),
             vertex_buffer_normals_id: primitive.get(&Semantic::Normals).unwrap().index(),
             vertex_buffer_uvs_id: primitive.get(&Semantic::TexCoords(0)).map(|a| a.index()),
-        };
-
-        let id = loading_data
-            .mesh_ids
-            .entry(mesh_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        }
+        .to_asset_id(loading_data);
 
         self.meshes
             .assets
@@ -279,15 +308,11 @@ impl AssetLoader {
         color_space: ColorSpace,
     ) -> Arc<LoadedImage> {
         let texture_index = texture.source().index();
-        let texture_key = ImageKey {
-            index: texture_index,
-        };
 
-        let id = loading_data
-            .image_ids
-            .entry(texture_key)
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = ImageKey {
+            index: texture_index,
+        }
+        .to_asset_id(loading_data);
 
         self.images
             .assets
@@ -339,13 +364,10 @@ impl AssetLoader {
             address_mode,
         };
 
-        let id = loading_data
-            .sampler_ids
-            .entry(SamplerKey {
-                sampler_data: sampler_info,
-            })
-            .or_insert_with(|| self.id_generator.next())
-            .clone();
+        let id = SamplerKey {
+            sampler_data: sampler_info,
+        }
+        .to_asset_id(loading_data);
 
         self.samplers
             .assets

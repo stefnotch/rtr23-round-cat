@@ -488,7 +488,7 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
 
     let depth_stencil_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
-        format: vk::Format::D32_SFLOAT,
+        format: GBuffer::DEPTH_FORMAT,
         samples: vk::SampleCountFlags::TYPE_1,
         load_op: vk::AttachmentLoadOp::CLEAR,
         store_op: vk::AttachmentStoreOp::DONT_CARE,

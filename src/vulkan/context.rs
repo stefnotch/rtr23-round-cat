@@ -138,56 +138,51 @@ fn find_physical_device(
 ) -> (vk::PhysicalDevice, u32) {
     let swapchain_extension = ash::extensions::khr::Swapchain::name();
 
-    let (physical_device, queue_family_index) = {
-        let physical_devices = unsafe { instance.enumerate_physical_devices() }
-            .expect("Could not enumerate physical devices");
+    let (physical_device, queue_family_index) = unsafe { instance.enumerate_physical_devices() }
+        .expect("Could not enumerate physical devices")
+        .into_iter()
+        .filter(|pd| {
+            let extension_properties =
+                unsafe { instance.enumerate_device_extension_properties(*pd) }
+                    .expect("Could not enumerate device extension properties");
+            let mut supported_extensions = extension_properties
+                .iter()
+                .map(|property| unsafe { CStr::from_ptr(property.extension_name.as_ptr()) });
 
-        physical_devices
-            .into_iter()
-            .filter(|pd| {
-                let extension_properties =
-                    unsafe { instance.enumerate_device_extension_properties(*pd) }
-                        .expect("Could not enumerate device extension properties");
-                let mut supported_extensions = extension_properties
-                    .iter()
-                    .map(|property| unsafe { CStr::from_ptr(property.extension_name.as_ptr()) });
+            supported_extensions.any(|ext| swapchain_extension == ext)
+        })
+        .filter_map(|pd| {
+            unsafe { instance.get_physical_device_queue_family_properties(pd) }
+                .iter()
+                .enumerate()
+                .position(|(index, info)| {
+                    let supports_graphics = info.queue_flags.contains(vk::QueueFlags::GRAPHICS);
+                    let supports_surface = unsafe {
+                        surface_loader.get_physical_device_surface_support(
+                            pd,
+                            index as u32,
+                            *surface,
+                        )
+                    }
+                    .unwrap();
 
-                supported_extensions.any(|ext| swapchain_extension == ext)
-            })
-            .filter_map(|pd| {
-                unsafe { instance.get_physical_device_queue_family_properties(pd) }
-                    .iter()
-                    .enumerate()
-                    .position(|(index, info)| {
-                        let supports_graphics = info.queue_flags.contains(vk::QueueFlags::GRAPHICS);
-                        let supports_surface = unsafe {
-                            surface_loader.get_physical_device_surface_support(
-                                pd,
-                                index as u32,
-                                *surface,
-                            )
-                        }
-                        .unwrap();
+                    supports_graphics && supports_surface
+                })
+                .map(|i| (pd, i as u32))
+        })
+        .min_by_key(|(pd, _)| {
+            let device_type = unsafe { instance.get_physical_device_properties(*pd) }.device_type;
 
-                        supports_graphics && supports_surface
-                    })
-                    .map(|i| (pd, i as u32))
-            })
-            .min_by_key(|(pd, _)| {
-                let device_type =
-                    unsafe { instance.get_physical_device_properties(*pd) }.device_type;
-
-                match device_type {
-                    vk::PhysicalDeviceType::DISCRETE_GPU => 0,
-                    vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-                    vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
-                    vk::PhysicalDeviceType::CPU => 3,
-                    vk::PhysicalDeviceType::OTHER => 4,
-                    _ => 5,
-                }
-            })
-            .expect("Couldn't find suitable device.")
-    };
+            match device_type {
+                vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+                vk::PhysicalDeviceType::CPU => 3,
+                vk::PhysicalDeviceType::OTHER => 4,
+                _ => 5,
+            }
+        })
+        .expect("Couldn't find suitable device.");
 
     (physical_device, queue_family_index)
 }

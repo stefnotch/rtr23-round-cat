@@ -3,22 +3,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use ultraviolet::Vec3;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub scene_path: String,
     pub cached: CachedData,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CachedData {
-    pub camera_position: Option<CameraPosition>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CameraPosition {
-    pub position: Vec3,
-    pub pitch: f32,
-    pub yaw: f32,
 }
 
 impl Default for Config {
@@ -26,14 +14,6 @@ impl Default for Config {
         Self {
             scene_path: "assets/scene-local/sponza/sponza.glb".to_string(),
             cached: CachedData::default(),
-        }
-    }
-}
-
-impl Default for CachedData {
-    fn default() -> Self {
-        Self {
-            camera_position: None,
         }
     }
 }
@@ -62,8 +42,8 @@ impl ConfigFileLoader {
             Ok(content) => Config::from_str(&content),
             Err(_) => {
                 let config = Config::default();
-                let content = serde_json::to_string_pretty(&config).unwrap();
-                std::fs::write(&self.path, content).unwrap();
+                self.config = Some(config.clone());
+                self.save_config();
                 config
             }
         };
@@ -82,6 +62,26 @@ impl ConfigFileLoader {
         if let Some(config) = &self.config {
             let content = serde_json::to_string_pretty(config).unwrap();
             std::fs::write(self.path.clone(), content).unwrap();
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CachedData {
+    pub camera_position: Option<CameraPosition>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CameraPosition {
+    pub position: Vec3,
+    pub pitch: f32,
+    pub yaw: f32,
+}
+
+impl Default for CachedData {
+    fn default() -> Self {
+        Self {
+            camera_position: None,
         }
     }
 }

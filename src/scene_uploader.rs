@@ -5,6 +5,8 @@ use crevice::std140::AsStd140;
 
 use crate::loader::LoadedTexture;
 use crate::vulkan::buffer::Buffer;
+use crate::vulkan::command_buffer::OneTimeCommandBuffer;
+use crate::vulkan::command_pool::CommandPool;
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
 use crate::vulkan::image::Image;
@@ -22,24 +24,20 @@ pub fn setup(
     descriptor_pool: vk::DescriptorPool,
     set_layout_cache: &DescriptorSetLayoutCache,
     queue: vk::Queue,
-    command_pool: vk::CommandPool,
+    command_pool: CommandPool,
 ) -> Scene {
     let device = &context.device;
-    let setup_command_buffer = {
+    let mut setup_command_buffer = {
         let allocate_info = vk::CommandBufferAllocateInfo::builder()
             .command_buffer_count(1)
-            .command_pool(command_pool)
+            .command_pool(*command_pool)
             .level(vk::CommandBufferLevel::PRIMARY);
 
-        unsafe { device.allocate_command_buffers(&allocate_info) }
-            .expect("Could not allocate command buffers")[0]
+        let command_buffer = unsafe { device.allocate_command_buffers(&allocate_info) }
+            .expect("Could not allocate command buffers")[0];
+
+        OneTimeCommandBuffer::new(command_buffer, command_pool)
     };
-
-    let begin_info =
-        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-    unsafe { device.begin_command_buffer(setup_command_buffer, &begin_info) }
-        .expect("Could not begin command buffer");
 
     let mut image_data_buffers = vec![];
     let default_sampler = {
@@ -79,7 +77,7 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image.copy_from_buffer_for_texture(*setup_command_buffer, &image_data_buffer);
             image_data_buffers.push(image_data_buffer);
 
             Arc::new(ImageView::new_default(
@@ -100,7 +98,7 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0x80u8, 0x80, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
+            image.copy_from_buffer_for_texture(*setup_command_buffer, &image_data_buffer);
             image_data_buffers.push(image_data_buffer);
 
             Arc::new(ImageView::new_default(
@@ -118,9 +116,6 @@ pub fn setup(
     let mut material_map = HashMap::new();
     let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
 
-    let mut staging_vertex_buffers = vec![];
-    let mut staging_index_buffers = vec![];
-
     let mut scene = Scene { models: vec![] };
     for loaded_model in loaded_scene.models {
         let mut model = Model {
@@ -134,7 +129,7 @@ pub fn setup(
                 .or_insert_with(|| {
                     let base_color_texture = load_texture(
                         context.clone(),
-                        setup_command_buffer,
+                        *setup_command_buffer,
                         loaded_primitive
                             .material
                             .as_ref()
@@ -150,7 +145,7 @@ pub fn setup(
 
                     let normal_texture = load_texture(
                         context.clone(),
-                        setup_command_buffer,
+                        *setup_command_buffer,
                         loaded_primitive.material.as_ref().normal_texture.as_ref(),
                         &mut texture_map,
                         &mut image_data_buffers,
@@ -162,7 +157,7 @@ pub fn setup(
 
                     let metallic_roughness_texture = load_texture(
                         context.clone(),
-                        setup_command_buffer,
+                        *setup_command_buffer,
                         loaded_primitive
                             .material
                             .as_ref()
@@ -234,15 +229,6 @@ pub fn setup(
                 .or_insert_with(|| {
                     let vertex_buffer = {
                         let vertices = &loaded_primitive.mesh.vertices;
-                        let staging_buffer = Buffer::new(
-                            context.clone(),
-                            vertices.get_vec_size(),
-                            vk::BufferUsageFlags::TRANSFER_SRC,
-                            vk::MemoryPropertyFlags::HOST_VISIBLE
-                                | vk::MemoryPropertyFlags::HOST_COHERENT,
-                        );
-                        staging_buffer.copy_data(vertices);
-
                         let buffer = Buffer::new(
                             context.clone(),
                             vertices.get_vec_size(),
@@ -250,30 +236,27 @@ pub fn setup(
                                 | vk::BufferUsageFlags::VERTEX_BUFFER,
                             vk::MemoryPropertyFlags::DEVICE_LOCAL,
                         );
-                        buffer.copy_from(setup_command_buffer, &staging_buffer);
-                        staging_vertex_buffers.push(staging_buffer);
+                        buffer.copy_from_host(
+                            &mut setup_command_buffer,
+                            vertices,
+                            vertices.get_vec_size(),
+                        );
                         buffer
                     };
 
                     let index_buffer = {
                         let indices = &loaded_primitive.mesh.indices;
-                        let staging_buffer = Buffer::new(
-                            context.clone(),
-                            indices.get_vec_size(),
-                            vk::BufferUsageFlags::TRANSFER_SRC,
-                            vk::MemoryPropertyFlags::HOST_VISIBLE
-                                | vk::MemoryPropertyFlags::HOST_COHERENT,
-                        );
-                        staging_buffer.copy_data(indices);
-
                         let buffer = Buffer::new(
                             context.clone(),
                             indices.get_vec_size(),
                             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
                             vk::MemoryPropertyFlags::DEVICE_LOCAL,
                         );
-                        buffer.copy_from(setup_command_buffer, &staging_buffer);
-                        staging_index_buffers.push(staging_buffer);
+                        buffer.copy_from_host(
+                            &mut setup_command_buffer,
+                            indices,
+                            indices.get_vec_size(),
+                        );
                         buffer
                     };
 
@@ -290,8 +273,7 @@ pub fn setup(
         scene.models.push(model);
     }
 
-    unsafe { device.end_command_buffer(setup_command_buffer) }
-        .expect("Could not end command buffer");
+    setup_command_buffer.end();
 
     // submit
     let submit_info = vk::SubmitInfo::builder()
@@ -302,9 +284,6 @@ pub fn setup(
         .expect("Could not submit to queue");
 
     unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
-
-    // *happy venti noises*
-    unsafe { device.free_command_buffers(command_pool, &[setup_command_buffer]) };
 
     scene
 }
@@ -491,5 +470,14 @@ trait GetVecSize {
 impl<T> GetVecSize for Vec<T> {
     fn get_vec_size(&self) -> u64 {
         std::mem::size_of::<T>() as u64 * self.len() as u64
+    }
+}
+
+impl From<loader::Filter> for vk::Filter {
+    fn from(filter: loader::Filter) -> Self {
+        match filter {
+            loader::Filter::Nearest => vk::Filter::NEAREST,
+            loader::Filter::Linear => vk::Filter::LINEAR,
+        }
     }
 }

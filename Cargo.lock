@@ -1224,6 +1224,7 @@ dependencies = [
 name = "round-cat"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ash",
  "ash-window",
  "crevice",
@@ -1234,6 +1235,7 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "serde_json",
+ "thiserror",
  "ultraviolet",
  "winit",
 ]
