@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use gltf::{accessor::Iter, texture::Sampler, Semantic, Texture};
+use ultraviolet::{Vec2, Vec3};
 
 use crate::{scene::Vertex, transform::Transform};
 
@@ -265,11 +266,14 @@ impl AssetLoader {
                     } else {
                         Box::new(std::iter::repeat([0.0f32, 0.0f32]))
                     };
+
+                let mut tangents_missing = false;
+
                 let tangents: Box<dyn Iterator<Item = _>> =
                     if let Some(Iter::Standard(tangents)) = reader.read_tangents() {
                         Box::new(tangents)
                     } else {
-                        // TODO: calculate tangents if they are not provided in the gltf model
+                        tangents_missing = true;
                         Box::new(std::iter::repeat([0.0f32; 4]))
                     };
 
@@ -287,10 +291,51 @@ impl AssetLoader {
                     });
                 }
 
-                let indices = reader
+                let indices: Vec<_> = reader
                     .read_indices()
                     .map(|indices| indices.into_u32().collect())
                     .unwrap_or_else(|| (0..(vertices.len() as u32)).collect());
+
+                fn compute_tangent(
+                    p0: Vec3,
+                    p1: Vec3,
+                    p2: Vec3,
+                    uv0: Vec2,
+                    uv1: Vec2,
+                    uv2: Vec2,
+                ) -> Vec3 {
+                    let edge0 = p1 - p0;
+                    let delta_uv0 = uv1 - uv0;
+                    let edge1 = p2 - p0;
+                    let delta_uv1 = uv2 - uv0;
+
+                    let f = 1.0 / (delta_uv0.x * delta_uv1.y - delta_uv1.x * delta_uv0.y);
+
+                    f * (edge0 * delta_uv1.y - edge1 * delta_uv0.y)
+                }
+
+                if tangents_missing {
+                    for triangle in indices.chunks_exact(3) {
+                        let triangle = [
+                            triangle[0] as usize,
+                            triangle[1] as usize,
+                            triangle[2] as usize,
+                        ];
+                        let p0 = vertices[triangle[0]].position.into();
+                        let p1 = vertices[triangle[1]].position.into();
+                        let p2 = vertices[triangle[2]].position.into();
+
+                        let uv0 = vertices[triangle[0]].uv.into();
+                        let uv1 = vertices[triangle[1]].uv.into();
+                        let uv2 = vertices[triangle[2]].uv.into();
+
+                        let tangent = compute_tangent(p0, p1, p2, uv0, uv1, uv2);
+
+                        vertices[triangle[0]].tangent = tangent.into_homogeneous_point().into();
+                        vertices[triangle[1]].tangent = tangent.into_homogeneous_point().into();
+                        vertices[triangle[2]].tangent = tangent.into_homogeneous_point().into();
+                    }
+                }
 
                 Arc::new(LoadedMesh {
                     id,
