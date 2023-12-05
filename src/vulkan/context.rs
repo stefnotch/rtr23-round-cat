@@ -1,7 +1,9 @@
 use std::ffi::CStr;
 
 use ash::{
-    extensions::khr::Synchronization2,
+    extensions::khr::{
+        AccelerationStructure, BufferDeviceAddress, RayTracingPipeline, Synchronization2,
+    },
     vk::{self, ApplicationInfo, DeviceCreateInfo, DeviceQueueCreateInfo, InstanceCreateInfo},
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -14,6 +16,7 @@ pub struct Context {
     pub surface_loader: ash::extensions::khr::Surface,
     pub surface: vk::SurfaceKHR,
 
+    pub context_raytracing: ContextRaytracing,
     pub synchronisation2_loader: ash::extensions::khr::Synchronization2,
 
     pub physical_device: vk::PhysicalDevice,
@@ -22,7 +25,18 @@ pub struct Context {
     pub device: ash::Device,
     pub queue: vk::Queue,
 
+    pub buffer_device_address: BufferDeviceAddress,
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
+}
+
+pub struct ContextRaytracing {
+    pub ray_tracing_pipeline: RayTracingPipeline,
+    pub physical_device_ray_tracing_pipeline_properties_khr:
+        vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+
+    pub acceleration_structure: AccelerationStructure,
+    pub physical_device_acceleration_structure_properties_khr:
+        vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
 }
 
 impl Context {
@@ -66,6 +80,23 @@ impl Context {
 
         let synchronisation2_loader = Synchronization2::new(&instance, &device);
 
+        let ray_tracing_pipeline = RayTracingPipeline::new(&instance, &device);
+        let physical_device_ray_tracing_pipeline_properties_khr =
+            unsafe { RayTracingPipeline::get_properties(&instance, physical_device) };
+
+        let acceleration_structure = AccelerationStructure::new(&instance, &device);
+        let physical_device_acceleration_structure_properties_khr =
+            unsafe { AccelerationStructure::get_properties(&instance, physical_device) };
+
+        let buffer_device_address = BufferDeviceAddress::new(&instance, &device);
+
+        let context_raytracing = ContextRaytracing {
+            ray_tracing_pipeline,
+            physical_device_ray_tracing_pipeline_properties_khr,
+            acceleration_structure,
+            physical_device_acceleration_structure_properties_khr,
+        };
+
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -76,6 +107,7 @@ impl Context {
             surface,
             surface_loader,
 
+            context_raytracing,
             synchronisation2_loader,
 
             physical_device,
@@ -83,6 +115,7 @@ impl Context {
 
             device,
             queue,
+            buffer_device_address,
             device_memory_properties,
         }
     }
@@ -165,10 +198,18 @@ fn create_logical_device(
 ) -> ash::Device {
     let swapchain_extension = ash::extensions::khr::Swapchain::name();
     let synchronisation2_extension = ash::extensions::khr::Synchronization2::name();
+    let acceleration_structure_extension = ash::extensions::khr::AccelerationStructure::name();
+    let ray_tracing_pipeline_extension = ash::extensions::khr::RayTracingPipeline::name();
+    let deferred_host_operations_extension = ash::extensions::khr::DeferredHostOperations::name();
+    let device_address_extension = ash::extensions::khr::BufferDeviceAddress::name();
 
     let device_extensions = [
         swapchain_extension.as_ptr(),
         synchronisation2_extension.as_ptr(),
+        acceleration_structure_extension.as_ptr(),
+        ray_tracing_pipeline_extension.as_ptr(),
+        deferred_host_operations_extension.as_ptr(),
+        device_address_extension.as_ptr(),
     ];
 
     let queue_priorities = [1.0];
@@ -181,10 +222,31 @@ fn create_logical_device(
         ..vk::PhysicalDeviceVulkan13Features::default()
     };
 
+    let mut enabled_buffer_device_address_features =
+        vk::PhysicalDeviceBufferDeviceAddressFeatures {
+            buffer_device_address: vk::TRUE,
+            ..vk::PhysicalDeviceBufferDeviceAddressFeatures::default()
+        };
+
+    let mut enabled_ray_tracing_pipeline_features =
+        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR {
+            ray_tracing_pipeline: vk::TRUE,
+            ..vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
+        };
+
+    let mut enabled_acceleration_structure_features =
+        vk::PhysicalDeviceAccelerationStructureFeaturesKHR {
+            acceleration_structure: vk::TRUE,
+            ..vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default()
+        };
+
     let create_info = DeviceCreateInfo::builder()
         .queue_create_infos(std::slice::from_ref(&queue_create_info))
         .enabled_extension_names(&device_extensions)
         .push_next(&mut physical_device_vulkan13_features)
+        .push_next(&mut enabled_buffer_device_address_features)
+        .push_next(&mut enabled_ray_tracing_pipeline_features)
+        .push_next(&mut enabled_acceleration_structure_features)
         .build();
 
     unsafe { instance.create_device(*physical_device, &create_info, None) }
