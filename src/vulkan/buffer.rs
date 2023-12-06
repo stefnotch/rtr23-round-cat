@@ -39,6 +39,12 @@ pub struct Buffer<T> {
     context: Arc<Context>,
 }
 
+pub struct BufferSlice<'a, T> {
+    pub buffer: &'a Buffer<T>,
+    pub offset: vk::DeviceSize,
+    pub size: vk::DeviceSize,
+}
+
 impl<T> Buffer<T> {
     pub fn new(
         context: Arc<Context>,
@@ -65,9 +71,13 @@ impl<T> Buffer<T> {
         )
         .expect("Could not find memorytype for buffer");
 
+        let mut allocate_flags_info =
+            vk::MemoryAllocateFlagsInfo::builder().flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS); // TODO: Make configureable
+
         let allocate_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(buffer_memory_requirements.size)
-            .memory_type_index(buffer_memorytype_index);
+            .memory_type_index(buffer_memorytype_index)
+            .push_next(&mut allocate_flags_info);
 
         let memory = unsafe { device.allocate_memory(&allocate_info, None) }
             .expect("Could not allocate memory for buffer");
@@ -87,6 +97,15 @@ impl<T> Buffer<T> {
 }
 
 impl<T> Buffer<T> {
+    pub fn get_device_address(&self) -> vk::DeviceAddress {
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.inner);
+        unsafe {
+            self.context
+                .buffer_device_address
+                .get_buffer_device_address(&info)
+        }
+    }
+
     pub fn copy_data<U: IntoSlice<T>>(&self, data: &U) {
         let data = data.as_sliced();
 
@@ -102,17 +121,36 @@ impl<T> Buffer<T> {
         unsafe { self.context.device.unmap_memory(self.memory) };
     }
 
-    pub fn copy_from(&self, command_buffer: vk::CommandBuffer, other: &Buffer<T>) {
-        assert!(other.usage.contains(vk::BufferUsageFlags::TRANSFER_SRC));
+    pub fn copy_from(
+        &self,
+        dst_offset: vk::DeviceSize,
+        command_buffer: vk::CommandBuffer,
+        other: &BufferSlice<T>,
+    ) {
+        assert!(other
+            .buffer
+            .usage
+            .contains(vk::BufferUsageFlags::TRANSFER_SRC));
         assert!(self.usage.contains(vk::BufferUsageFlags::TRANSFER_DST));
-        let buffer_copy_info = vk::BufferCopy::builder().size(self.size);
+        let buffer_copy_info = vk::BufferCopy::builder()
+            .dst_offset(dst_offset)
+            .src_offset(other.offset)
+            .size(other.size);
         unsafe {
             self.context.device.cmd_copy_buffer(
                 command_buffer,
-                other.inner,
+                other.buffer.inner,
                 self.inner,
                 &[buffer_copy_info.build()],
             )
+        }
+    }
+
+    pub fn get_slice(&self, offset: vk::DeviceSize, size: vk::DeviceSize) -> BufferSlice<T> {
+        BufferSlice {
+            buffer: self,
+            offset,
+            size,
         }
     }
 
@@ -132,7 +170,11 @@ impl<T> Buffer<T> {
         );
         staging_buffer.copy_data(data);
 
-        self.copy_from(command_buffer.inner, &staging_buffer);
+        self.copy_from(
+            0,
+            command_buffer.inner,
+            &staging_buffer.get_slice(0, data_size),
+        );
         command_buffer.add_staging_buffer(staging_buffer);
     }
 }

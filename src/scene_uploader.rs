@@ -4,6 +4,8 @@ use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
 
 use crate::loader::LoadedTexture;
+use crate::scene::RaytracingGeometry;
+use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::command_buffer::OneTimeCommandBuffer;
 use crate::vulkan::command_pool::CommandPool;
@@ -114,7 +116,8 @@ pub fn setup(
     let mut sampler_map = HashMap::new();
     let mut texture_map = HashMap::new();
     let mut material_map = HashMap::new();
-    let mut model_map: HashMap<loader::AssetId, Arc<Mesh>> = HashMap::new();
+    let mut model_map = HashMap::new();
+    let mut raytracing_geometry_map = HashMap::new();
 
     let mut scene = Scene { models: vec![] };
     for loaded_model in loaded_scene.models {
@@ -228,7 +231,9 @@ pub fn setup(
                             context.clone(),
                             vertices.get_vec_size(),
                             vk::BufferUsageFlags::TRANSFER_DST
-                                | vk::BufferUsageFlags::VERTEX_BUFFER,
+                                | vk::BufferUsageFlags::VERTEX_BUFFER
+                                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
                             vk::MemoryPropertyFlags::DEVICE_LOCAL,
                         );
                         buffer.copy_from_host(
@@ -244,7 +249,10 @@ pub fn setup(
                         let buffer = Buffer::new(
                             context.clone(),
                             indices.get_vec_size(),
-                            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+                            vk::BufferUsageFlags::TRANSFER_DST
+                                | vk::BufferUsageFlags::INDEX_BUFFER
+                                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
                             vk::MemoryPropertyFlags::DEVICE_LOCAL,
                         );
                         buffer.copy_from_host(
@@ -259,10 +267,108 @@ pub fn setup(
                         index_buffer,
                         vertex_buffer,
                         num_indices: loaded_primitive.mesh.indices.len() as u32,
+                        num_vertices: loaded_primitive.mesh.vertices.len() as u32,
                     })
                 })
                 .clone();
-            let primitive = Primitive { material, mesh };
+
+            let raytracing_geometry = raytracing_geometry_map
+                .entry(loaded_primitive.mesh.id())
+                .or_insert_with(|| {
+                    let vertex_address = mesh.vertex_buffer.get_device_address();
+                    let index_address = mesh.index_buffer.get_device_address();
+                    let triangle_count = mesh.num_indices / 3;
+
+                    let geometry_triangles_data =
+                        vk::AccelerationStructureGeometryTrianglesDataKHR {
+                            vertex_format: vk::Format::R32G32B32_SFLOAT,
+                            vertex_data: vk::DeviceOrHostAddressConstKHR {
+                                device_address: vertex_address,
+                            },
+                            vertex_stride: std::mem::size_of::<crate::scene::Vertex>() as u64,
+                            max_vertex: mesh.num_vertices - 1,
+                            index_type: vk::IndexType::UINT32,
+                            index_data: vk::DeviceOrHostAddressConstKHR {
+                                device_address: index_address,
+                            },
+                            // Null means identity transform
+                            transform_data: Default::default(),
+                            ..Default::default()
+                        };
+
+                    let geometry_data = vk::AccelerationStructureGeometryKHR {
+                        geometry_type: vk::GeometryTypeKHR::TRIANGLES,
+                        geometry: vk::AccelerationStructureGeometryDataKHR {
+                            triangles: geometry_triangles_data,
+                        },
+                        flags: vk::GeometryFlagsKHR::OPAQUE,
+                        ..Default::default()
+                    };
+                    let geometry_build_info =
+                        vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+                            .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
+                            .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
+                            .geometries(std::slice::from_ref(&geometry_data));
+
+                    let build_sizes_info = unsafe {
+                        context
+                            .context_raytracing
+                            .acceleration_structure
+                            .get_acceleration_structure_build_sizes(
+                                vk::AccelerationStructureBuildTypeKHR::DEVICE,
+                                &geometry_build_info,
+                                std::slice::from_ref(&triangle_count),
+                            )
+                    };
+                    let blas = AccelerationStructure::new(
+                        context.clone(),
+                        vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL,
+                        build_sizes_info,
+                    );
+
+                    let scratch_buffer: Buffer<u8> = Buffer::new(
+                        context.clone(),
+                        build_sizes_info.build_scratch_size,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    );
+
+                    let geometry_build_info = geometry_build_info
+                        .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
+                        .dst_acceleration_structure(blas.inner)
+                        .scratch_data(vk::DeviceOrHostAddressKHR {
+                            device_address: scratch_buffer.get_device_address(),
+                        });
+                    setup_command_buffer.add_staging_buffer(scratch_buffer);
+
+                    let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
+                        primitive_count: triangle_count,
+                        primitive_offset: 0,
+                        first_vertex: 0,
+                        transform_offset: 0,
+                    };
+                    let build_range_infos = std::slice::from_ref(&build_range_info);
+
+                    unsafe {
+                        context
+                            .context_raytracing
+                            .acceleration_structure
+                            .cmd_build_acceleration_structures(
+                                *setup_command_buffer,
+                                std::slice::from_ref(&geometry_build_info),
+                                std::slice::from_ref(&build_range_infos),
+                            )
+                    };
+
+                    Arc::new(RaytracingGeometry { blas })
+                })
+                .clone();
+            let primitive = Primitive {
+                material,
+                mesh,
+                raytracing_geometry,
+            };
             model.primitives.push(primitive)
         }
         scene.models.push(model);
