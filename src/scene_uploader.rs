@@ -340,7 +340,7 @@ pub fn setup(
                         .scratch_data(vk::DeviceOrHostAddressKHR {
                             device_address: scratch_buffer.get_device_address(),
                         });
-                    setup_command_buffer.add_staging_buffer(scratch_buffer);
+                    setup_command_buffer.add_resource(scratch_buffer);
 
                     let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
                         primitive_count: triangle_count,

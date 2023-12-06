@@ -175,7 +175,7 @@ impl<T> Buffer<T> {
             command_buffer.inner,
             &staging_buffer.get_slice(0, data_size),
         );
-        command_buffer.add_staging_buffer(staging_buffer);
+        command_buffer.add_resource(staging_buffer);
     }
 }
 

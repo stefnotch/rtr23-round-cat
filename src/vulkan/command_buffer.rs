@@ -7,12 +7,12 @@ use super::{buffer::Buffer, command_pool::CommandPool, context::Context};
 pub struct OneTimeCommandBuffer {
     pub inner: vk::CommandBuffer,
     command_pool: CommandPool,
-    staging_buffers: Vec<Arc<dyn StagingBuffer>>,
+    resources: Vec<Arc<dyn VulkanResource>>,
 }
 
-trait StagingBuffer {}
+pub trait VulkanResource {}
 
-impl<T> StagingBuffer for Buffer<T> {}
+impl<T> VulkanResource for Buffer<T> {}
 
 impl OneTimeCommandBuffer {
     pub fn new(
@@ -33,7 +33,7 @@ impl OneTimeCommandBuffer {
         Self {
             inner: command_buffer,
             command_pool,
-            staging_buffers: Vec::new(),
+            resources: Vec::new(),
         }
     }
 
@@ -41,11 +41,8 @@ impl OneTimeCommandBuffer {
         self.command_pool.context()
     }
 
-    pub fn add_staging_buffer<T>(&mut self, buffer: Buffer<T>)
-    where
-        T: 'static,
-    {
-        self.staging_buffers.push(Arc::new(buffer));
+    pub fn add_resource(&mut self, resource: impl VulkanResource + 'static) {
+        self.resources.push(Arc::new(resource));
     }
 
     pub fn end(&self) {
