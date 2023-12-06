@@ -2,9 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
+use ultraviolet::Mat4;
 
 use crate::loader::LoadedTexture;
-use crate::scene::RaytracingGeometry;
+use crate::scene::{RaytracingGeometry, RaytracingScene};
 use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::command_buffer::OneTimeCommandBuffer;
@@ -119,7 +120,7 @@ pub fn setup(
     let mut model_map = HashMap::new();
     let mut raytracing_geometry_map = HashMap::new();
 
-    let mut scene = Scene { models: vec![] };
+    let mut models = vec![];
     for loaded_model in loaded_scene.models {
         let mut model = Model {
             transform: loaded_model.transform,
@@ -272,9 +273,29 @@ pub fn setup(
                 })
                 .clone();
 
+            //  Wait for vertex buffer to be copied before creating acceleration structure
+
             let raytracing_geometry = raytracing_geometry_map
                 .entry(loaded_primitive.mesh.id())
                 .or_insert_with(|| {
+                    let memory_barrier = vk::BufferMemoryBarrier2KHR::builder()
+                        .src_stage_mask(vk::PipelineStageFlags2KHR::TRANSFER)
+                        .src_access_mask(vk::AccessFlags2KHR::TRANSFER_WRITE)
+                        .dst_stage_mask(
+                            vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR,
+                        )
+                        .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
+                        .buffer(mesh.vertex_buffer.inner)
+                        .size(vk::WHOLE_SIZE)
+                        .build();
+                    unsafe {
+                        context.synchronisation2_loader.cmd_pipeline_barrier2(
+                            *setup_command_buffer,
+                            &vk::DependencyInfo::builder()
+                                .buffer_memory_barriers(std::slice::from_ref(&memory_barrier)),
+                        );
+                    };
+
                     let vertex_address = mesh.vertex_buffer.get_device_address();
                     let index_address = mesh.index_buffer.get_device_address();
                     let triangle_count = mesh.num_indices / 3;
@@ -371,9 +392,140 @@ pub fn setup(
             };
             model.primitives.push(primitive)
         }
-        scene.models.push(model);
+        models.push(model);
     }
 
+    // TODO: Top level acceleration structure
+    let raytracing_scene = {
+        let mut instances = vec![];
+        for model in &models {
+            for primitive in &model.primitives {
+                let transform: Mat4 = model.transform.clone().into();
+                // Skip the last matrix row // TODO: Verify this is correct
+                let transform_array: [f32; 12] = transform.as_array()[0..12].try_into().unwrap();
+                let instance = vk::AccelerationStructureInstanceKHR {
+                    transform: vk::TransformMatrixKHR {
+                        matrix: transform_array,
+                    },
+                    instance_custom_index_and_mask: vk::Packed24_8::new(0, 0xFF),
+                    instance_shader_binding_table_record_offset_and_flags: vk::Packed24_8::new(
+                        0,
+                        // Hmm
+                        vk::GeometryInstanceFlagsKHR::TRIANGLE_FACING_CULL_DISABLE.as_raw() as u8,
+                    ),
+                    acceleration_structure_reference: vk::AccelerationStructureReferenceKHR {
+                        device_handle: primitive.raytracing_geometry.blas.device_address,
+                    },
+                };
+                instances.push(instance);
+            }
+        }
+
+        let instances_buffer: Buffer<vk::AccelerationStructureInstanceKHR> = Buffer::new(
+            context.clone(),
+            instances.get_vec_size(),
+            vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+        instances_buffer.copy_from_host(
+            &mut setup_command_buffer,
+            &instances,
+            instances.get_vec_size(),
+        );
+        // Wait for copy to finish before building acceleration structure
+        {
+            let memory_barrier = vk::BufferMemoryBarrier2KHR::builder()
+                .src_stage_mask(vk::PipelineStageFlags2KHR::TRANSFER)
+                .src_access_mask(vk::AccessFlags2KHR::TRANSFER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR)
+                .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
+                .buffer(instances_buffer.inner)
+                .size(vk::WHOLE_SIZE);
+            unsafe {
+                context.synchronisation2_loader.cmd_pipeline_barrier2(
+                    *setup_command_buffer,
+                    &vk::DependencyInfo::builder()
+                        .buffer_memory_barriers(std::slice::from_ref(&memory_barrier)),
+                );
+            };
+        }
+
+        let acceleration_structure_geometry = vk::AccelerationStructureGeometryKHR {
+            geometry_type: vk::GeometryTypeKHR::INSTANCES,
+            geometry: vk::AccelerationStructureGeometryDataKHR {
+                instances: vk::AccelerationStructureGeometryInstancesDataKHR {
+                    data: vk::DeviceOrHostAddressConstKHR {
+                        device_address: instances_buffer.get_device_address(),
+                    },
+                    array_of_pointers: vk::FALSE,
+                    ..Default::default()
+                },
+            },
+            flags: vk::GeometryFlagsKHR::OPAQUE,
+            ..Default::default()
+        };
+        setup_command_buffer.add_resource(instances_buffer);
+
+        let geometry_build_info = vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+            .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL)
+            .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
+            .geometries(std::slice::from_ref(&acceleration_structure_geometry))
+            .mode(vk::BuildAccelerationStructureModeKHR::BUILD);
+        let instances_count = instances.len() as u32;
+        let build_size_info = unsafe {
+            context
+                .context_raytracing
+                .acceleration_structure
+                .get_acceleration_structure_build_sizes(
+                    vk::AccelerationStructureBuildTypeKHR::DEVICE,
+                    &geometry_build_info,
+                    std::slice::from_ref(&instances_count),
+                )
+        };
+
+        let tlas = AccelerationStructure::new(
+            context.clone(),
+            vk::AccelerationStructureTypeKHR::TOP_LEVEL,
+            build_size_info,
+        );
+
+        let scratch_buffer: Buffer<u8> = Buffer::new(
+            context.clone(),
+            build_size_info.build_scratch_size,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+        let geometry_build_info = geometry_build_info
+            .dst_acceleration_structure(tlas.inner)
+            .scratch_data(vk::DeviceOrHostAddressKHR {
+                device_address: scratch_buffer.get_device_address(),
+            });
+        setup_command_buffer.add_resource(scratch_buffer);
+
+        let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
+            primitive_count: 1,
+            primitive_offset: 0,
+            first_vertex: 0,
+            transform_offset: 0,
+        };
+        let build_range_infos = std::slice::from_ref(&build_range_info);
+
+        unsafe {
+            context
+                .context_raytracing
+                .acceleration_structure
+                .cmd_build_acceleration_structures(
+                    *setup_command_buffer,
+                    std::slice::from_ref(&geometry_build_info),
+                    std::slice::from_ref(&build_range_infos),
+                )
+        };
+
+        RaytracingScene { tlas }
+    };
     setup_command_buffer.end();
 
     // submit
@@ -386,7 +538,10 @@ pub fn setup(
 
     unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
 
-    scene
+    Scene {
+        models,
+        raytracing_scene,
+    }
 }
 
 fn load_texture(

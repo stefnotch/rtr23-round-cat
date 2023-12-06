@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 pub struct Scene {
     pub models: Vec<Model>,
-    // pub raytracing_scene: RaytracingScene,
+    pub raytracing_scene: RaytracingScene,
 }
 
 pub struct Model {

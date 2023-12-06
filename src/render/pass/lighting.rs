@@ -8,11 +8,9 @@ use ash::{
     },
 };
 
-use crate::{
-    render::{
-        gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
-        SceneDescriptorSet, SwapchainIndex,
-    },
+use crate::render::{
+    gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
+    SceneDescriptorSet, SwapchainIndex,
 };
 use crate::vulkan::context::Context;
 use crate::vulkan::swapchain::SwapchainContainer;
@@ -60,12 +58,12 @@ impl LightingPass {
         viewport: vk::Viewport,
     ) {
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
-            gbuffer.position_buffer.clone(),
-            gbuffer.albedo_buffer.clone(),
-            gbuffer.normals_buffer.clone(),
-            gbuffer.metallic_roughness_buffer.clone(),
+            &gbuffer.position_buffer,
+            &gbuffer.albedo_buffer,
+            &gbuffer.normals_buffer,
+            &gbuffer.metallic_roughness_buffer,
         ]
-        .iter()
+        .into_iter()
         .map(|image| vk::ImageMemoryBarrier2 {
             src_stage_mask: PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             src_access_mask: AccessFlags2::COLOR_ATTACHMENT_WRITE,
