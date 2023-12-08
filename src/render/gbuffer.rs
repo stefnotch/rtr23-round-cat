@@ -14,6 +14,7 @@ pub struct GBuffer {
     pub normals_buffer: Arc<ImageView>,
     pub metallic_roughness_buffer: Arc<ImageView>,
     pub depth_buffer: Arc<ImageView>,
+    pub shadow_buffer: Arc<ImageView>,
 
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
@@ -45,13 +46,14 @@ impl GBuffer {
         swapchain_extent: vk::Extent2D,
         descriptor_pool: vk::DescriptorPool,
     ) -> Self {
+        let swapchain_extent_3d = vk::Extent3D {
+            width: swapchain_extent.width,
+            height: swapchain_extent.height,
+            depth: 1,
+        };
         let position_buffer_image = {
             let create_info = vk::ImageCreateInfo {
-                extent: vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                },
+                extent: swapchain_extent_3d,
                 format: GBuffer::POSITION_FORMAT,
                 usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 ..simple_image_create_info()
@@ -68,11 +70,7 @@ impl GBuffer {
 
         let albedo_buffer_image = {
             let create_info = vk::ImageCreateInfo {
-                extent: vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                },
+                extent: swapchain_extent_3d,
                 format: GBuffer::ALBEDO_FORMAT,
                 usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 ..simple_image_create_info()
@@ -89,11 +87,7 @@ impl GBuffer {
 
         let normals_buffer_image = {
             let create_info = vk::ImageCreateInfo {
-                extent: vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                },
+                extent: swapchain_extent_3d,
                 format: GBuffer::NORMALS_FORMAT,
                 usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 ..simple_image_create_info()
@@ -110,11 +104,7 @@ impl GBuffer {
 
         let metallic_roughness_buffer_image = {
             let create_info = vk::ImageCreateInfo {
-                extent: vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                },
+                extent: swapchain_extent_3d,
                 format: GBuffer::METALLIC_ROUGHNESS_FORMAT,
                 usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 ..simple_image_create_info()
@@ -131,11 +121,7 @@ impl GBuffer {
 
         let depth_buffer_image = {
             let create_info = vk::ImageCreateInfo {
-                extent: vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                },
+                extent: swapchain_extent_3d,
                 format: GBuffer::DEPTH_FORMAT,
                 usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 ..simple_image_create_info()
@@ -148,6 +134,23 @@ impl GBuffer {
             context.clone(),
             depth_buffer_image.clone(),
             ImageAspectFlags::DEPTH,
+        ));
+
+        let shadow_buffer_image = {
+            let create_info = vk::ImageCreateInfo {
+                extent: swapchain_extent_3d,
+                format: GBuffer::SHADOW_FORMAT,
+                usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
+                ..simple_image_create_info()
+            };
+
+            Arc::new(Image::new(context.clone(), &create_info))
+        };
+
+        let shadow_buffer_imageview = Arc::new(ImageView::new_default(
+            context.clone(),
+            shadow_buffer_image.clone(),
+            ImageAspectFlags::COLOR,
         ));
 
         let descriptor_set_layout = {
@@ -208,7 +211,7 @@ impl GBuffer {
         };
 
         let descriptor_set = {
-            let writes = [
+            let writes = vec![
                 WriteDescriptorSet::image_view_sampler_with_layout(
                     0,
                     position_buffer_imageview.clone(),
@@ -239,7 +242,7 @@ impl GBuffer {
                 context.clone(),
                 descriptor_pool,
                 descriptor_set_layout,
-                &writes,
+                writes,
             )
         };
 
@@ -249,6 +252,7 @@ impl GBuffer {
             normals_buffer: normals_buffer_imageview,
             metallic_roughness_buffer: metallic_roughness_buffer_imageview,
             depth_buffer: depth_buffer_imageview,
+            shadow_buffer: shadow_buffer_imageview,
             descriptor_set,
             sampler,
             descriptor_set_layout,

@@ -190,7 +190,7 @@ pub fn setup(
                         context.clone(),
                         descriptor_pool,
                         set_layout_cache.material(),
-                        &[
+                        vec![
                             WriteDescriptorSet::buffer(0, &material_buffer),
                             WriteDescriptorSet::image_view_sampler(
                                 1,
@@ -523,7 +523,9 @@ pub fn setup(
                 )
         };
 
-        RaytracingScene { tlas }
+        RaytracingScene {
+            tlas: Arc::new(tlas),
+        }
     };
     setup_command_buffer.end();
 

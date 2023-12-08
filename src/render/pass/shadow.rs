@@ -5,16 +5,24 @@ use ash::vk;
 use crate::{
     render::{gbuffer::GBuffer, CameraDescriptorSet, SceneDescriptorSet},
     scene::Scene,
-    vulkan::{buffer::Buffer, context::Context, descriptor_set::DescriptorSet},
+    vulkan::{
+        acceleration_structure::AccelerationStructure,
+        buffer::Buffer,
+        context::Context,
+        descriptor_set::{self, DescriptorSet, WriteDescriptorSet},
+    },
 };
 
 pub struct ShadowPass {
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
 
+    descriptor_pool: vk::DescriptorPool,
     descriptor_set: DescriptorSet,
     descriptor_set_layout: vk::DescriptorSetLayout,
     shader_binding_tables: ShaderBindingTables,
+
+    acceleration_structure: Arc<AccelerationStructure>,
 
     context: Arc<Context>,
 }
@@ -35,20 +43,29 @@ impl ShadowPass {
         context: Arc<Context>,
         gbuffer: &GBuffer,
         descriptor_pool: vk::DescriptorPool,
+        acceleration_structure: Arc<AccelerationStructure>,
     ) -> Self {
         let (pipeline, pipeline_layout) = create_pipeline(context.clone());
 
         let shader_binding_tables = create_shader_binding_tables(context.clone());
 
-        let (descriptor_set, set_layout) = create_descriptor_set(context.clone(), descriptor_pool);
+        let (descriptor_set, set_layout) = create_descriptor_set(
+            context.clone(),
+            descriptor_pool,
+            acceleration_structure.clone(),
+            gbuffer,
+        );
 
         ShadowPass {
             pipeline,
             pipeline_layout,
 
+            descriptor_pool,
             descriptor_set,
             descriptor_set_layout: set_layout,
             shader_binding_tables,
+
+            acceleration_structure,
 
             context,
         }
@@ -120,7 +137,12 @@ impl ShadowPass {
     }
 
     pub fn resize(&mut self, gbuffer: &GBuffer) {
-        // recreate descriptor_set
+        (self.descriptor_set, self.descriptor_set_layout) = create_descriptor_set(
+            self.context.clone(),
+            self.descriptor_pool,
+            self.acceleration_structure.clone(),
+            gbuffer,
+        );
     }
 }
 
@@ -144,6 +166,8 @@ fn create_shader_binding_tables(context: Arc<Context>) -> ShaderBindingTables {
 fn create_descriptor_set(
     context: Arc<Context>,
     descriptor_pool: vk::DescriptorPool,
+    acceleration_structure: Arc<AccelerationStructure>,
+    gbuffer: &GBuffer,
 ) -> (DescriptorSet, vk::DescriptorSetLayout) {
     let set_layout = {
         let bindings = [
@@ -173,7 +197,10 @@ fn create_descriptor_set(
         context.clone(),
         descriptor_pool,
         set_layout,
-        todo!("define write descriptor sets"),
+        vec![
+            WriteDescriptorSet::acceleration_structure(0, acceleration_structure),
+            WriteDescriptorSet::storage_image_view(1, gbuffer.shadow_buffer.clone()),
+        ],
     );
 
     (set, set_layout)

@@ -57,6 +57,7 @@ impl MainRenderer {
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
+        scene: &Scene,
         swapchain: &SwapchainContainer,
     ) -> Self {
         let scene_descriptor_set = {
@@ -71,7 +72,7 @@ impl MainRenderer {
                 context.clone(),
                 descriptor_pool,
                 set_layout_cache.scene(),
-                &[WriteDescriptorSet::buffer(0, &buffer)],
+                vec![WriteDescriptorSet::buffer(0, &buffer)],
             );
 
             SceneDescriptorSet {
@@ -92,7 +93,7 @@ impl MainRenderer {
                 context.clone(),
                 descriptor_pool,
                 set_layout_cache.camera(),
-                &[WriteDescriptorSet::buffer(0, &buffer)],
+                vec![WriteDescriptorSet::buffer(0, &buffer)],
             );
 
             CameraDescriptorSet {
@@ -108,8 +109,12 @@ impl MainRenderer {
             set_layout_cache,
         );
 
-        let shadow_pass =
-            ShadowPass::new(context.clone(), geometry_pass.gbuffer(), descriptor_pool);
+        let shadow_pass = ShadowPass::new(
+            context.clone(),
+            geometry_pass.gbuffer(),
+            descriptor_pool,
+            scene.raytracing_scene.tlas.clone(),
+        );
 
         let lighting_pass = LightingPass::new(
             context.clone(),

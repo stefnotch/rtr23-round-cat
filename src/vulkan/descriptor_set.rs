@@ -6,6 +6,8 @@ use crate::vulkan::image_view::ImageView;
 use crate::vulkan::sampler::Sampler;
 use ash::vk;
 
+use super::acceleration_structure::AccelerationStructure;
+
 pub struct DescriptorSet {
     pub inner: vk::DescriptorSet,
 }
@@ -15,13 +17,12 @@ impl DescriptorSet {
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout: vk::DescriptorSetLayout,
-        write_descriptor_sets: &[WriteDescriptorSet],
+        mut write_descriptor_sets: Vec<WriteDescriptorSet>,
     ) -> Self {
-        let x = Box::new([set_layout]);
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(descriptor_pool)
-            .set_layouts(x.as_ref());
+            .set_layouts(std::slice::from_ref(&set_layout));
 
         let descriptor_set = unsafe {
             device
@@ -30,30 +31,29 @@ impl DescriptorSet {
         }[0];
 
         let write_descriptor_sets: Vec<vk::WriteDescriptorSet> = write_descriptor_sets
-            .into_iter()
+            .iter_mut()
             .map(|write| {
                 let mut vk_write = vk::WriteDescriptorSet::builder()
                     .dst_binding(write.binding)
                     .descriptor_type(write.info.descriptor_type())
                     .dst_set(descriptor_set);
 
-                match &write.info {
+                match &mut write.info {
                     DescriptorInfo::Buffer(info) => {
                         vk_write = vk_write.buffer_info(std::slice::from_ref(info))
                     }
-                    DescriptorInfo::Image(info) => {
+                    DescriptorInfo::SampledImage(info) | DescriptorInfo::StorageImage(info) => {
                         vk_write = vk_write.image_info(std::slice::from_ref(info))
-                    } // DescriptorInfo::AccelerationStructure(info) => {
-                      //     vk_write = vk_write.push_next(info)
-                      // }
+                    }
+                    DescriptorInfo::AccelerationStructure(info) => {
+                        vk_write = vk_write.push_next(info)
+                    }
                 }
                 vk_write.build()
             })
             .collect();
 
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
-
-        std::mem::drop(x);
 
         Self {
             inner: descriptor_set,
@@ -68,18 +68,20 @@ pub struct WriteDescriptorSet {
 
 pub enum DescriptorInfo {
     Buffer(vk::DescriptorBufferInfo),
-    Image(vk::DescriptorImageInfo),
-    // AccelerationStructure(vk::WriteDescriptorSetAccelerationStructureKHR),
+    SampledImage(vk::DescriptorImageInfo),
+    StorageImage(vk::DescriptorImageInfo),
+    AccelerationStructure(vk::WriteDescriptorSetAccelerationStructureKHR),
 }
 
 impl DescriptorInfo {
     pub fn descriptor_type(&self) -> vk::DescriptorType {
         match self {
             DescriptorInfo::Buffer(_) => vk::DescriptorType::UNIFORM_BUFFER,
-            DescriptorInfo::Image(_) => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            // DescriptorInfo::AccelerationStructure(_) => {
-            //     vk::DescriptorType::ACCELERATION_STRUCTURE_KHR
-            // }
+            DescriptorInfo::SampledImage(_) => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            DescriptorInfo::StorageImage(_) => vk::DescriptorType::STORAGE_IMAGE,
+            DescriptorInfo::AccelerationStructure(_) => {
+                vk::DescriptorType::ACCELERATION_STRUCTURE_KHR
+            }
         }
     }
 }
@@ -111,7 +113,7 @@ impl WriteDescriptorSet {
 
         WriteDescriptorSet {
             binding,
-            info: DescriptorInfo::Image(info),
+            info: DescriptorInfo::SampledImage(info),
         }
     }
 
@@ -129,7 +131,33 @@ impl WriteDescriptorSet {
 
         WriteDescriptorSet {
             binding,
-            info: DescriptorInfo::Image(info),
+            info: DescriptorInfo::SampledImage(info),
+        }
+    }
+
+    pub fn storage_image_view(binding: u32, image_view: Arc<ImageView>) -> WriteDescriptorSet {
+        let info = vk::DescriptorImageInfo::builder()
+            .image_view(image_view.inner)
+            .image_layout(image_view.image.layout)
+            .build();
+
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::StorageImage(info),
+        }
+    }
+
+    pub fn acceleration_structure(
+        binding: u32,
+        acceleration_structure: Arc<AccelerationStructure>,
+    ) -> WriteDescriptorSet {
+        let info = vk::WriteDescriptorSetAccelerationStructureKHR::builder()
+            .acceleration_structures(std::slice::from_ref(&acceleration_structure.inner))
+            .build();
+
+        WriteDescriptorSet {
+            binding,
+            info: DescriptorInfo::AccelerationStructure(info),
         }
     }
 }

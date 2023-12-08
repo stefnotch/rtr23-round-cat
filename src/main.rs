@@ -172,13 +172,6 @@ impl CatDemo {
 
         let descriptor_set_layout_cache = DescriptorSetLayoutCache::new(context.clone());
 
-        let renderer = MainRenderer::new(
-            context.clone(),
-            descriptor_pool,
-            &descriptor_set_layout_cache,
-            &swapchain,
-        );
-
         let fence = {
             let create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
 
@@ -206,6 +199,14 @@ impl CatDemo {
             context.queue,
             command_pool.clone(),
         );
+        let renderer = MainRenderer::new(
+            context.clone(),
+            descriptor_pool,
+            &descriptor_set_layout_cache,
+            &scene,
+            &swapchain,
+        );
+
         let time = Time::new();
         Self {
             window,

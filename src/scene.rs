@@ -32,5 +32,5 @@ pub struct RaytracingGeometry {
 }
 
 pub struct RaytracingScene {
-    pub tlas: AccelerationStructure,
+    pub tlas: Arc<AccelerationStructure>,
 }
