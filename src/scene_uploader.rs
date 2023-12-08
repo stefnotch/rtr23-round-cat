@@ -395,7 +395,6 @@ pub fn setup(
         models.push(model);
     }
 
-    // TODO: Top level acceleration structure
     let raytracing_scene = {
         let mut instances = vec![];
         for model in &models {

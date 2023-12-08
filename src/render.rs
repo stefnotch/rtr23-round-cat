@@ -16,7 +16,10 @@ use crate::vulkan::swapchain::SwapchainContainer;
 use crate::{camera::Camera, scene::Scene};
 
 use self::{
-    pass::{geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass},
+    pass::{
+        geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass,
+        shadow::ShadowPass,
+    },
     set_layout_cache::DescriptorSetLayoutCache,
 };
 
@@ -41,6 +44,7 @@ pub struct CameraDescriptorSet {
 
 pub struct MainRenderer {
     geometry_pass: GeometryPass,
+    shadow_pass: ShadowPass,
     lighting_pass: LightingPass,
     post_processing_pass: PostProcessingPass,
 
@@ -103,6 +107,10 @@ impl MainRenderer {
             descriptor_pool,
             set_layout_cache,
         );
+
+        let shadow_pass =
+            ShadowPass::new(context.clone(), geometry_pass.gbuffer(), descriptor_pool);
+
         let lighting_pass = LightingPass::new(
             context.clone(),
             swapchain,
@@ -113,6 +121,7 @@ impl MainRenderer {
 
         MainRenderer {
             geometry_pass,
+            shadow_pass,
             lighting_pass,
             post_processing_pass,
 
@@ -141,6 +150,15 @@ impl MainRenderer {
             swapchain_index,
             viewport,
         );
+
+        self.shadow_pass.render(
+            scene,
+            &self.scene_descriptor_set,
+            &self.camera_descriptor_set,
+            swapchain.extent,
+            command_buffer,
+        );
+
         self.lighting_pass.render(
             command_buffer,
             self.geometry_pass.gbuffer(),
@@ -169,6 +187,8 @@ impl MainRenderer {
         let camera = shader_types::Camera {
             view: camera.view_matrix(),
             proj: camera.projection_matrix(),
+            view_inv: camera.view_matrix().inversed(),
+            proj_inv: camera.projection_matrix().inversed(),
             position: camera.position,
         };
 

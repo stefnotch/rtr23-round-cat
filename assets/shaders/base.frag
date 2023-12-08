@@ -29,6 +29,8 @@ layout(set = 1, binding = 0) uniform Scene {
 layout(set = 2, binding = 0) uniform Camera {
     mat4 view;
     mat4 proj;
+    mat4 view_inv;
+    mat4 proj_inv;
     vec3 position;
 } camera;
 

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use ash::vk;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::sampler::Sampler;
+use ash::vk;
 
 pub struct DescriptorSet {
     pub inner: vk::DescriptorSet,
@@ -30,7 +30,7 @@ impl DescriptorSet {
         }[0];
 
         let write_descriptor_sets: Vec<vk::WriteDescriptorSet> = write_descriptor_sets
-            .iter()
+            .into_iter()
             .map(|write| {
                 let mut vk_write = vk::WriteDescriptorSet::builder()
                     .dst_binding(write.binding)
@@ -43,7 +43,9 @@ impl DescriptorSet {
                     }
                     DescriptorInfo::Image(info) => {
                         vk_write = vk_write.image_info(std::slice::from_ref(info))
-                    }
+                    } // DescriptorInfo::AccelerationStructure(info) => {
+                      //     vk_write = vk_write.push_next(info)
+                      // }
                 }
                 vk_write.build()
             })
@@ -67,6 +69,7 @@ pub struct WriteDescriptorSet {
 pub enum DescriptorInfo {
     Buffer(vk::DescriptorBufferInfo),
     Image(vk::DescriptorImageInfo),
+    // AccelerationStructure(vk::WriteDescriptorSetAccelerationStructureKHR),
 }
 
 impl DescriptorInfo {
@@ -74,6 +77,9 @@ impl DescriptorInfo {
         match self {
             DescriptorInfo::Buffer(_) => vk::DescriptorType::UNIFORM_BUFFER,
             DescriptorInfo::Image(_) => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            // DescriptorInfo::AccelerationStructure(_) => {
+            //     vk::DescriptorType::ACCELERATION_STRUCTURE_KHR
+            // }
         }
     }
 }

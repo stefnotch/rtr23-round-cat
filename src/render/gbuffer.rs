@@ -38,6 +38,7 @@ impl GBuffer {
     pub const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
     pub const METALLIC_ROUGHNESS_FORMAT: vk::Format = vk::Format::R8G8_UNORM;
     pub const DEPTH_FORMAT: vk::Format = vk::Format::D16_UNORM;
+    pub const SHADOW_FORMAT: vk::Format = vk::Format::R8_UNORM; // TODO: Check if good
 
     pub fn new(
         context: Arc<Context>,

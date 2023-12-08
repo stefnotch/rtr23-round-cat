@@ -85,6 +85,8 @@ impl LightingPass {
         })
         .collect();
 
+        // TODO: Add pipeline barrier to wait for the raytracing pass
+
         let dependency_info =
             vk::DependencyInfo::builder().image_memory_barriers(&image_memory_barriers);
 
