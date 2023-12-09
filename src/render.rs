@@ -112,6 +112,7 @@ impl MainRenderer {
         let shadow_pass = ShadowPass::new(
             context.clone(),
             geometry_pass.gbuffer(),
+            &set_layout_cache,
             descriptor_pool,
             scene.raytracing_scene.tlas.clone(),
         );

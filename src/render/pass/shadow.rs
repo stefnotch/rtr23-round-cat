@@ -6,6 +6,7 @@ use ash::vk::{
 };
 
 use crate::{
+    include_shader,
     render::{
         gbuffer::GBuffer,
         set_layout_cache::{self, DescriptorSetLayoutCache},
@@ -84,11 +85,10 @@ impl ShadowPass {
     pub fn new(
         context: Arc<Context>,
         gbuffer: &GBuffer,
+        set_layout_cache: &DescriptorSetLayoutCache,
         descriptor_pool: vk::DescriptorPool,
         acceleration_structure: Arc<AccelerationStructure>,
     ) -> Self {
-        let (pipeline, pipeline_layout) = create_pipeline(context.clone());
-
         let shader_binding_tables = create_shader_binding_tables(context.clone());
 
         let (descriptor_set, set_layout) = create_descriptor_set(
@@ -97,6 +97,9 @@ impl ShadowPass {
             acceleration_structure.clone(),
             gbuffer,
         );
+
+        let (pipeline, pipeline_layout) =
+            create_pipeline(context.clone(), set_layout_cache, set_layout);
 
         ShadowPass {
             pipeline,
@@ -240,84 +243,88 @@ fn create_pipeline(
         set_layout,
     ];
 
-    let shader_stages = vec![];
+    let mut shader_stages = vec![];
+    let mut shader_groups = vec![];
 
-    let mut raygen_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/shadow.rgen.spv"))[..]);
+    let mut raygen_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::RAYGEN_KHR,
+        "/shadow/shadow.rgen.spv"
+    );
+    shader_stages.push(raygen_shader.build());
+    shader_groups.push(
+        vk::RayTracingShaderGroupCreateInfoKHR::builder()
+            .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
+            .general_shader(shader_stages.len() as u32 - 1)
+            .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+            .any_hit_shader(vk::SHADER_UNUSED_KHR)
+            .intersection_shader(vk::SHADER_UNUSED_KHR)
+            .build(),
+    );
 
-    let raygen_shader_code = read_spv(&mut vert_spv_file).expect("Could not read shader spv file");
+    let mut miss_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::MISS_KHR,
+        "/shadow/shadow.rmiss.spv"
+    );
+    shader_stages.push(miss_shader.build());
+    shader_groups.push(
+        vk::RayTracingShaderGroupCreateInfoKHR::builder()
+            .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
+            .general_shader(shader_stages.len() as u32 - 1)
+            .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+            .any_hit_shader(vk::SHADER_UNUSED_KHR)
+            .intersection_shader(vk::SHADER_UNUSED_KHR)
+            .build(),
+    );
 
-    let raygen_shader_module = {
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&raygen_shader_code);
-        unsafe { device.create_shader_module(&create_info, None) }
-            .expect("Could not create shader module")
-    };
+    let mut hit_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::ANY_HIT_KHR,
+        "/shadow/shadow.rahit.spv"
+    );
+    shader_stages.push(hit_shader.build());
+    shader_groups.push(
+        vk::RayTracingShaderGroupCreateInfoKHR::builder()
+            .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
+            .general_shader(vk::SHADER_UNUSED_KHR)
+            .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+            .any_hit_shader(shader_stages.len() as u32 - 1)
+            .intersection_shader(vk::SHADER_UNUSED_KHR)
+            .build(),
+    );
 
-    let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
+    let pipeline_layout_create_info =
+        vk::PipelineLayoutCreateInfo::builder().set_layouts(&set_layouts);
+    let pipeline_layout = unsafe {
+        context
+            .device
+            .create_pipeline_layout(&pipeline_layout_create_info, None)
+    }
+    .expect("Could not create raytracing pipeline layout");
 
-    let raygen_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .module(raygen_shader_module)
-        .name(shader_entry_name)
-        .stage(vk::ShaderStageFlags::RAYGEN_KHR);
+    let pipeline_create_info = vk::RayTracingPipelineCreateInfoKHR::builder()
+        .stages(&shader_stages)
+        .groups(&shader_groups)
+        .max_pipeline_ray_recursion_depth(1)
+        .layout(pipeline_layout)
+        .build();
 
-    shader_stages.push(raygen_shader_stage);
-
-    //     /*
-    //         Setup ray tracing shader groups
-    //     */
-    //     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-
-    //     // Ray generation group
-    //     {
-    //         shaderStages.push_back(loadShader(getShadersPath() + "raytracingshadows/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-    //         VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-    //         shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    //         shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-    //         shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-    //         shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroups.push_back(shaderGroup);
-    //     }
-
-    //     // Miss group
-    //     {
-    //         shaderStages.push_back(loadShader(getShadersPath() + "raytracingshadows/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
-    //         VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-    //         shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    //         shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-    //         shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-    //         shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroups.push_back(shaderGroup);
-    //         // Second shader for shadows
-    //         shaderStages.push_back(loadShader(getShadersPath() + "raytracingshadows/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
-    //         shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-    //         shaderGroups.push_back(shaderGroup);
-    //     }
-
-    //     // Closest hit group
-    //     {
-    //         shaderStages.push_back(loadShader(getShadersPath() + "raytracingshadows/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
-    //         VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-    //         shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    //         shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-    //         shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-    //         shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-    //         shaderGroups.push_back(shaderGroup);
-    //     }
-
-    //     VkRayTracingPipelineCreateInfoKHR rayTracingPipelineCI = vks::initializers::rayTracingPipelineCreateInfoKHR();
-    //     rayTracingPipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
-    //     rayTracingPipelineCI.pStages = shaderStages.data();
-    //     rayTracingPipelineCI.groupCount = static_cast<uint32_t>(shaderGroups.size());
-    //     rayTracingPipelineCI.pGroups = shaderGroups.data();
-    //     rayTracingPipelineCI.maxPipelineRayRecursionDepth = 2;
-    //     rayTracingPipelineCI.layout = pipelineLayout;
-    //     VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &pipeline));
+    (
+        unsafe {
+            context
+                .context_raytracing
+                .ray_tracing_pipeline
+                .create_ray_tracing_pipelines(
+                    vk::DeferredOperationKHR::null(),
+                    vk::PipelineCache::null(),
+                    std::slice::from_ref(&pipeline_create_info),
+                    None,
+                )
+        }
+        .expect("Could not create raytracing pipeline")[0],
+        pipeline_layout,
+    )
 }
 
 fn create_shader_binding_tables(context: Arc<Context>) -> ShaderBindingTables {

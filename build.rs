@@ -52,9 +52,12 @@ fn compile_shaders(paths: fs::ReadDir, parent_path: PathBuf, out_dir: String) {
         output_path.push(&parent_path);
         output_path.push(&output_file_name);
 
+        fs::create_dir_all(PathBuf::from(&out_dir).join(&parent_path)).unwrap();
+
         let shader_file_name = shader_file_name.to_string_lossy();
         // glslc can't automatically create directories, so we're just going to pick a flat structure
         let shader_compile_result = Command::new("glslc")
+            .arg("--target-spv=spv1.6")
             .arg(&input_path)
             .arg("-o")
             .arg(&output_path)
