@@ -14,7 +14,7 @@ void main()
   vec3 origin = texture(positionBuffer, inUV).rgb;
   vec3 direction = -normalize(scene.directionalLight.direction);
 
-  uint rayFlags =  gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT ;
+  uint rayFlags =  gl_RayFlagsOpaqueEXT ;
 	uint cullMask = 0xff;
 	float tmin = 0.1;
 	float tmax = 10000.0;
@@ -24,7 +24,7 @@ void main()
   //             uint sbtRecordOffset, uint sbtRecordStride, uint missIndex, vec3 origin,
   //             float Tmin, vec3 direction, float Tmax, int payload);
 
-  shadowed = 1.0;
+  shadowed = 0.0;
   traceRayEXT(topLevelAS, rayFlags, cullMask, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
   imageStore(shadowBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowed), 0.0));

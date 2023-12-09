@@ -8,6 +8,5 @@ layout(location = 0) rayPayloadInEXT float shadowed;
 
 void main()
 {
-  //shadowed = 1.0;
-  debugPrintfEXT("HELLO");
+  shadowed = 1.0;
 }

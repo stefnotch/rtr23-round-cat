@@ -303,16 +303,16 @@ fn create_pipeline(
 
     let mut hit_shader = include_shader!(
         context.clone(),
-        vk::ShaderStageFlags::ANY_HIT_KHR,
-        "/shadow/shadow.rahit.spv"
+        vk::ShaderStageFlags::CLOSEST_HIT_KHR,
+        "/shadow/shadow.rchit.spv"
     );
     shader_stages.push(hit_shader.build());
     shader_groups.push(
         vk::RayTracingShaderGroupCreateInfoKHR::builder()
             .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
             .general_shader(vk::SHADER_UNUSED_KHR)
-            .closest_hit_shader(vk::SHADER_UNUSED_KHR)
-            .any_hit_shader(shader_stages.len() as u32 - 1)
+            .closest_hit_shader(shader_stages.len() as u32 - 1)
+            .any_hit_shader(vk::SHADER_UNUSED_KHR)
             .intersection_shader(vk::SHADER_UNUSED_KHR)
             .build(),
     );
