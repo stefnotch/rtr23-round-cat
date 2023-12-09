@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, fs};
@@ -31,6 +32,10 @@ fn compile_shaders(paths: fs::ReadDir, parent_path: PathBuf, out_dir: String) {
             continue;
         }
         if !shader_path.is_file() {
+            continue;
+        }
+
+        if let Some("glsl") = shader_path.extension().and_then(OsStr::to_str) {
             continue;
         }
 
