@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use ash::vk;
 use crate::vulkan::context::Context;
+use ash::vk;
 
 pub struct DescriptorSetLayoutCache {
     scene_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -20,7 +20,11 @@ impl DescriptorSetLayoutCache {
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                .stage_flags(
+                    vk::ShaderStageFlags::VERTEX
+                        | vk::ShaderStageFlags::FRAGMENT
+                        | vk::ShaderStageFlags::RAYGEN_KHR,
+                )
                 .build()];
 
             let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);

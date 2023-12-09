@@ -4,6 +4,7 @@ layout (set = 0, binding = 0) uniform sampler2D positionBuffer;
 layout (set = 0, binding = 1) uniform sampler2D albedoBuffer;
 layout (set = 0, binding = 2) uniform sampler2D normalBuffer;
 layout (set = 0, binding = 3) uniform sampler2D metallicRoughnessBuffer;
+layout (set = 0, binding = 4) uniform sampler2D shadowBuffer;
 
 layout (location = 0) in vec2 v_uv;
 
@@ -142,6 +143,7 @@ void main() {
     vec3 normal = texture(normalBuffer, v_uv).rgb;
     vec3 albedo = texture(albedoBuffer, v_uv).rgb;
     vec2 metallicRoughness = texture(metallicRoughnessBuffer, v_uv).rg;
+    float shadow = texture(shadowBuffer, v_uv).r;
 
     float metallic = metallicRoughness.r;
     float roughness = metallicRoughness.g;
@@ -167,5 +169,5 @@ void main() {
 
     vec3 color = Lo + ambient;
 
-    fragColor = vec4(color, 1.0);
+    fragColor = vec4(color * (1-shadow), 1.0);
 }

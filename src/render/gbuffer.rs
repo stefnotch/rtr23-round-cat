@@ -179,6 +179,12 @@ impl GBuffer {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT)
                     .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(4)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
             ];
 
             let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
@@ -234,6 +240,12 @@ impl GBuffer {
                     3,
                     metallic_roughness_buffer_imageview.clone(),
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    sampler.clone(),
+                ),
+                WriteDescriptorSet::image_view_sampler_with_layout(
+                    4,
+                    shadow_buffer_imageview.clone(),
+                    vk::ImageLayout::GENERAL,
                     sampler.clone(),
                 ),
             ];

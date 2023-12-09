@@ -85,6 +85,27 @@ impl LightingPass {
             },
             ..ImageMemoryBarrier2::default()
         })
+        .chain(
+            [&gbuffer.shadow_buffer].map(|image| vk::ImageMemoryBarrier2 {
+                src_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                src_access_mask: AccessFlags2::SHADER_WRITE,
+                dst_stage_mask: PipelineStageFlags2::FRAGMENT_SHADER,
+                dst_access_mask: AccessFlags2::SHADER_READ,
+                old_layout: ImageLayout::GENERAL,
+                new_layout: ImageLayout::GENERAL,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image: image.image.inner,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+                ..ImageMemoryBarrier2::default()
+            }),
+        )
         .collect();
 
         // TODO: Add pipeline barrier to wait for the raytracing pass
