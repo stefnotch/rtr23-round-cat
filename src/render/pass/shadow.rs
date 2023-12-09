@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use ash::vk;
+use ash::vk::{
+    self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
+    PipelineStageFlags2,
+};
 
 use crate::{
     render::{gbuffer::GBuffer, CameraDescriptorSet, SceneDescriptorSet},
     scene::Scene,
+    utility::aligned_size,
     vulkan::{
         acceleration_structure::AccelerationStructure,
         buffer::Buffer,
@@ -29,7 +33,42 @@ pub struct ShadowPass {
 
 pub struct ShaderBindingTable {
     buffer: Buffer<u8>,
-    strided_devide_address_region: vk::StridedDeviceAddressRegionKHR,
+    strided_device_address_region: vk::StridedDeviceAddressRegionKHR,
+}
+
+impl ShaderBindingTable {
+    pub fn new(context: Arc<Context>, handle_count: u32) -> Self {
+        let shader_group_handle_size = context
+            .context_raytracing
+            .physical_device_ray_tracing_pipeline_properties_khr
+            .shader_group_handle_size;
+        let shader_group_handle_alignment = context
+            .context_raytracing
+            .physical_device_ray_tracing_pipeline_properties_khr
+            .shader_group_handle_alignment;
+
+        let buffer: Buffer<u8> = Buffer::new(
+            context,
+            (handle_count * shader_group_handle_size) as u64,
+            vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+        let handle_size_aligned =
+            aligned_size(shader_group_handle_size, shader_group_handle_alignment);
+
+        let strided_device_address_region = vk::StridedDeviceAddressRegionKHR {
+            device_address: buffer.get_device_address(),
+            stride: handle_size_aligned as u64,
+            size: (handle_size_aligned * handle_count) as u64,
+        };
+
+        ShaderBindingTable {
+            buffer,
+            strided_device_address_region,
+        }
+    }
 }
 
 pub struct ShaderBindingTables {
@@ -73,12 +112,44 @@ impl ShadowPass {
 
     pub fn render(
         &self,
-        scene: &Scene,
+        gbuffer: &GBuffer,
         scene_descriptor_set: &SceneDescriptorSet,
         camera_descriptor_set: &CameraDescriptorSet,
         extent: vk::Extent2D,
         command_buffer: vk::CommandBuffer,
     ) {
+        let image_memory_barriers: Vec<ImageMemoryBarrier2> = [&gbuffer.position_buffer]
+            .into_iter()
+            .map(|image| vk::ImageMemoryBarrier2 {
+                src_stage_mask: PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                src_access_mask: AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                dst_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                dst_access_mask: AccessFlags2::SHADER_READ,
+                old_layout: ImageLayout::ATTACHMENT_OPTIMAL,
+                new_layout: ImageLayout::READ_ONLY_OPTIMAL,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image: image.image.inner,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+                ..ImageMemoryBarrier2::default()
+            })
+            .collect();
+
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(&image_memory_barriers);
+
+        unsafe {
+            self.context
+                .synchronisation2_loader
+                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
+        };
+
         // descriptorset
         // - scene info (light direction) scene descriptor set
         // - camera info camera descriptor set
@@ -122,12 +193,12 @@ impl ShadowPass {
                     &self
                         .shader_binding_tables
                         .raygen
-                        .strided_devide_address_region,
+                        .strided_device_address_region,
                     &self
                         .shader_binding_tables
                         .miss
-                        .strided_devide_address_region,
-                    &self.shader_binding_tables.hit.strided_devide_address_region,
+                        .strided_device_address_region,
+                    &self.shader_binding_tables.hit.strided_device_address_region,
                     &empty_sbt_entry,
                     extent.width,
                     extent.height,
@@ -199,7 +270,13 @@ fn create_descriptor_set(
         set_layout,
         vec![
             WriteDescriptorSet::acceleration_structure(0, acceleration_structure),
-            WriteDescriptorSet::storage_image_view(1, gbuffer.shadow_buffer.clone()),
+            WriteDescriptorSet::image_view_sampler_with_layout(
+                1,
+                gbuffer.position_buffer.clone(),
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                gbuffer.sampler.clone(),
+            ),
+            WriteDescriptorSet::storage_image_view(2, gbuffer.shadow_buffer.clone()),
         ],
     );
 

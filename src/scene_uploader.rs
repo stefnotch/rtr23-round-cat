@@ -287,6 +287,8 @@ pub fn setup(
                         .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
                         .buffer(mesh.vertex_buffer.inner)
                         .size(vk::WHOLE_SIZE)
+                        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                         .build();
                     unsafe {
                         context.synchronisation2_loader.cmd_pipeline_barrier2(
@@ -440,6 +442,8 @@ pub fn setup(
                 .src_access_mask(vk::AccessFlags2KHR::TRANSFER_WRITE)
                 .dst_stage_mask(vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR)
                 .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .buffer(instances_buffer.inner)
                 .size(vk::WHOLE_SIZE);
             unsafe {

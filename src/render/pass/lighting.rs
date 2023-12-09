@@ -58,7 +58,6 @@ impl LightingPass {
         viewport: vk::Viewport,
     ) {
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
-            &gbuffer.position_buffer,
             &gbuffer.albedo_buffer,
             &gbuffer.normals_buffer,
             &gbuffer.metallic_roughness_buffer,

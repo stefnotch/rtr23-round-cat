@@ -10,3 +10,8 @@ macro_rules! offset_of {
         }
     }};
 }
+
+pub fn aligned_size(value: u32, alignment: u32) -> u32 {
+    assert!(alignment.is_power_of_two());
+    (value + alignment - 1) & !(alignment - 1)
+}

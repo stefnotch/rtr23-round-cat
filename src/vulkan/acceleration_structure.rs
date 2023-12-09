@@ -18,7 +18,6 @@ impl AccelerationStructure {
         structure_type: vk::AccelerationStructureTypeKHR,
         build_size_info: vk::AccelerationStructureBuildSizesInfoKHR,
     ) -> Self {
-        //let mut inner = vk::AccelerationStructureKHR::null();
         let buffer: Buffer<u8> = Buffer::new(
             context.clone(),
             build_size_info.acceleration_structure_size,

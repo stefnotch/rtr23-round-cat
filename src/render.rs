@@ -157,7 +157,7 @@ impl MainRenderer {
         );
 
         self.shadow_pass.render(
-            scene,
+            self.geometry_pass.gbuffer(),
             &self.scene_descriptor_set,
             &self.camera_descriptor_set,
             swapchain.extent,
@@ -207,6 +207,7 @@ impl MainRenderer {
 
     pub fn resize(&mut self, swapchain: &SwapchainContainer) {
         self.geometry_pass.resize(swapchain);
+        self.shadow_pass.resize(self.geometry_pass.gbuffer());
         self.lighting_pass.resize(swapchain);
         self.post_processing_pass.resize();
     }
