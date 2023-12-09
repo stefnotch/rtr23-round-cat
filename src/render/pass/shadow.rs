@@ -124,6 +124,8 @@ impl ShadowPass {
         extent: vk::Extent2D,
         command_buffer: vk::CommandBuffer,
     ) {
+        crate::utility::cmd_full_pipeline_barrier(&self.context, command_buffer);
+
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [&gbuffer.position_buffer]
             .into_iter()
             .map(|image| vk::ImageMemoryBarrier2 {

@@ -273,8 +273,6 @@ pub fn setup(
                 })
                 .clone();
 
-            //  Wait for vertex buffer to be copied before creating acceleration structure
-
             let raytracing_geometry = raytracing_geometry_map
                 .entry(loaded_primitive.mesh.id())
                 .or_insert_with(|| {
@@ -509,7 +507,7 @@ pub fn setup(
         setup_command_buffer.add_resource(scratch_buffer);
 
         let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
-            primitive_count: 1,
+            primitive_count: instances.len() as u32,
             primitive_offset: 0,
             first_vertex: 0,
             transform_offset: 0,
