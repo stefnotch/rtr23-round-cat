@@ -89,8 +89,6 @@ impl ShadowPass {
         descriptor_pool: vk::DescriptorPool,
         acceleration_structure: Arc<AccelerationStructure>,
     ) -> Self {
-        let shader_binding_tables = create_shader_binding_tables(context.clone());
-
         let (descriptor_set, set_layout) = create_descriptor_set(
             context.clone(),
             descriptor_pool,
@@ -100,6 +98,8 @@ impl ShadowPass {
 
         let (pipeline, pipeline_layout) =
             create_pipeline(context.clone(), set_layout_cache, set_layout);
+
+        let shader_binding_tables = create_shader_binding_tables(context.clone(), pipeline, 3); // todo: remove hardcoded value
 
         ShadowPass {
             pipeline,
@@ -145,6 +145,27 @@ impl ShadowPass {
                 },
                 ..ImageMemoryBarrier2::default()
             })
+            .chain(
+                [&gbuffer.shadow_buffer].map(|image| vk::ImageMemoryBarrier2 {
+                    src_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    src_access_mask: AccessFlags2::SHADER_WRITE,
+                    dst_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    dst_access_mask: AccessFlags2::SHADER_READ,
+                    old_layout: ImageLayout::UNDEFINED,
+                    new_layout: ImageLayout::GENERAL,
+                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    image: image.image.inner,
+                    subresource_range: ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    },
+                    ..ImageMemoryBarrier2::default()
+                }),
+            )
             .collect();
 
         let dependency_info =
@@ -327,16 +348,50 @@ fn create_pipeline(
     )
 }
 
-fn create_shader_binding_tables(context: Arc<Context>) -> ShaderBindingTables {
+fn create_shader_binding_tables(
+    context: Arc<Context>,
+    pipeline: vk::Pipeline,
+    num_shader_groups: u32,
+) -> ShaderBindingTables {
+    let rt_properties = context
+        .context_raytracing
+        .physical_device_ray_tracing_pipeline_properties_khr;
+    let handle_size = rt_properties.shader_group_handle_size;
+    let handle_size_aligned = aligned_size(
+        rt_properties.shader_group_handle_size,
+        rt_properties.shader_group_handle_alignment,
+    );
+    let group_count = num_shader_groups;
+    let sbt_size = group_count * handle_size_aligned;
+
+    let shader_handle_storage = unsafe {
+        context
+            .context_raytracing
+            .ray_tracing_pipeline
+            .get_ray_tracing_shader_group_handles(pipeline, 0, group_count, sbt_size as usize)
+    }
+    .expect("could not get raytracing shader group handles");
+
     let raygen = ShaderBindingTable::new(context.clone(), 1);
     let miss = ShaderBindingTable::new(context.clone(), 1);
     let hit = ShaderBindingTable::new(context.clone(), 1);
 
-    ShaderBindingTables {
-        raygen: todo!(),
-        miss: todo!(),
-        hit: todo!(),
-    }
+    let handle_size = handle_size as usize;
+    let handle_size_aligned = handle_size_aligned as usize;
+
+    raygen
+        .buffer
+        .copy_data(&shader_handle_storage[0..handle_size]);
+
+    miss.buffer.copy_data(
+        &shader_handle_storage[handle_size_aligned..(handle_size_aligned + handle_size)],
+    );
+
+    hit.buffer.copy_data(
+        &shader_handle_storage[handle_size_aligned * 2..(handle_size_aligned * 2 + handle_size)],
+    );
+
+    ShaderBindingTables { raygen, miss, hit }
 }
 
 fn create_descriptor_set(
@@ -355,6 +410,12 @@ fn create_descriptor_set(
                 .build(),
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(1)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(2)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
                 .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
@@ -381,7 +442,11 @@ fn create_descriptor_set(
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 gbuffer.sampler.clone(),
             ),
-            WriteDescriptorSet::storage_image_view(2, gbuffer.shadow_buffer.clone()),
+            WriteDescriptorSet::storage_image_view_with_layout(
+                2,
+                gbuffer.shadow_buffer.clone(),
+                vk::ImageLayout::GENERAL,
+            ),
         ],
     );
 

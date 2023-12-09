@@ -106,7 +106,7 @@ impl<T> Buffer<T> {
         }
     }
 
-    pub fn copy_data<U: IntoSlice<T>>(&self, data: &U) {
+    pub fn copy_data<U: IntoSlice<T> + ?Sized>(&self, data: &U) {
         let data = data.as_sliced();
 
         let buffer_ptr = unsafe {

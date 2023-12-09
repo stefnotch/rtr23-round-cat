@@ -46,6 +46,7 @@ impl DescriptorSet {
                         vk_write = vk_write.image_info(std::slice::from_ref(info))
                     }
                     DescriptorInfo::AccelerationStructure(info) => {
+                        vk_write.descriptor_count = info.acceleration_structure_count;
                         vk_write = vk_write.push_next(info)
                     }
                 }
@@ -135,10 +136,10 @@ impl WriteDescriptorSet {
         }
     }
 
-    pub fn storage_image_view(binding: u32, image_view: Arc<ImageView>) -> WriteDescriptorSet {
+    pub fn storage_image_view_with_layout(binding: u32, image_view: Arc<ImageView>, image_layout: vk::ImageLayout) -> WriteDescriptorSet {
         let info = vk::DescriptorImageInfo::builder()
             .image_view(image_view.inner)
-            .image_layout(image_view.image.layout)
+            .image_layout(image_layout)
             .build();
 
         WriteDescriptorSet {
