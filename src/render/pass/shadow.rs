@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use ash::vk::{
-    self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
-    PipelineStageFlags2,
-};
+use ash::vk::{self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, PipelineStageFlags2};
 
 use crate::{
     include_shader,
@@ -138,13 +135,7 @@ impl ShadowPass {
                 src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                 dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                 image: image.image.inner,
-                subresource_range: ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                },
+                subresource_range: image.subresource_range(),
                 ..ImageMemoryBarrier2::default()
             })
             .chain(
@@ -158,13 +149,7 @@ impl ShadowPass {
                     src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                     dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                     image: image.image.inner,
-                    subresource_range: ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    },
+                    subresource_range: image.subresource_range(),
                     ..ImageMemoryBarrier2::default()
                 }),
             )

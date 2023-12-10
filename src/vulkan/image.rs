@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use ash::vk::{
-    self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageSubresourceRange, ImageTiling,
-    ImageType, ImageUsageFlags, SampleCountFlags, SharingMode,
-};
 use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
+use ash::vk::{
+    self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags,
+    SampleCountFlags, SharingMode,
+};
 
 pub struct Image {
     pub inner: vk::Image,
@@ -74,13 +74,7 @@ impl Image {
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .image(self.inner)
-            .subresource_range(ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: num_levels, // mip levels
-                base_array_layer: 0,
-                layer_count: 1,
-            })
+            .subresource_range(self.full_subresource_range(vk::ImageAspectFlags::COLOR))
             .old_layout(vk::ImageLayout::UNDEFINED)
             .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
             .src_access_mask(vk::AccessFlags::empty())
@@ -140,7 +134,7 @@ impl Image {
             .image(self.inner)
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .subresource_range(ImageSubresourceRange {
+            .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
                 base_mip_level: 0,
                 level_count: 1,
@@ -269,6 +263,19 @@ impl Image {
             .checked_ilog2()
             .unwrap()
             + 1
+    }
+
+    pub fn full_subresource_range(
+        &self,
+        aspect_mask: vk::ImageAspectFlags,
+    ) -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange {
+            aspect_mask,
+            base_mip_level: 0,
+            level_count: self.mip_levels,
+            base_array_layer: 0,
+            layer_count: 1,
+        }
     }
 }
 
