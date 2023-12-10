@@ -169,11 +169,9 @@ void main() {
 
     vec3 color = Lo + ambient;
 
-    vec3 outp = color * 0.1;
+    vec3 output_color = mix(color, color * 0.1, shadow);
     // If shadow == 1.0 (true), then red
-    //outp += vec3(1.0, 0.3, 0.3) * (shadow);
-    outp = mix(outp, outp * 0.1, shadow);
-    
+    //output_color = color * 0.1 + (vec3(1.0, 0.3, 0.3) * shadow);
 
-    fragColor = vec4(outp, 1.0);
+    fragColor = vec4(output_color, 1.0);
 }
