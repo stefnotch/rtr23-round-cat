@@ -1,22 +1,19 @@
 use std::sync::Arc;
 
-use crate::vulkan::context::Context;
+use crate::vulkan::{context::Context, descriptor_set::DescriptorSetLayout};
 use ash::vk;
 
 pub struct DescriptorSetLayoutCache {
-    scene_descriptor_set_layout: vk::DescriptorSetLayout,
-    camera_descriptor_set_layout: vk::DescriptorSetLayout,
-    material_descriptor_set_layout: vk::DescriptorSetLayout,
-
-    context: Arc<Context>,
+    scene_descriptor_set_layout: Arc<DescriptorSetLayout>,
+    camera_descriptor_set_layout: Arc<DescriptorSetLayout>,
+    material_descriptor_set_layout: Arc<DescriptorSetLayout>,
 }
 
 impl DescriptorSetLayoutCache {
     pub fn new(context: Arc<Context>) -> Self {
-        let device = &context.device;
-
-        let scene_descriptor_set_layout = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        let scene_descriptor_set_layout = Arc::new(DescriptorSetLayout::new(
+            context.clone(),
+            &[vk::DescriptorSetLayoutBinding::builder()
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -25,30 +22,24 @@ impl DescriptorSetLayoutCache {
                         | vk::ShaderStageFlags::FRAGMENT
                         | vk::ShaderStageFlags::RAYGEN_KHR,
                 )
-                .build()];
+                .build()],
+            None,
+        ));
 
-            let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-            unsafe { device.create_descriptor_set_layout(&create_info, None) }
-                .expect("Could not create scene descriptor set layout")
-        };
-
-        let camera_descriptor_set_layout = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        let camera_descriptor_set_layout = Arc::new(DescriptorSetLayout::new(
+            context.clone(),
+            &[vk::DescriptorSetLayoutBinding::builder()
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                .build()];
+                .build()],
+            None,
+        ));
 
-            let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-            unsafe { device.create_descriptor_set_layout(&create_info, None) }
-                .expect("Could not create scene descriptor set layout")
-        };
-
-        let material_descriptor_set_layout = {
-            let bindings = [
+        let material_descriptor_set_layout = Arc::new(DescriptorSetLayout::new(
+            context.clone(),
+            &[
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(0)
                     .descriptor_count(1)
@@ -73,41 +64,26 @@ impl DescriptorSetLayoutCache {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                     .build(),
-            ];
-
-            let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-            unsafe { device.create_descriptor_set_layout(&create_info, None) }
-                .expect("Could not create material descriptor set layout")
-        };
+            ],
+            None,
+        ));
 
         Self {
             scene_descriptor_set_layout,
             camera_descriptor_set_layout,
             material_descriptor_set_layout,
-            context,
         }
     }
 
-    pub fn scene(&self) -> vk::DescriptorSetLayout {
-        self.scene_descriptor_set_layout
+    pub fn scene(&self) -> Arc<DescriptorSetLayout> {
+        self.scene_descriptor_set_layout.clone()
     }
 
-    pub fn camera(&self) -> vk::DescriptorSetLayout {
-        self.camera_descriptor_set_layout
+    pub fn camera(&self) -> Arc<DescriptorSetLayout> {
+        self.camera_descriptor_set_layout.clone()
     }
 
-    pub fn material(&self) -> vk::DescriptorSetLayout {
-        self.material_descriptor_set_layout
-    }
-}
-
-impl Drop for DescriptorSetLayoutCache {
-    fn drop(&mut self) {
-        let device = &self.context.device;
-
-        unsafe { device.destroy_descriptor_set_layout(self.scene_descriptor_set_layout, None) };
-        unsafe { device.destroy_descriptor_set_layout(self.camera_descriptor_set_layout, None) };
-        unsafe { device.destroy_descriptor_set_layout(self.material_descriptor_set_layout, None) };
+    pub fn material(&self) -> Arc<DescriptorSetLayout> {
+        self.material_descriptor_set_layout.clone()
     }
 }

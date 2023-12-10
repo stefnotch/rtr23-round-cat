@@ -8,16 +8,15 @@ use ash::vk::{
 use crate::{
     include_shader,
     render::{
-        gbuffer::GBuffer,
-        set_layout_cache::{self, DescriptorSetLayoutCache},
-        CameraDescriptorSet, SceneDescriptorSet,
+        gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
+        SceneDescriptorSet,
     },
     utility::aligned_size,
     vulkan::{
         acceleration_structure::AccelerationStructure,
         buffer::Buffer,
         context::Context,
-        descriptor_set::{self, DescriptorSet, WriteDescriptorSet},
+        descriptor_set::{DescriptorSet, DescriptorSetLayout, WriteDescriptorSet},
     },
 };
 
@@ -27,7 +26,6 @@ pub struct ShadowPass {
 
     descriptor_pool: vk::DescriptorPool,
     descriptor_set: DescriptorSet,
-    descriptor_set_layout: vk::DescriptorSetLayout,
     shader_binding_tables: ShaderBindingTables,
 
     acceleration_structure: Arc<AccelerationStructure>,
@@ -89,15 +87,18 @@ impl ShadowPass {
         descriptor_pool: vk::DescriptorPool,
         acceleration_structure: Arc<AccelerationStructure>,
     ) -> Self {
-        let (descriptor_set, set_layout) = create_descriptor_set(
+        let descriptor_set = create_descriptor_set(
             context.clone(),
             descriptor_pool,
             acceleration_structure.clone(),
             gbuffer,
         );
 
-        let (pipeline, pipeline_layout) =
-            create_pipeline(context.clone(), set_layout_cache, set_layout);
+        let (pipeline, pipeline_layout) = create_pipeline(
+            context.clone(),
+            set_layout_cache,
+            descriptor_set.layout.inner,
+        );
 
         let shader_binding_tables = create_shader_binding_tables(context.clone(), pipeline, 3); // todo: remove hardcoded value
 
@@ -107,7 +108,6 @@ impl ShadowPass {
 
             descriptor_pool,
             descriptor_set,
-            descriptor_set_layout: set_layout,
             shader_binding_tables,
 
             acceleration_structure,
@@ -237,12 +237,7 @@ impl ShadowPass {
     }
 
     pub fn resize(&mut self, gbuffer: &GBuffer) {
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        }
-        (self.descriptor_set, self.descriptor_set_layout) = create_descriptor_set(
+        self.descriptor_set = create_descriptor_set(
             self.context.clone(),
             self.descriptor_pool,
             self.acceleration_structure.clone(),
@@ -254,9 +249,6 @@ impl ShadowPass {
 impl Drop for ShadowPass {
     fn drop(&mut self) {
         let device = &self.context.device;
-        unsafe {
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        }
         unsafe { device.destroy_pipeline(self.pipeline, None) };
         unsafe { device.destroy_pipeline_layout(self.pipeline_layout, None) };
     }
@@ -268,8 +260,8 @@ fn create_pipeline(
     set_layout: vk::DescriptorSetLayout,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let set_layouts = [
-        set_layout_cache.scene(),
-        set_layout_cache.camera(),
+        set_layout_cache.scene().inner,
+        set_layout_cache.camera().inner,
         set_layout,
     ];
 
@@ -408,9 +400,10 @@ fn create_descriptor_set(
     descriptor_pool: vk::DescriptorPool,
     acceleration_structure: Arc<AccelerationStructure>,
     gbuffer: &GBuffer,
-) -> (DescriptorSet, vk::DescriptorSetLayout) {
-    let set_layout = {
-        let bindings = [
+) -> DescriptorSet {
+    let set_layout = Arc::new(DescriptorSetLayout::new(
+        context.clone(),
+        &[
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(0)
                 .descriptor_count(1)
@@ -429,17 +422,11 @@ fn create_descriptor_set(
                 .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
                 .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
                 .build(),
-        ];
-        let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-        unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&create_info, None)
-        }
-        .expect("Could not create raytracing descriptor set layout")
-    };
+        ],
+        None,
+    ));
 
-    let set = DescriptorSet::new(
+    DescriptorSet::new(
         context.clone(),
         descriptor_pool,
         set_layout,
@@ -457,7 +444,5 @@ fn create_descriptor_set(
                 vk::ImageLayout::GENERAL,
             ),
         ],
-    );
-
-    (set, set_layout)
+    )
 }

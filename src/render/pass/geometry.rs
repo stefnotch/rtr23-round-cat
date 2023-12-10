@@ -1,9 +1,6 @@
-use std::{ffi::CStr, io::Cursor, sync::Arc};
+use std::sync::Arc;
 
-use ash::{
-    util::read_spv,
-    vk::{self},
-};
+use ash::vk::{self};
 use crevice::std140::AsStd140;
 
 use crate::vulkan::swapchain::SwapchainContainer;
@@ -367,7 +364,10 @@ fn create_pipeline(
         .logic_op(vk::LogicOp::CLEAR)
         .attachments(&color_blend_attachment_states);
 
-    let descriptor_set_layouts = [set_layout_cache.camera(), set_layout_cache.material()];
+    let descriptor_set_layouts = [
+        set_layout_cache.camera().inner,
+        set_layout_cache.material().inner,
+    ];
 
     let push_constants_ranges = vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::VERTEX,

@@ -1,11 +1,8 @@
-use std::{ffi::CStr, io::Cursor, sync::Arc};
+use std::sync::Arc;
 
-use ash::{
-    util::read_spv,
-    vk::{
-        self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
-        PipelineStageFlags2,
-    },
+use ash::vk::{
+    self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
+    PipelineStageFlags2,
 };
 
 use crate::vulkan::context::Context;
@@ -278,9 +275,9 @@ fn create_pipeline(
         .attachments(&color_blend_attachment_states);
 
     let descriptor_set_layouts = [
-        gbuffer.descriptor_set_layout,
-        set_layout_cache.scene(),
-        set_layout_cache.camera(),
+        gbuffer.descriptor_set.layout.inner,
+        set_layout_cache.scene().inner,
+        set_layout_cache.camera().inner,
     ];
 
     let layout_create_info = vk::PipelineLayoutCreateInfo::builder()

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::vulkan::context::Context;
-use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
+use crate::vulkan::descriptor_set::{DescriptorSet, DescriptorSetLayout, WriteDescriptorSet};
 use crate::vulkan::image::{simple_image_create_info, Image};
 use crate::vulkan::image_view::ImageView;
 use ash::vk::{self, ImageAspectFlags};
@@ -18,19 +18,8 @@ pub struct GBuffer {
 
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
-    pub descriptor_set_layout: vk::DescriptorSetLayout,
 
     context: Arc<Context>,
-}
-
-impl Drop for GBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.descriptor_set_layout, None)
-        };
-    }
 }
 
 impl GBuffer {
@@ -153,8 +142,9 @@ impl GBuffer {
             ImageAspectFlags::COLOR,
         ));
 
-        let descriptor_set_layout = {
-            let bindings = [
+        let descriptor_set_layout = Arc::new(DescriptorSetLayout::new(
+            context.clone(),
+            &[
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(0)
                     .descriptor_count(1)
@@ -185,17 +175,9 @@ impl GBuffer {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT)
                     .build(),
-            ];
-
-            let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-            unsafe {
-                context
-                    .device
-                    .create_descriptor_set_layout(&create_info, None)
-            }
-            .expect("Could not create descriptor set layout")
-        };
+            ],
+            None,
+        ));
 
         let sampler = {
             let create_info = vk::SamplerCreateInfo::builder()
@@ -267,7 +249,6 @@ impl GBuffer {
             shadow_buffer: shadow_buffer_imageview,
             descriptor_set,
             sampler,
-            descriptor_set_layout,
 
             context,
         }

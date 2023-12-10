@@ -10,19 +10,58 @@ use super::acceleration_structure::AccelerationStructure;
 
 pub struct DescriptorSet {
     pub inner: vk::DescriptorSet,
+    pub layout: Arc<DescriptorSetLayout>,
+}
+
+pub struct DescriptorSetLayout {
+    context: Arc<Context>,
+    pub inner: vk::DescriptorSetLayout,
+}
+
+impl DescriptorSetLayout {
+    pub fn new(
+        context: Arc<Context>,
+        bindings: &[vk::DescriptorSetLayoutBinding],
+        flags: Option<vk::DescriptorSetLayoutCreateFlags>,
+    ) -> Self {
+        let mut create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
+
+        if let Some(flags) = flags {
+            create_info = create_info.flags(flags);
+        }
+
+        let inner = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&create_info, None)
+        }
+        .expect("Could not create descriptor set layout");
+
+        Self { context, inner }
+    }
+}
+
+impl Drop for DescriptorSetLayout {
+    fn drop(&mut self) {
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.inner, None);
+        }
+    }
 }
 
 impl DescriptorSet {
     pub fn new(
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
-        set_layout: vk::DescriptorSetLayout,
+        set_layout: Arc<DescriptorSetLayout>,
         mut write_descriptor_sets: Vec<WriteDescriptorSet>,
     ) -> Self {
         let device = &context.device;
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&set_layout));
+            .set_layouts(std::slice::from_ref(&set_layout.inner));
 
         let descriptor_set = unsafe {
             device
@@ -58,6 +97,7 @@ impl DescriptorSet {
 
         Self {
             inner: descriptor_set,
+            layout: set_layout,
         }
     }
 }
@@ -136,7 +176,11 @@ impl WriteDescriptorSet {
         }
     }
 
-    pub fn storage_image_view_with_layout(binding: u32, image_view: Arc<ImageView>, image_layout: vk::ImageLayout) -> WriteDescriptorSet {
+    pub fn storage_image_view_with_layout(
+        binding: u32,
+        image_view: Arc<ImageView>,
+        image_layout: vk::ImageLayout,
+    ) -> WriteDescriptorSet {
         let info = vk::DescriptorImageInfo::builder()
             .image_view(image_view.inner)
             .image_layout(image_layout)
