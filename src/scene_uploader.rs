@@ -6,6 +6,7 @@ use ultraviolet::Mat4;
 
 use crate::loader::LoadedTexture;
 use crate::scene::{RaytracingGeometry, RaytracingScene};
+use crate::transform::Transform;
 use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::command_buffer::OneTimeCommandBuffer;
@@ -282,7 +283,10 @@ pub fn setup(
                         .dst_stage_mask(
                             vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR,
                         )
-                        .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
+                        .dst_access_mask(
+                            vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_READ_KHR
+                                | vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR,
+                        )
                         .buffer(mesh.vertex_buffer.inner)
                         .size(vk::WHOLE_SIZE)
                         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -399,13 +403,9 @@ pub fn setup(
         let mut instances = vec![];
         for model in &models {
             for primitive in &model.primitives {
-                let transform: Mat4 = model.transform.clone().into();
-                // Skip the last matrix row // TODO: Verify this is correct
-                let transform_array: [f32; 12] = transform.as_array()[0..12].try_into().unwrap();
+                let transform = to_vk_transform(model.transform.clone());
                 let instance = vk::AccelerationStructureInstanceKHR {
-                    transform: vk::TransformMatrixKHR {
-                        matrix: transform_array,
-                    },
+                    transform,
                     instance_custom_index_and_mask: vk::Packed24_8::new(0, 0xFF),
                     instance_shader_binding_table_record_offset_and_flags: vk::Packed24_8::new(
                         0,
@@ -720,6 +720,15 @@ fn create_image(
         Arc::new(image),
         vk::ImageAspectFlags::COLOR,
     ))
+}
+
+fn to_vk_transform(transform: Transform) -> vk::TransformMatrixKHR {
+    let transform: Mat4 = transform.into();
+    let transform = transform.transposed();
+    let transform_array: [f32; 12] = transform.as_array()[0..12].try_into().unwrap();
+    vk::TransformMatrixKHR {
+        matrix: transform_array,
+    }
 }
 
 trait GetVecSize {
