@@ -2,8 +2,6 @@
 
 #include "common.glsl"
 
-#extension GL_EXT_debug_printf : enable
-
 layout(location = 0) rayPayloadEXT float shadowed;
 
 void main()

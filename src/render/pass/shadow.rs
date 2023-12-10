@@ -237,6 +237,11 @@ impl ShadowPass {
     }
 
     pub fn resize(&mut self, gbuffer: &GBuffer) {
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+        }
         (self.descriptor_set, self.descriptor_set_layout) = create_descriptor_set(
             self.context.clone(),
             self.descriptor_pool,
@@ -249,7 +254,9 @@ impl ShadowPass {
 impl Drop for ShadowPass {
     fn drop(&mut self) {
         let device = &self.context.device;
-
+        unsafe {
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+        }
         unsafe { device.destroy_pipeline(self.pipeline, None) };
         unsafe { device.destroy_pipeline_layout(self.pipeline_layout, None) };
     }
