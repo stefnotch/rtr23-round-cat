@@ -9,3 +9,4 @@ pub mod image_view;
 pub mod sampler;
 pub mod shader_create_info;
 pub mod swapchain;
+pub mod window_settings;

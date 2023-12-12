@@ -105,7 +105,11 @@ impl CatDemo {
 
         let context = Arc::new(Context::new(event_loop, &window));
 
-        let swapchain = SwapchainContainer::new(context.clone(), window.inner_size());
+        let swapchain = SwapchainContainer::new(
+            context.clone(),
+            window.inner_size(),
+            config.present_mode.into(),
+        );
 
         let instance = &context.instance;
         let device = &context.device;
