@@ -6,6 +6,7 @@ use crate::find_memorytype_index;
 use crate::vulkan::context::Context;
 
 use super::command_buffer::OneTimeCommandBuffer;
+use super::sync_manager::BufferResource;
 
 pub trait IntoSlice<T> {
     fn as_sliced(&self) -> &[T];
@@ -34,7 +35,7 @@ pub struct Buffer<T> {
     pub usage: vk::BufferUsageFlags,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
-
+    resource: BufferResource,
     _marker: PhantomData<T>,
     context: Arc<Context>,
 }
@@ -53,6 +54,7 @@ impl<T> Buffer<T> {
         memory_property_flags: vk::MemoryPropertyFlags,
     ) -> Buffer<T> {
         let device = &context.device;
+        let resource = context.sync_manager.get_buffer();
 
         let create_info = vk::BufferCreateInfo::builder()
             .size(size)
@@ -90,6 +92,7 @@ impl<T> Buffer<T> {
             usage,
             memory,
             size: buffer_memory_requirements.size,
+            resource,
             context,
             _marker: PhantomData,
         }
@@ -176,6 +179,10 @@ impl<T> Buffer<T> {
             &staging_buffer.get_slice(0, data_size),
         );
         command_buffer.add_resource(staging_buffer);
+    }
+
+    pub fn get_resource(&self) -> &BufferResource {
+        &self.resource
     }
 }
 

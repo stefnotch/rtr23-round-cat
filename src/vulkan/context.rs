@@ -9,6 +9,8 @@ use ash::{
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::{event_loop::EventLoop, window::Window};
 
+use super::sync_manager::SyncManager;
+
 pub struct Context {
     _entry: ash::Entry,
     pub instance: ash::Instance,
@@ -16,8 +18,8 @@ pub struct Context {
     pub surface_loader: ash::extensions::khr::Surface,
     pub surface: vk::SurfaceKHR,
 
-    pub context_raytracing: ContextRaytracing,
     pub synchronisation2_loader: ash::extensions::khr::Synchronization2,
+    pub sync_manager: SyncManager,
 
     pub physical_device: vk::PhysicalDevice,
     pub queue_family_index: u32,
@@ -27,6 +29,8 @@ pub struct Context {
 
     pub buffer_device_address: BufferDeviceAddress,
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
+
+    pub context_raytracing: ContextRaytracing,
 }
 
 pub struct ContextRaytracing {
@@ -79,6 +83,7 @@ impl Context {
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
         let synchronisation2_loader = Synchronization2::new(&instance, &device);
+        let sync_manager = SyncManager::new();
 
         let ray_tracing_pipeline = RayTracingPipeline::new(&instance, &device);
         let physical_device_ray_tracing_pipeline_properties_khr =
@@ -109,6 +114,7 @@ impl Context {
 
             context_raytracing,
             synchronisation2_loader,
+            sync_manager,
 
             physical_device,
             queue_family_index,
