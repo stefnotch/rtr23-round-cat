@@ -8,6 +8,8 @@ use ash::vk::{
     SampleCountFlags, SharingMode,
 };
 
+use super::sync_manager::ImageResource;
+
 pub struct Image {
     pub inner: vk::Image,
     pub memory: vk::DeviceMemory,
@@ -16,13 +18,14 @@ pub struct Image {
     pub extent: vk::Extent3D,
     pub layout: vk::ImageLayout,
     pub mip_levels: u32,
-
+    pub(super) resource: ImageResource,
     context: Arc<Context>,
 }
 
 impl Image {
     pub fn new(context: Arc<Context>, create_info: &vk::ImageCreateInfo) -> Image {
         let device = &context.device;
+        let resource = context.sync_manager.get_image();
 
         let format = create_info.format;
         let extent = create_info.extent;
@@ -57,6 +60,7 @@ impl Image {
             extent,
             layout,
             mip_levels,
+            resource,
             context,
         }
     }
@@ -110,7 +114,7 @@ impl Image {
         unsafe {
             self.context.device.cmd_copy_buffer_to_image(
                 command_buffer,
-                buffer.inner,
+                buffer.get_vk_buffer(),
                 self.inner,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 std::slice::from_ref(&buffer_image_copy),

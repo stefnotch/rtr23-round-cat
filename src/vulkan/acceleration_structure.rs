@@ -27,7 +27,7 @@ impl AccelerationStructure {
         );
 
         let create_info = vk::AccelerationStructureCreateInfoKHR::builder()
-            .buffer(buffer.inner)
+            .buffer(*buffer)
             .size(build_size_info.acceleration_structure_size)
             .ty(structure_type);
 

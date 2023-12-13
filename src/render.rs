@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use ash::vk;
 use crevice::std140::AsStd140;
-use egui::load::SizedTexture;
-use egui::ImageSource;
 use egui_winit_ash_integration::Integration;
 use ultraviolet::Vec3;
 

@@ -130,7 +130,7 @@ impl DescriptorInfo {
 impl WriteDescriptorSet {
     pub fn buffer<T>(binding: u32, buffer: &Buffer<T>) -> WriteDescriptorSet {
         let info = vk::DescriptorBufferInfo::builder()
-            .buffer(buffer.inner)
+            .buffer(buffer.get_vk_buffer())
             .offset(0)
             .range(vk::WHOLE_SIZE)
             .build();

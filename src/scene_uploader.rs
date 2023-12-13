@@ -287,7 +287,7 @@ pub fn setup(
                             vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_READ_KHR
                                 | vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR,
                         )
-                        .buffer(mesh.vertex_buffer.inner)
+                        .buffer(*mesh.vertex_buffer)
                         .size(vk::WHOLE_SIZE)
                         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -442,7 +442,7 @@ pub fn setup(
                 .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(instances_buffer.inner)
+                .buffer(*instances_buffer)
                 .size(vk::WHOLE_SIZE);
             unsafe {
                 context.synchronisation2_loader.cmd_pipeline_barrier2(

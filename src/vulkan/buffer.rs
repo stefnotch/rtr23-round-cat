@@ -30,14 +30,18 @@ impl<T> IntoSlice<T> for Vec<T> {
     }
 }
 
-pub struct Buffer<T> {
+pub struct UntypedBuffer {
     pub inner: vk::Buffer,
     pub usage: vk::BufferUsageFlags,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
-    resource: BufferResource,
-    _marker: PhantomData<T>,
+    pub(super) resource: BufferResource,
     context: Arc<Context>,
+}
+
+pub struct Buffer<T> {
+    inner: UntypedBuffer,
+    _marker: PhantomData<T>,
 }
 
 pub struct BufferSlice<'a, T> {
@@ -87,23 +91,35 @@ impl<T> Buffer<T> {
         unsafe { device.bind_buffer_memory(buffer, memory, 0) }
             .expect("Could not bind buffer memory for buffer");
 
-        Self {
+        let untyped = UntypedBuffer {
             inner: buffer,
             usage,
             memory,
             size: buffer_memory_requirements.size,
             resource,
             context,
+        };
+        Buffer {
+            inner: untyped,
             _marker: PhantomData,
         }
     }
 }
 
 impl<T> Buffer<T> {
+    pub fn get_vk_buffer(&self) -> vk::Buffer {
+        self.inner.inner
+    }
+
+    fn get_device(&self) -> &ash::Device {
+        &self.inner.context.device
+    }
+
     pub fn get_device_address(&self) -> vk::DeviceAddress {
-        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.inner);
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.get_vk_buffer());
         unsafe {
-            self.context
+            self.inner
+                .context
                 .buffer_device_address
                 .get_buffer_device_address(&info)
         }
@@ -113,15 +129,18 @@ impl<T> Buffer<T> {
         let data = data.as_sliced();
 
         let buffer_ptr = unsafe {
-            self.context
-                .device
-                .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
+            self.get_device().map_memory(
+                self.inner.memory,
+                0,
+                self.inner.size,
+                vk::MemoryMapFlags::empty(),
+            )
         }
         .expect("Could not map memory") as *mut T;
 
         unsafe { buffer_ptr.copy_from_nonoverlapping(data.as_ptr() as *const T, data.len()) };
 
-        unsafe { self.context.device.unmap_memory(self.memory) };
+        unsafe { self.get_device().unmap_memory(self.inner.memory) };
     }
 
     pub fn copy_from(
@@ -132,18 +151,22 @@ impl<T> Buffer<T> {
     ) {
         assert!(other
             .buffer
+            .inner
             .usage
             .contains(vk::BufferUsageFlags::TRANSFER_SRC));
-        assert!(self.usage.contains(vk::BufferUsageFlags::TRANSFER_DST));
+        assert!(self
+            .inner
+            .usage
+            .contains(vk::BufferUsageFlags::TRANSFER_DST));
         let buffer_copy_info = vk::BufferCopy::builder()
             .dst_offset(dst_offset)
             .src_offset(other.offset)
             .size(other.size);
         unsafe {
-            self.context.device.cmd_copy_buffer(
+            self.get_device().cmd_copy_buffer(
                 command_buffer,
-                other.buffer.inner,
-                self.inner,
+                other.buffer.get_vk_buffer(),
+                self.get_vk_buffer(),
                 &[buffer_copy_info.build()],
             )
         }
@@ -155,6 +178,10 @@ impl<T> Buffer<T> {
             offset,
             size,
         }
+    }
+
+    pub fn get_untyped(&self) -> &UntypedBuffer {
+        &self.inner
     }
 
     pub fn copy_from_host<U: IntoSlice<T>>(
@@ -182,11 +209,11 @@ impl<T> Buffer<T> {
     }
 
     pub fn get_resource(&self) -> &BufferResource {
-        &self.resource
+        &self.inner.resource
     }
 }
 
-impl<T> Drop for Buffer<T> {
+impl Drop for UntypedBuffer {
     fn drop(&mut self) {
         let device = &self.context.device;
         unsafe { device.destroy_buffer(self.inner, None) };
@@ -198,6 +225,6 @@ impl<T> Deref for Buffer<T> {
     type Target = vk::Buffer;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.inner.inner
     }
 }

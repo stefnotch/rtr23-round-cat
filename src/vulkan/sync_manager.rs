@@ -9,6 +9,12 @@ use ash::vk;
 
 use self::resource_access::{BufferAccess, ImageAccess};
 
+use super::{
+    buffer::UntypedBuffer,
+    command_buffer::commands::{BufferMemoryBarrier, CmdPipelineBarrier, ImageMemoryBarrier},
+    image::Image,
+};
+
 /// Does not directly correspond to a Vulkan object.
 #[derive(Clone)]
 pub struct SyncManager {
@@ -58,21 +64,61 @@ impl<'a> SyncManagerLock<'a> {
     }
 
     #[must_use]
-    pub fn add_buffer_access(
+    pub fn add_accesses<'resources>(
         &mut self,
-        resource: &BufferResource,
-        access: BufferAccess,
-    ) -> Vec<BufferAccess> {
-        self.inner.add_buffer_access(resource.key, access)
-    }
+        buffer_accesses: Vec<(&'resources UntypedBuffer, BufferAccess)>,
+        image_accesses: Vec<(&'resources Image, ImageAccess)>,
+    ) -> CmdPipelineBarrier<'resources> {
+        // TODO: Optimise this by constructing a smol graph of dependencies and only adding barriers where necessary.
+        // e.g. If we know that "A -> B", and then in a shader we read both "A" and "B", then we only need a barrier for "B".
 
-    #[must_use]
-    pub fn add_image_access(
-        &mut self,
-        resource: &ImageResource,
-        access: ImageAccess,
-    ) -> Vec<ImageAccess> {
-        self.inner.add_image_access(resource.key, access)
+        let buffer_memory_barriers = buffer_accesses
+            .into_iter()
+            .flat_map(|(buffer, access)| {
+                let wait_for = self
+                    .inner
+                    .add_buffer_access(buffer.resource.key, access.clone());
+                wait_for.into_iter().map(move |old| BufferMemoryBarrier {
+                    src_stage_mask: old.stage,
+                    src_access_mask: old.access,
+                    dst_stage_mask: access.stage,
+                    dst_access_mask: access.access,
+                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    buffer,
+                    offset: access.offset,
+                    size: access.size,
+                })
+            })
+            .collect();
+
+        let image_memory_barriers = image_accesses
+            .into_iter()
+            .flat_map(|(image, access)| {
+                let wait_for = self
+                    .inner
+                    .add_image_access(image.resource.key, access.clone());
+                wait_for.into_iter().map(move |old| ImageMemoryBarrier {
+                    src_stage_mask: old.stage,
+                    src_access_mask: old.access,
+                    dst_stage_mask: access.stage,
+                    dst_access_mask: access.access,
+                    old_layout: old.layout,
+                    new_layout: access.layout,
+                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    image,
+                    subresource_range: access.subresource_range,
+                })
+            })
+            .collect();
+
+        CmdPipelineBarrier {
+            dependency_flags: vk::DependencyFlags::empty(),
+            memory_barriers: vec![],
+            buffer_memory_barriers,
+            image_memory_barriers,
+        }
     }
 }
 
