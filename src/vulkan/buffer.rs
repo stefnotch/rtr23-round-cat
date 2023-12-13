@@ -1,11 +1,13 @@
+use std::borrow::Cow;
 use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
 use crate::find_memorytype_index;
+use crate::vulkan::command_buffer::commands::CmdCopyBuffer;
 use crate::vulkan::context::Context;
 
-use super::command_buffer::OneTimeCommandBuffer;
+use super::command_buffer::CommandBuffer;
 use super::sync_manager::BufferResource;
 
 pub trait IntoSlice<T> {
@@ -146,7 +148,7 @@ impl<T> Buffer<T> {
     pub fn copy_from(
         &self,
         dst_offset: vk::DeviceSize,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: &mut CommandBuffer,
         other: &BufferSlice<T>,
     ) {
         assert!(other
@@ -158,18 +160,16 @@ impl<T> Buffer<T> {
             .inner
             .usage
             .contains(vk::BufferUsageFlags::TRANSFER_DST));
-        let buffer_copy_info = vk::BufferCopy::builder()
-            .dst_offset(dst_offset)
-            .src_offset(other.offset)
-            .size(other.size);
-        unsafe {
-            self.get_device().cmd_copy_buffer(
-                command_buffer,
-                other.buffer.get_vk_buffer(),
-                self.get_vk_buffer(),
-                &[buffer_copy_info.build()],
-            )
-        }
+
+        command_buffer.add_cmd(CmdCopyBuffer {
+            src_buffer: self,
+            dst_buffer: other.buffer,
+            regions: Cow::Owned(vec![vk::BufferCopy {
+                dst_offset,
+                src_offset: other.offset,
+                size: other.size,
+            }]),
+        });
     }
 
     pub fn get_slice(&self, offset: vk::DeviceSize, size: vk::DeviceSize) -> BufferSlice<T> {
@@ -186,7 +186,7 @@ impl<T> Buffer<T> {
 
     pub fn copy_from_host<U: IntoSlice<T>>(
         &self,
-        command_buffer: &mut OneTimeCommandBuffer,
+        command_buffer: &mut CommandBuffer,
         data: &U,
         data_size: vk::DeviceSize,
     ) where
@@ -200,12 +200,7 @@ impl<T> Buffer<T> {
         );
         staging_buffer.copy_data(data);
 
-        self.copy_from(
-            0,
-            command_buffer.inner,
-            &staging_buffer.get_slice(0, data_size),
-        );
-        command_buffer.add_resource(staging_buffer);
+        self.copy_from(0, command_buffer, &staging_buffer.get_slice(0, data_size));
     }
 
     pub fn get_resource(&self) -> &BufferResource {

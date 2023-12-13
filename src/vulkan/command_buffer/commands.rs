@@ -6,13 +6,16 @@ use crate::vulkan::{
     buffer::{Buffer, UntypedBuffer},
     context::Context,
     image::Image,
-    sync_manager::{resource_access::BufferAccess, SyncManagerLock},
+    sync_manager::{
+        resource_access::{BufferAccess, ImageAccess},
+        SyncManagerLock,
+    },
 };
 
 use super::{CommandBufferCmd, CommandBufferCmdArgs};
 
 pub struct BeginCommandBuffer {
-    flags: vk::CommandBufferUsageFlags,
+    pub flags: vk::CommandBufferUsageFlags,
     //inheritance_info: Option<()>,
 }
 
@@ -142,40 +145,6 @@ where
     }
 }
 
-pub struct CmdLayoutTransition<'a> {
-    pub image: &'a Image,
-    pub old_layout: vk::ImageLayout,
-    pub new_layout: vk::ImageLayout,
-    pub aspect_mask: vk::ImageAspectFlags,
-}
-
-impl<'cmd, 'a> CommandBufferCmd<'cmd> for CmdLayoutTransition<'a>
-where
-    'a: 'cmd,
-{
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
-        let barrier = ImageMemoryBarrier {
-            src_stage_mask: vk::PipelineStageFlags2::NONE,
-            src_access_mask: vk::AccessFlags2::empty(),
-            dst_stage_mask: vk::PipelineStageFlags2::NONE,
-            dst_access_mask: vk::AccessFlags2::empty(),
-            old_layout: self.old_layout,
-            new_layout: self.new_layout,
-            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            image: self.image,
-            subresource_range: self.image.full_subresource_range(self.aspect_mask),
-        };
-        let barrier = Box::new(CmdPipelineBarrier {
-            dependency_flags: vk::DependencyFlags::empty(),
-            memory_barriers: Vec::new(),
-            buffer_memory_barriers: Vec::new(),
-            image_memory_barriers: vec![barrier],
-        });
-        barrier.execute(args);
-    }
-}
-
 pub struct CmdManualCommand<'a> {
     pub command: Box<dyn FnOnce(&Context, vk::CommandBuffer) + 'a>,
 }
@@ -187,9 +156,9 @@ impl<'cmd, 'a> CommandBufferCmd<'cmd> for CmdManualCommand<'a> {
 }
 
 pub struct CmdCopyBuffer<'a, 'b, 'c, T> {
-    src_buffer: &'a Buffer<T>,
-    dst_buffer: &'b Buffer<T>,
-    regions: Cow<'c, [vk::BufferCopy]>,
+    pub src_buffer: &'a Buffer<T>,
+    pub dst_buffer: &'b Buffer<T>,
+    pub regions: Cow<'c, [vk::BufferCopy]>,
 }
 
 impl<'cmd, 'a, 'b, 'c, T> CommandBufferCmd<'cmd> for CmdCopyBuffer<'a, 'b, 'c, T>
@@ -231,6 +200,64 @@ where
         }
     }
 }
+
+pub struct CmdCopyBufferToImage<'a, 'b, 'c, T> {
+    pub src_buffer: &'a Buffer<T>,
+    pub dst_image: &'b Image,
+    pub dst_image_layout: vk::ImageLayout, // TODO: Make this an option!
+    pub regions: Cow<'c, [vk::BufferImageCopy]>,
+}
+
+impl<'cmd, 'a, 'b, 'c, T> CommandBufferCmd<'cmd> for CmdCopyBufferToImage<'a, 'b, 'c, T>
+where
+    'a: 'cmd,
+    'b: 'cmd,
+    'c: 'cmd,
+{
+    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
+        let aspect_flags = self
+            .regions
+            .iter()
+            .fold(vk::ImageAspectFlags::empty(), |acc, region| {
+                acc | region.image_subresource.aspect_mask
+            });
+
+        // Notice how we're writing to an image with a "self.dst_image_layout" layout.
+        // The pipeline barrier will add the required layout transition.
+        args.sync_manager
+            .add_accesses(
+                vec![(
+                    self.src_buffer.get_untyped(),
+                    BufferAccess::entire_buffer(
+                        vk::PipelineStageFlags2::TRANSFER,
+                        vk::AccessFlags2::TRANSFER_READ,
+                    ),
+                )],
+                vec![(
+                    &self.dst_image,
+                    ImageAccess::entire_image(
+                        vk::PipelineStageFlags2::TRANSFER,
+                        vk::AccessFlags2::TRANSFER_WRITE,
+                        self.dst_image_layout,
+                        self.dst_image.full_subresource_range(aspect_flags),
+                    ),
+                )],
+            )
+            .execute(args.command_buffer, &args.context);
+        unsafe {
+            args.context.device.cmd_copy_buffer_to_image(
+                args.command_buffer,
+                self.src_buffer.get_vk_buffer(),
+                self.dst_image.get_vk_image(),
+                self.dst_image_layout,
+                self.regions.as_ref(),
+            )
+        }
+    }
+}
+
+// TODO:
+pub struct CmdBuildAccelerationStructures {}
 
 pub struct EndCommandBuffer {}
 

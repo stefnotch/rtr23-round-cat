@@ -9,7 +9,8 @@ use crate::scene::{RaytracingGeometry, RaytracingScene};
 use crate::transform::Transform;
 use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
-use crate::vulkan::command_buffer::OneTimeCommandBuffer;
+use crate::vulkan::command_buffer::commands::EndCommandBuffer;
+use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferAllocateInfo};
 use crate::vulkan::command_pool::CommandPool;
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
@@ -31,17 +32,13 @@ pub fn setup(
     command_pool: CommandPool,
 ) -> Scene {
     let device = &context.device;
-    let mut setup_command_buffer = {
-        let allocate_info = vk::CommandBufferAllocateInfo::builder()
-            .command_buffer_count(1)
-            .command_pool(*command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY);
-
-        let command_buffer = unsafe { device.allocate_command_buffers(&allocate_info) }
-            .expect("Could not allocate command buffers")[0];
-
-        OneTimeCommandBuffer::new(command_buffer, command_pool)
-    };
+    let mut setup_command_buffer = CommandBuffer::new(
+        command_pool,
+        CommandBufferAllocateInfo {
+            level: vk::CommandBufferLevel::PRIMARY,
+            count: 1,
+        },
+    );
 
     let mut image_data_buffers = vec![];
     let default_sampler = {
@@ -81,7 +78,7 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(*setup_command_buffer, &image_data_buffer);
+            image.copy_from_buffer_for_texture(&mut setup_command_buffer, &image_data_buffer);
             image_data_buffers.push(image_data_buffer);
 
             Arc::new(ImageView::new_default(
@@ -102,7 +99,7 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0x80u8, 0x80, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(*setup_command_buffer, &image_data_buffer);
+            image.copy_from_buffer_for_texture(&mut setup_command_buffer, &image_data_buffer);
             image_data_buffers.push(image_data_buffer);
 
             Arc::new(ImageView::new_default(
@@ -134,7 +131,7 @@ pub fn setup(
                 .or_insert_with(|| {
                     let base_color_texture = load_texture(
                         context.clone(),
-                        *setup_command_buffer,
+                        &mut setup_command_buffer,
                         loaded_primitive.material.base_color_texture.as_ref(),
                         &mut texture_map,
                         &mut image_data_buffers,
@@ -146,7 +143,7 @@ pub fn setup(
 
                     let normal_texture = load_texture(
                         context.clone(),
-                        *setup_command_buffer,
+                        &mut setup_command_buffer,
                         loaded_primitive.material.normal_texture.as_ref(),
                         &mut texture_map,
                         &mut image_data_buffers,
@@ -158,7 +155,7 @@ pub fn setup(
 
                     let metallic_roughness_texture = load_texture(
                         context.clone(),
-                        *setup_command_buffer,
+                        &mut setup_command_buffer,
                         loaded_primitive
                             .material
                             .metallic_roughness_texture
@@ -529,15 +526,11 @@ pub fn setup(
             tlas: Arc::new(tlas),
         }
     };
-    setup_command_buffer.end();
+
+    setup_command_buffer.add_cmd(EndCommandBuffer {});
 
     // submit
-    let submit_info = vk::SubmitInfo::builder()
-        .command_buffers(std::slice::from_ref(&setup_command_buffer))
-        .build();
-
-    unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
-        .expect("Could not submit to queue");
+    setup_command_buffer.submit(context, queue);
 
     unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
 
@@ -549,7 +542,7 @@ pub fn setup(
 
 fn load_texture(
     context: Arc<Context>,
-    setup_command_buffer: vk::CommandBuffer,
+    setup_command_buffer: &mut CommandBuffer,
     loaded_texture: Option<&LoadedTexture>,
     texture_map: &mut HashMap<loader::AssetId, Arc<ImageView>>,
     image_data_buffers: &mut Vec<Buffer<u8>>,
@@ -631,7 +624,7 @@ fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> 
 fn create_image(
     loaded_image: Arc<LoadedImage>,
     context: Arc<Context>,
-    setup_command_buffer: vk::CommandBuffer,
+    setup_command_buffer: &mut CommandBuffer,
     image_data_buffers: &mut Vec<Buffer<u8>>,
     create_mipmapping: bool,
 ) -> Arc<ImageView> {

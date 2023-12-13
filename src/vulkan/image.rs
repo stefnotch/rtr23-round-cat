@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
@@ -8,7 +8,10 @@ use ash::vk::{
     SampleCountFlags, SharingMode,
 };
 
-use super::sync_manager::ImageResource;
+use super::{
+    command_buffer::{commands::CmdCopyBufferToImage, CommandBuffer},
+    sync_manager::ImageResource,
+};
 
 pub struct Image {
     pub inner: vk::Image,
@@ -67,35 +70,12 @@ impl Image {
 
     pub fn copy_from_buffer_for_texture<T>(
         &mut self,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: &mut CommandBuffer,
         buffer: &Buffer<T>,
     ) {
         // assuming 2D images
         let num_levels = self.mip_levels;
         let device = &self.context.device;
-
-        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(self.inner)
-            .subresource_range(self.full_subresource_range(vk::ImageAspectFlags::COLOR))
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-            .build();
-
-        unsafe {
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                std::slice::from_ref(&image_memory_barrier),
-            );
-        }
 
         let buffer_image_copy = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -111,15 +91,12 @@ impl Image {
             image_extent: self.extent,
         };
 
-        unsafe {
-            self.context.device.cmd_copy_buffer_to_image(
-                command_buffer,
-                buffer.get_vk_buffer(),
-                self.inner,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                std::slice::from_ref(&buffer_image_copy),
-            )
-        };
+        command_buffer.add_cmd(CmdCopyBufferToImage {
+            src_buffer: buffer,
+            dst_image: self,
+            dst_image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            regions: Cow::Owned(vec![buffer_image_copy]),
+        });
 
         let format_properties = unsafe {
             self.context
@@ -280,6 +257,10 @@ impl Image {
             base_array_layer: 0,
             layer_count: 1,
         }
+    }
+
+    pub fn get_vk_image(&self) -> vk::Image {
+        self.inner
     }
 }
 
