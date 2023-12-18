@@ -7,9 +7,7 @@ use std::sync::Arc;
 
 use ash::vk;
 use crevice::std140::AsStd140;
-use egui::load::SizedTexture;
-use egui::ImageSource;
-use egui_winit_ash_integration::Integration;
+use egui_winit_ash_integration::{AllocatorTrait, Integration};
 use ultraviolet::Vec3;
 
 use crate::vulkan::buffer::Buffer;
@@ -53,7 +51,7 @@ pub struct MainRenderer {
 
     scene_descriptor_set: SceneDescriptorSet,
     camera_descriptor_set: CameraDescriptorSet,
-    // image_texture_id: egui::TextureId,
+    sun_direction: Vec3,
 }
 
 impl MainRenderer {
@@ -63,7 +61,6 @@ impl MainRenderer {
         set_layout_cache: &DescriptorSetLayoutCache,
         scene: &Scene,
         swapchain: &SwapchainContainer,
-        egui_integration: &mut Integration<Arc<std::sync::Mutex<gpu_allocator::vulkan::Allocator>>>,
     ) -> Self {
         let scene_descriptor_set = {
             let buffer = Buffer::new(
@@ -130,10 +127,11 @@ impl MainRenderer {
         );
         let post_processing_pass = PostProcessingPass::new();
 
-        // let image_texture_id = egui_integration.register_user_texture(
-        //     geometry_pass.gbuffer().shadow_buffer.inner,
-        //     geometry_pass.gbuffer().sampler.inner,
-        // );
+        let sun_direction = Vec3 {
+            x: 0.2,
+            y: -1.0,
+            z: 0.0,
+        };
 
         MainRenderer {
             geometry_pass,
@@ -143,23 +141,26 @@ impl MainRenderer {
 
             scene_descriptor_set,
             camera_descriptor_set,
-            // image_texture_id,
+            sun_direction,
         }
     }
 
-    pub fn render_ui(
-        &self,
-        egui_integration: &mut Integration<Arc<std::sync::Mutex<gpu_allocator::vulkan::Allocator>>>,
-    ) {
-        // egui::Window::new("User Texture Window")
-        //     .resizable(true)
-        //     .scroll2([true, true])
-        //     .show(&egui_integration.context(), |ui| {
-        //         ui.image(ImageSource::Texture(SizedTexture {
-        //             id: self.image_texture_id,
-        //             size: egui::Vec2 { x: 256.0, y: 256.0 },
-        //         }));
-        //     });
+    pub fn render_ui<A: AllocatorTrait>(&mut self, egui_integration: &mut Integration<A>) {
+        egui::Window::new("")
+            .resizable(true)
+            .scroll2([true, true])
+            .show(&egui_integration.context(), |ui| {
+                ui.label("Light Settings: ");
+                ui.label("Direction: ");
+                ui.horizontal(|ui| {
+                    ui.label("x:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.x).speed(0.1));
+                    ui.label("y:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.y).speed(0.1));
+                    ui.label("z:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.z).speed(0.1));
+                });
+            });
     }
 
     pub fn render(
@@ -204,11 +205,7 @@ impl MainRenderer {
     pub fn update_descriptor_sets(&self, camera: &Camera) {
         let scene = shader_types::Scene {
             directional_light: shader_types::DirectionalLight {
-                direction: Vec3 {
-                    x: 0.2,
-                    y: -1.0,
-                    z: 0.0,
-                },
+                direction: self.sun_direction.normalized(),
                 color: Vec3::new(1.0, 1.0, 1.0),
                 intensity: 3.0,
             },
@@ -230,19 +227,8 @@ impl MainRenderer {
             .copy_data(&camera.as_std140());
     }
 
-    pub fn resize(
-        &mut self,
-        swapchain: &SwapchainContainer,
-        egui_integration: &mut Integration<Arc<std::sync::Mutex<gpu_allocator::vulkan::Allocator>>>,
-    ) {
-        // egui_integration.unregister_user_texture(self.image_texture_id);
-
+    pub fn resize(&mut self, swapchain: &SwapchainContainer) {
         self.geometry_pass.resize(swapchain);
-
-        // self.image_texture_id = egui_integration.register_user_texture(
-        //     self.geometry_pass.gbuffer().shadow_buffer.inner,
-        //     self.geometry_pass.gbuffer().sampler.inner,
-        // );
 
         self.shadow_pass.resize(self.geometry_pass.gbuffer());
         self.lighting_pass.resize(swapchain);
