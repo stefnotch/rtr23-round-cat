@@ -79,15 +79,18 @@ impl LoadedMesh {
         let vertices: Vec<Vertex> = faces
             .iter()
             .flat_map(|face| {
+                // this uses the face's bottom two vertices to calculate the face tangent
+                let face_tangent =
+                    positions[face.position_indices[2]] - positions[face.position_indices[3]].normalized();
+
                 face.position_indices
                     .iter()
                     .enumerate()
-                    .map(|(i, pos_index)| Vertex {
+                    .map(move |(i, pos_index)| Vertex {
                         position: positions[*pos_index].into(),
                         normal: face.normal.into(),
                         uv: uvs_face[i].into(),
-                        // TODO: calculate actual tangent
-                        tangent: [0.0; 4],
+                        tangent: face_tangent.into_homogeneous_point().into(),
                     })
             })
             .collect();
