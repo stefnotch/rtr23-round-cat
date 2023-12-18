@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use ultraviolet::Vec3;
 
+use crate::vulkan::window_settings::PresentMode;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub scene_path: String,
+    pub present_mode: PresentMode,
     pub cached: CachedData,
 }
 
@@ -13,6 +16,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             scene_path: "assets/scene-local/sponza/sponza.glb".to_string(),
+            present_mode: PresentMode::Fifo,
             cached: CachedData::default(),
         }
     }
