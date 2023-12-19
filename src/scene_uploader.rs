@@ -674,9 +674,10 @@ fn create_image(
     }
 
     let num_mip_levels = if create_mipmapping {
-        Image::max_mip_levels(vk::Extent2D {
+        Image::max_mip_levels(vk::Extent3D {
             width: loaded_image.data.dimensions.0,
             height: loaded_image.data.dimensions.1,
+            depth: 1,
         })
     } else {
         1

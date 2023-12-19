@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::BitOr, sync::Arc};
 
 use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
@@ -258,11 +258,14 @@ impl Image {
         self.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     }
 
-    pub fn max_mip_levels(extent: vk::Extent2D) -> u32 {
-        std::cmp::max(extent.width, extent.height)
-            .checked_ilog2()
-            .unwrap()
-            + 1
+    pub fn max_mip_levels(extent: vk::Extent3D) -> u32 {
+        // The number of levels in a complete mipmap chain is:
+        // ⌊log2(max(width_0, height_0, depth_0))⌋ + 1
+
+        32 - [extent.width, extent.height, extent.depth]
+            .into_iter()
+            .fold(0, BitOr::bitor)
+            .leading_zeros()
     }
 
     pub fn full_subresource_range(
