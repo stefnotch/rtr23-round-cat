@@ -4,7 +4,8 @@ use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use ash::vk::{
-    self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags,
+    self, AccessFlags2, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageMemoryBarrier2,
+    ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, PipelineStageFlags2,
     SampleCountFlags, SharingMode,
 };
 
@@ -66,32 +67,21 @@ impl Image {
         command_buffer: vk::CommandBuffer,
         buffer: &Buffer<T>,
     ) {
-        // assuming 2D images
         let num_levels = self.mip_levels;
         let device = &self.context.device;
 
-        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(self.inner)
-            .subresource_range(self.full_subresource_range(vk::ImageAspectFlags::COLOR))
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-            .build();
-
-        unsafe {
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                std::slice::from_ref(&image_memory_barrier),
-            );
-        }
+        // prepare copying base image to level 0
+        // we use a full subresource range to transition the imagelayout of all mipmapping levels to TRANSFER_DST_OPTIMAL
+        self.insert_image_memory_barrier(
+            command_buffer,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            PipelineStageFlags2::NONE,
+            PipelineStageFlags2::COPY,
+            AccessFlags2::empty(),
+            AccessFlags2::TRANSFER_WRITE,
+            self.full_subresource_range(vk::ImageAspectFlags::COLOR),
+        );
 
         let buffer_image_copy = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -117,6 +107,7 @@ impl Image {
             )
         };
 
+        // start creating mipmapping chain
         let format_properties = unsafe {
             self.context
                 .instance
@@ -130,67 +121,37 @@ impl Image {
             panic!("texture format does not support linear blitting");
         }
 
-        let mut barrier = vk::ImageMemoryBarrier::builder()
-            .image(self.inner)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .build();
-
-        let vk::Extent3D {
-            mut width,
-            mut height,
-            ..
-        } = self.extent;
-
         for level in 1..num_levels {
-            barrier.subresource_range.base_mip_level = level - 1;
-            barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-            barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+            let src_size = Self::extent_to_offset(Self::mip_level(self.extent, level - 1).unwrap());
+            let dst_size = Self::extent_to_offset(Self::mip_level(self.extent, level).unwrap());
 
-            unsafe {
-                device.cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&barrier),
-                )
-            };
+            // transition image layout src level from TRANSFER_DST_OPTIMAL to TRANSFER_SRC_OPTIMAL
+            self.insert_image_memory_barrier(
+                command_buffer,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                PipelineStageFlags2::BLIT,
+                PipelineStageFlags2::TRANSFER,
+                AccessFlags2::TRANSFER_WRITE,
+                AccessFlags2::TRANSFER_READ,
+                ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: level - 1,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+            );
 
             let blit = vk::ImageBlit::builder()
-                .src_offsets([
-                    vk::Offset3D { x: 0, y: 0, z: 0 },
-                    vk::Offset3D {
-                        x: width as i32,
-                        y: height as i32,
-                        z: 1,
-                    },
-                ])
+                .src_offsets([vk::Offset3D::default(), src_size])
                 .src_subresource(vk::ImageSubresourceLayers {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     mip_level: level - 1,
                     base_array_layer: 0,
                     layer_count: 1,
                 })
-                .dst_offsets([
-                    vk::Offset3D { x: 0, y: 0, z: 0 },
-                    vk::Offset3D {
-                        x: (width as i32 / 2).max(1),
-                        y: (height as i32 / 2).max(1),
-                        z: 1,
-                    },
-                ])
+                .dst_offsets([vk::Offset3D::default(), dst_size])
                 .dst_subresource(vk::ImageSubresourceLayers {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     mip_level: level,
@@ -211,51 +172,78 @@ impl Image {
                 )
             }
 
-            barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-            barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
-            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-            unsafe {
-                device.cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&barrier),
-                )
-            };
-
-            if width > 1 {
-                width /= 2;
-            }
-
-            if height > 1 {
-                height /= 2;
-            }
+            // transition image layout of previous mipmapping level from TRANSFER_SRC_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+            self.insert_image_memory_barrier(
+                command_buffer,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                PipelineStageFlags2::TRANSFER,
+                PipelineStageFlags2::FRAGMENT_SHADER,
+                AccessFlags2::TRANSFER_READ,
+                AccessFlags2::SHADER_READ,
+                ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: level - 1,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+            );
         }
 
-        barrier.subresource_range.base_mip_level = num_levels - 1;
-        barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-        barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-        barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+        // transition image layout of last mipmapping level from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+        self.insert_image_memory_barrier(
+            command_buffer,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            PipelineStageFlags2::TRANSFER,
+            PipelineStageFlags2::FRAGMENT_SHADER,
+            AccessFlags2::TRANSFER_WRITE,
+            AccessFlags2::SHADER_READ,
+            ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: num_levels - 1,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        );
+        self.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    }
 
-        unsafe {
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                std::slice::from_ref(&barrier),
-            )
+    fn insert_image_memory_barrier(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+        src_stage_mask: PipelineStageFlags2,
+        dst_stage_mask: PipelineStageFlags2,
+        src_access_mask: vk::AccessFlags2,
+        dst_access_mask: vk::AccessFlags2,
+        subresource_range: ImageSubresourceRange,
+    ) {
+        let barrier = vk::ImageMemoryBarrier2 {
+            old_layout,
+            new_layout,
+            src_stage_mask,
+            dst_stage_mask,
+            src_access_mask,
+            dst_access_mask,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image: self.inner,
+            subresource_range,
+            ..ImageMemoryBarrier2::default()
         };
 
-        self.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
+
+        unsafe {
+            self.context
+                .synchronisation2_loader
+                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
+        };
     }
 
     pub fn max_mip_levels(extent: vk::Extent3D) -> u32 {
@@ -266,6 +254,28 @@ impl Image {
             .into_iter()
             .fold(0, BitOr::bitor)
             .leading_zeros()
+    }
+
+    pub fn mip_level(base_extent: vk::Extent3D, level: u32) -> Option<vk::Extent3D> {
+        if level == 0 {
+            Some(base_extent)
+        } else if level >= Self::max_mip_levels(base_extent) {
+            None
+        } else {
+            Some(Extent3D {
+                width: (base_extent.width >> level).max(1),
+                height: (base_extent.height >> level).max(1),
+                depth: (base_extent.depth >> level).max(1),
+            })
+        }
+    }
+
+    pub fn extent_to_offset(extent: vk::Extent3D) -> vk::Offset3D {
+        vk::Offset3D {
+            x: extent.width as i32,
+            y: extent.height as i32,
+            z: extent.depth as i32,
+        }
     }
 
     pub fn full_subresource_range(
