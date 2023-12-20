@@ -32,7 +32,11 @@ impl DescriptorSetLayoutCache {
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                .stage_flags(
+                    vk::ShaderStageFlags::VERTEX
+                        | vk::ShaderStageFlags::FRAGMENT
+                        | vk::ShaderStageFlags::RAYGEN_KHR,
+                )
                 .build()],
             None,
         ));

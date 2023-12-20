@@ -19,5 +19,5 @@ layout(set = 1, binding = 0) uniform Camera {
 } camera;
 
 layout (set = 2, binding = 0) uniform accelerationStructureEXT topLevelAS;
-layout (set = 2, binding = 1) uniform sampler2D positionBuffer;
+layout (set = 2, binding = 1) uniform sampler2D depthBuffer;
 layout (set = 2, binding = 2, r8) uniform image2D shadowBuffer;
