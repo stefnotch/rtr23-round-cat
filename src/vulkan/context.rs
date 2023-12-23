@@ -241,9 +241,15 @@ fn create_logical_device(
             ..vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default()
         };
 
+    let device_features = vk::PhysicalDeviceFeatures {
+        sampler_anisotropy: vk::TRUE,
+        ..Default::default()
+    };
+
     let create_info = DeviceCreateInfo::builder()
         .queue_create_infos(std::slice::from_ref(&queue_create_info))
         .enabled_extension_names(&device_extensions)
+        .enabled_features(&device_features)
         .push_next(&mut physical_device_vulkan13_features)
         .push_next(&mut enabled_buffer_device_address_features)
         .push_next(&mut enabled_ray_tracing_pipeline_features)

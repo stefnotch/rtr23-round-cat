@@ -18,8 +18,6 @@ pub struct GBuffer {
 
     pub descriptor_set: DescriptorSet,
     pub sampler: Arc<Sampler>,
-
-    context: Arc<Context>,
 }
 
 impl GBuffer {
@@ -112,7 +110,7 @@ impl GBuffer {
             let create_info = vk::ImageCreateInfo {
                 extent: swapchain_extent_3d,
                 format: GBuffer::DEPTH_FORMAT,
-                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 ..simple_image_create_info()
             };
 
@@ -249,8 +247,6 @@ impl GBuffer {
             shadow_buffer: shadow_buffer_imageview,
             descriptor_set,
             sampler,
-
-            context,
         }
     }
 }

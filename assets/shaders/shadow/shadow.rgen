@@ -4,12 +4,27 @@
 
 layout(location = 0) rayPayloadEXT float shadowed;
 
+// this is supposed to get the world position from the depth buffer
+vec3 worldPosFromDepth(float depth, vec2 uv) {
+    vec4 clipSpacePosition = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 viewSpacePosition = camera.proj_inv * clipSpacePosition;
+
+    // Perspective division
+    viewSpacePosition /= viewSpacePosition.w;
+
+    vec4 worldSpacePosition = camera.view_inv * viewSpacePosition;
+
+    return worldSpacePosition.xyz;
+}
+
 void main()
 {
 	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
 	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
 
-  vec3 origin = texture(positionBuffer, inUV).rgb;
+  float depth = texture(depthBuffer, inUV).r;
+
+  vec3 origin = worldPosFromDepth(depth, inUV);
   vec3 direction = -normalize(scene.directionalLight.direction);
 
   uint rayFlags =  gl_RayFlagsOpaqueEXT ;
@@ -25,5 +40,5 @@ void main()
   shadowed = 0.0;
   traceRayEXT(topLevelAS, rayFlags, cullMask, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
-  imageStore(shadowBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowed), 0.0));
+  imageStore(shadowBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(shadowed, 0.0, 0.0, 0.0));
 }

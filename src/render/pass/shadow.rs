@@ -123,15 +123,15 @@ impl ShadowPass {
     ) {
         crate::utility::cmd_full_pipeline_barrier(&self.context, command_buffer);
 
-        let image_memory_barriers: Vec<ImageMemoryBarrier2> = [&gbuffer.position_buffer]
+        let image_memory_barriers: Vec<ImageMemoryBarrier2> = [&gbuffer.depth_buffer]
             .into_iter()
             .map(|image| vk::ImageMemoryBarrier2 {
-                src_stage_mask: PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                src_access_mask: AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                src_stage_mask: PipelineStageFlags2::LATE_FRAGMENT_TESTS,
+                src_access_mask: AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
                 dst_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
                 dst_access_mask: AccessFlags2::SHADER_READ,
                 old_layout: ImageLayout::ATTACHMENT_OPTIMAL,
-                new_layout: ImageLayout::READ_ONLY_OPTIMAL,
+                new_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                 dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                 image: image.image.inner,
@@ -163,13 +163,6 @@ impl ShadowPass {
                 .synchronisation2_loader
                 .cmd_pipeline_barrier2(command_buffer, &dependency_info)
         };
-
-        // descriptorset
-        // - scene info (light direction) scene descriptor set
-        // - camera info camera descriptor set
-
-        // - AS
-        // - output image (storage image) part of the gbuffer
 
         unsafe {
             self.context.device.cmd_bind_pipeline(
@@ -419,7 +412,7 @@ fn create_descriptor_set(
             WriteDescriptorSet::acceleration_structure(0, acceleration_structure),
             WriteDescriptorSet::image_view_sampler_with_layout(
                 1,
-                gbuffer.position_buffer.clone(),
+                gbuffer.depth_buffer.clone(),
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 gbuffer.sampler.clone(),
             ),

@@ -158,7 +158,7 @@ impl CatDemo {
 
         let allocator = Arc::new(Mutex::new(allocator));
 
-        let mut egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
+        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
             event_loop,
             window.inner_size().width,
             window.inner_size().height,
@@ -209,7 +209,6 @@ impl CatDemo {
             &descriptor_set_layout_cache,
             &scene,
             &swapchain,
-            &mut egui_integration,
         );
 
         let time = Time::new();
@@ -413,8 +412,7 @@ impl CatDemo {
                 self.swapchain.inner,
                 self.swapchain.surface_format,
             );
-            self.renderer
-                .resize(&self.swapchain, &mut self.egui_integration);
+            self.renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
 

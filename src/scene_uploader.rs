@@ -150,7 +150,7 @@ pub fn setup(
                         &mut sampler_map,
                         default_normal_map_image_view.clone(),
                         default_sampler.clone(),
-                        false,
+                        true,
                     );
 
                     let metallic_roughness_texture = load_texture(
@@ -600,6 +600,8 @@ fn create_sampler(loaded_sampler: Arc<LoadedSampler>, context: Arc<Context>) -> 
         .flags(vk::SamplerCreateFlags::empty())
         .mag_filter(convert_filter(&loaded_sampler.sampler_info.mag_filter))
         .min_filter(convert_filter(&loaded_sampler.sampler_info.min_filter))
+        .anisotropy_enable(true)
+        .max_anisotropy(16.0)
         .mipmap_mode(match &loaded_sampler.sampler_info.mipmap_mode {
             loader::MipmapMode::Nearest => vk::SamplerMipmapMode::NEAREST,
             loader::MipmapMode::Linear => vk::SamplerMipmapMode::LINEAR,
@@ -667,9 +669,10 @@ fn create_image(
     }
 
     let num_mip_levels = if create_mipmapping {
-        Image::max_mip_levels(vk::Extent2D {
+        Image::max_mip_levels(vk::Extent3D {
             width: loaded_image.data.dimensions.0,
             height: loaded_image.data.dimensions.1,
+            depth: 1,
         })
     } else {
         1
