@@ -3,7 +3,6 @@ use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::{self, vk};
 
-use crate::bow::Bow;
 use crate::find_memorytype_index;
 use crate::vulkan::command_buffer::CmdCopyBuffer;
 use crate::vulkan::context::Context;
@@ -181,11 +180,10 @@ impl<T> Buffer<T> {
     pub fn copy_from_host<'cmd, 'data, U: IntoSlice<T>>(
         self: &Arc<Self>,
         command_buffer: &mut CommandBuffer<'cmd>,
-        data: Bow<'data, U>,
+        data: &'data U,
         data_size: vk::DeviceSize,
     ) where
         T: 'static,
-        'data: 'cmd,
     {
         let staging_buffer = Buffer::new(
             command_buffer.context().clone(),

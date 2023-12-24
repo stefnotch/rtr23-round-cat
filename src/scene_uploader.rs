@@ -6,7 +6,6 @@ use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
 use ultraviolet::Mat4;
 
-use crate::bow::Bow;
 use crate::loader::LoadedTexture;
 use crate::scene::{RaytracingGeometry, RaytracingScene};
 use crate::transform::Transform;
@@ -14,7 +13,7 @@ use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::command_buffer::{
     AccelerationStructureBuildGeometryInfoKHR, AccelerationStructureGeometryData,
-    CmdBuildAccelerationStructures, EndCommandBuffer,
+    BeginCommandBuffer, CmdBuildAccelerationStructures, EndCommandBuffer,
 };
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferAllocateInfo};
 use crate::vulkan::command_pool::CommandPool;
@@ -46,6 +45,9 @@ pub fn setup(
             count: 1,
         },
     );
+    setup_command_buffer.add_cmd(BeginCommandBuffer {
+        flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+    });
 
     let default_sampler = {
         let sampler_info = vk::SamplerCreateInfo::builder().build();
@@ -342,11 +344,7 @@ pub fn setup(
                     | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
             ));
-        instances_buffer.copy_from_host(
-            &mut setup_command_buffer,
-            Bow::Owned(instances),
-            instances_vec_size,
-        );
+        instances_buffer.copy_from_host(&mut setup_command_buffer, &instances, instances_vec_size);
         // Wait for copy to finish before building acceleration structure
 
         let acceleration_structure_geometry =
@@ -428,7 +426,6 @@ fn create_mesh<'a, 'cmd>(
 where
     'a: 'cmd,
 {
-    let mesh = setup_command_buffer.add_referenced_resource(mesh);
     let vertex_buffer = {
         let buffer = Arc::new(Buffer::new(
             context.clone(),
@@ -441,7 +438,7 @@ where
         ));
         buffer.copy_from_host(
             &mut setup_command_buffer,
-            Bow::Borrowed(&mesh.vertices),
+            &mesh.vertices,
             mesh.vertices.get_vec_size(),
         );
         buffer
@@ -459,7 +456,7 @@ where
         ));
         buffer.copy_from_host(
             &mut setup_command_buffer,
-            Bow::Borrowed(&mesh.indices),
+            &mesh.indices,
             mesh.indices.get_vec_size(),
         );
         buffer

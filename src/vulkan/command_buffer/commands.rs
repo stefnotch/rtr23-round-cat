@@ -247,13 +247,14 @@ impl<'a, V, I> AccelerationStructureBuildGeometryInfoKHR<'a, V, I> {
                         .unwrap_or_default(),
                 )
                 .geometries(&geometries)
-                .scratch_data(vk::DeviceOrHostAddressKHR {
-                    device_address: self
-                        .scratch_data
+                .scratch_data(
+                    self.scratch_data
                         .as_ref()
-                        .expect("Expected acceleration structure scratch data to be set")
-                        .get_device_address(),
-                })
+                        .map(|v| vk::DeviceOrHostAddressKHR {
+                            device_address: v.get_device_address(),
+                        })
+                        .unwrap_or_default(),
+                )
                 .build(),
             geometries,
         )
