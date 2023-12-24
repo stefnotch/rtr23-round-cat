@@ -7,13 +7,9 @@ use std::{
 
 use ash::vk;
 
-use self::resource_access::{BufferAccess, ImageAccess};
+use self::resource_access::{BufferAccess, BufferAccessInfo, ImageAccess, ImageAccessInfo};
 
-use super::{
-    buffer::UntypedBuffer,
-    command_buffer::commands::{BufferMemoryBarrier, CmdPipelineBarrier, ImageMemoryBarrier},
-    image::Image,
-};
+use super::command_buffer::{BufferMemoryBarrier, CmdPipelineBarrier, ImageMemoryBarrier};
 
 /// Does not directly correspond to a Vulkan object.
 #[derive(Clone)]
@@ -66,15 +62,15 @@ impl<'a> SyncManagerLock<'a> {
     #[must_use]
     pub fn add_accesses<'resources>(
         &mut self,
-        buffer_accesses: Vec<(&'resources UntypedBuffer, BufferAccess)>,
-        image_accesses: Vec<(&'resources Image, ImageAccess)>,
+        buffer_accesses: Vec<BufferAccess<'resources>>,
+        image_accesses: Vec<ImageAccess<'resources>>,
     ) -> CmdPipelineBarrier<'resources> {
         // TODO: Optimise this by constructing a smol graph of dependencies and only adding barriers where necessary.
         // e.g. If we know that "A -> B", and then in a shader we read both "A" and "B", then we only need a barrier for "B".
 
         let buffer_memory_barriers = buffer_accesses
             .into_iter()
-            .flat_map(|(buffer, access)| {
+            .flat_map(|BufferAccess { buffer, access }| {
                 let wait_for = self
                     .inner
                     .add_buffer_access(buffer.resource.key, access.clone());
@@ -94,7 +90,7 @@ impl<'a> SyncManagerLock<'a> {
 
         let image_memory_barriers = image_accesses
             .into_iter()
-            .flat_map(|(image, access)| {
+            .flat_map(|ImageAccess { image, access }| {
                 let wait_for = self
                     .inner
                     .add_image_access(image.resource.key, access.clone());
@@ -149,8 +145,8 @@ impl Drop for ImageResource {
 // Internals //
 
 struct SyncManagerInternal {
-    buffers: HashMap<BufferResourceKey, ResourceRWAccess<BufferAccess>>,
-    images: HashMap<ImageResourceKey, ResourceRWAccess<ImageAccess>>,
+    buffers: HashMap<BufferResourceKey, ResourceRWAccess<BufferAccessInfo>>,
+    images: HashMap<ImageResourceKey, ResourceRWAccess<ImageAccessInfo>>,
 
     buffer_key_counter: u64,
     image_key_counter: u64,
@@ -228,8 +224,8 @@ impl SyncManagerInternal {
     fn add_buffer_access(
         &mut self,
         key: BufferResourceKey,
-        access: BufferAccess,
-    ) -> Vec<BufferAccess> {
+        access: BufferAccessInfo,
+    ) -> Vec<BufferAccessInfo> {
         if access.is_write() {
             Self::resource_write_access(&mut self.buffers, key, access)
         } else {
@@ -237,7 +233,11 @@ impl SyncManagerInternal {
         }
     }
 
-    fn add_image_access(&mut self, key: ImageResourceKey, access: ImageAccess) -> Vec<ImageAccess> {
+    fn add_image_access(
+        &mut self,
+        key: ImageResourceKey,
+        access: ImageAccessInfo,
+    ) -> Vec<ImageAccessInfo> {
         let old_layout = self.images.get(&key).and_then(|access| match access {
             ResourceRWAccess::WriteThenRead(last_write, _) => Some(last_write.layout),
             ResourceRWAccess::OnlyReads(_) => None,
@@ -254,11 +254,11 @@ trait VulkanResourceAccess: Clone {
     type Key: std::hash::Hash + Eq + Copy;
 }
 
-impl VulkanResourceAccess for BufferAccess {
+impl VulkanResourceAccess for BufferAccessInfo {
     type Key = BufferResourceKey;
 }
 
-impl VulkanResourceAccess for ImageAccess {
+impl VulkanResourceAccess for ImageAccessInfo {
     type Key = ImageResourceKey;
 }
 

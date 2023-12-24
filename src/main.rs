@@ -1,3 +1,4 @@
+pub mod bow;
 mod camera;
 mod config_loader;
 mod input_map;

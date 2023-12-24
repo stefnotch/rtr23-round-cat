@@ -1,16 +1,15 @@
-use std::{ops::BitOr, sync::Arc};
+use std::{borrow::Cow, ops::BitOr, sync::Arc};
 
 use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use ash::vk::{
-    self, AccessFlags2, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageMemoryBarrier2,
-    ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, PipelineStageFlags2,
-    SampleCountFlags, SharingMode,
+    self, Extent3D, Format, ImageCreateFlags, ImageLayout, ImageSubresourceRange, ImageTiling,
+    ImageType, ImageUsageFlags, SampleCountFlags, SharingMode,
 };
 
 use super::{
-    command_buffer::{commands::CmdCopyBufferToImage, CommandBuffer},
+    command_buffer::{CmdBlitImage, CmdCopyBufferToImage, CmdLayoutTransition, CommandBuffer},
     sync_manager::ImageResource,
 };
 
@@ -20,7 +19,6 @@ pub struct Image {
 
     pub format: vk::Format,
     pub extent: vk::Extent3D,
-    pub layout: vk::ImageLayout,
     pub mip_levels: u32,
     pub(super) resource: ImageResource,
     context: Arc<Context>,
@@ -33,7 +31,6 @@ impl Image {
 
         let format = create_info.format;
         let extent = create_info.extent;
-        let layout = create_info.initial_layout;
         let mip_levels = create_info.mip_levels;
 
         let image =
@@ -62,7 +59,6 @@ impl Image {
             memory,
             format,
             extent,
-            layout,
             mip_levels,
             resource,
             context,
@@ -70,25 +66,22 @@ impl Image {
     }
 
     pub fn copy_from_buffer_for_texture<T>(
-        &mut self,
+        self: &Arc<Self>,
         command_buffer: &mut CommandBuffer,
-        buffer: &Buffer<T>,
-    ) {
+        buffer: Arc<Buffer<T>>,
+    ) where
+        T: 'static,
+    {
         let num_levels = self.mip_levels;
-        let device = &self.context.device;
 
         // prepare copying base image to level 0
         // we use a full subresource range to transition the imagelayout of all mipmapping levels to TRANSFER_DST_OPTIMAL
-        self.insert_image_memory_barrier(
-            command_buffer,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            PipelineStageFlags2::NONE,
-            PipelineStageFlags2::TRANSFER,
-            AccessFlags2::empty(),
-            AccessFlags2::TRANSFER_WRITE,
-            self.full_subresource_range(vk::ImageAspectFlags::COLOR),
-        );
+        // TODO: This is probably not necessary
+        command_buffer.add_cmd(CmdLayoutTransition {
+            image: self.clone(),
+            new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            subresource_range: self.full_subresource_range(vk::ImageAspectFlags::COLOR),
+        });
 
         let buffer_image_copy = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -106,7 +99,7 @@ impl Image {
 
         command_buffer.add_cmd(CmdCopyBufferToImage {
             src_buffer: buffer,
-            dst_image: self,
+            dst_image: self.clone(),
             dst_image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             regions: Cow::Owned(vec![buffer_image_copy]),
         });
@@ -130,22 +123,18 @@ impl Image {
             let dst_size = Self::extent_to_offset(Self::mip_level(self.extent, level).unwrap());
 
             // transition image layout src level from TRANSFER_DST_OPTIMAL to TRANSFER_SRC_OPTIMAL
-            self.insert_image_memory_barrier(
-                command_buffer,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                PipelineStageFlags2::TRANSFER,
-                PipelineStageFlags2::TRANSFER,
-                AccessFlags2::TRANSFER_WRITE,
-                AccessFlags2::TRANSFER_READ,
-                ImageSubresourceRange {
+            // TODO: Remove some of these manual transitions
+            command_buffer.add_cmd(CmdLayoutTransition {
+                image: self.clone(),
+                new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                subresource_range: ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_mip_level: level - 1,
                     level_count: 1,
                     base_array_layer: 0,
                     layer_count: 1,
                 },
-            );
+            });
 
             let blit = vk::ImageBlit::builder()
                 .src_offsets([vk::Offset3D::default(), src_size])
@@ -164,90 +153,39 @@ impl Image {
                 })
                 .build();
 
-            unsafe {
-                device.cmd_blit_image(
-                    command_buffer,
-                    self.inner,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    self.inner,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    std::slice::from_ref(&blit),
-                    vk::Filter::LINEAR,
-                )
-            }
+            command_buffer.add_cmd(CmdBlitImage {
+                src_image: self.clone(),
+                dst_image: self.clone(),
+                regions: Cow::Owned(vec![blit]),
+                filter: vk::Filter::LINEAR,
+            });
 
             // transition image layout of previous mipmapping level from TRANSFER_SRC_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
-            self.insert_image_memory_barrier(
-                command_buffer,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                PipelineStageFlags2::TRANSFER,
-                PipelineStageFlags2::FRAGMENT_SHADER,
-                AccessFlags2::TRANSFER_READ,
-                AccessFlags2::SHADER_READ,
-                ImageSubresourceRange {
+            command_buffer.add_cmd(CmdLayoutTransition {
+                image: self.clone(),
+                new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                subresource_range: ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_mip_level: level - 1,
                     level_count: 1,
                     base_array_layer: 0,
                     layer_count: 1,
                 },
-            );
+            });
         }
 
         // transition image layout of last mipmapping level from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
-        self.insert_image_memory_barrier(
-            command_buffer,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            PipelineStageFlags2::TRANSFER,
-            PipelineStageFlags2::FRAGMENT_SHADER,
-            AccessFlags2::TRANSFER_WRITE,
-            AccessFlags2::SHADER_READ,
-            ImageSubresourceRange {
+        command_buffer.add_cmd(CmdLayoutTransition {
+            image: self.clone(),
+            new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            subresource_range: ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
                 base_mip_level: num_levels - 1,
                 level_count: 1,
                 base_array_layer: 0,
                 layer_count: 1,
             },
-        );
-        self.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    }
-
-    fn insert_image_memory_barrier(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        old_layout: vk::ImageLayout,
-        new_layout: vk::ImageLayout,
-        src_stage_mask: PipelineStageFlags2,
-        dst_stage_mask: PipelineStageFlags2,
-        src_access_mask: vk::AccessFlags2,
-        dst_access_mask: vk::AccessFlags2,
-        subresource_range: ImageSubresourceRange,
-    ) {
-        let barrier = vk::ImageMemoryBarrier2 {
-            old_layout,
-            new_layout,
-            src_stage_mask,
-            dst_stage_mask,
-            src_access_mask,
-            dst_access_mask,
-            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            image: self.inner,
-            subresource_range,
-            ..ImageMemoryBarrier2::default()
-        };
-
-        let dependency_info =
-            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
-
-        unsafe {
-            self.context
-                .synchronisation2_loader
-                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
-        };
+        });
     }
 
     pub fn max_mip_levels(extent: vk::Extent3D) -> u32 {

@@ -4,7 +4,7 @@ use std::{marker::PhantomData, ops::Deref, sync::Arc};
 use ash::{self, vk};
 
 use crate::find_memorytype_index;
-use crate::vulkan::command_buffer::commands::CmdCopyBuffer;
+use crate::vulkan::command_buffer::CmdCopyBuffer;
 use crate::vulkan::context::Context;
 
 use super::command_buffer::CommandBuffer;
@@ -41,15 +41,20 @@ pub struct UntypedBuffer {
     context: Arc<Context>,
 }
 
-pub struct Buffer<T> {
-    inner: UntypedBuffer,
-    _marker: PhantomData<T>,
+impl UntypedBuffer {
+    pub fn get_device_address(&self) -> vk::DeviceAddress {
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.inner);
+        unsafe {
+            self.context
+                .buffer_device_address
+                .get_buffer_device_address(&info)
+        }
+    }
 }
 
-pub struct BufferSlice<'a, T> {
-    pub buffer: &'a Buffer<T>,
-    pub offset: vk::DeviceSize,
-    pub size: vk::DeviceSize,
+pub struct Buffer<T: ?Sized> {
+    inner: UntypedBuffer,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Buffer<T> {
@@ -118,13 +123,7 @@ impl<T> Buffer<T> {
     }
 
     pub fn get_device_address(&self) -> vk::DeviceAddress {
-        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.get_vk_buffer());
-        unsafe {
-            self.inner
-                .context
-                .buffer_device_address
-                .get_buffer_device_address(&info)
-        }
+        self.inner.get_device_address()
     }
 
     pub fn copy_data<U: IntoSlice<T> + ?Sized>(&self, data: &U) {
@@ -146,13 +145,15 @@ impl<T> Buffer<T> {
     }
 
     pub fn copy_from(
-        &self,
+        self: &Arc<Self>,
         dst_offset: vk::DeviceSize,
         command_buffer: &mut CommandBuffer,
-        other: &BufferSlice<T>,
-    ) {
+        other: Arc<Buffer<T>>,
+        src_range: std::ops::Range<vk::DeviceSize>,
+    ) where
+        T: 'static,
+    {
         assert!(other
-            .buffer
             .inner
             .usage
             .contains(vk::BufferUsageFlags::TRANSFER_SRC));
@@ -162,35 +163,28 @@ impl<T> Buffer<T> {
             .contains(vk::BufferUsageFlags::TRANSFER_DST));
 
         command_buffer.add_cmd(CmdCopyBuffer {
-            src_buffer: self,
-            dst_buffer: other.buffer,
+            src_buffer: self.clone(),
+            dst_buffer: other,
             regions: Cow::Owned(vec![vk::BufferCopy {
                 dst_offset,
-                src_offset: other.offset,
-                size: other.size,
+                src_offset: src_range.start,
+                size: src_range.end - src_range.start,
             }]),
         });
-    }
-
-    pub fn get_slice(&self, offset: vk::DeviceSize, size: vk::DeviceSize) -> BufferSlice<T> {
-        BufferSlice {
-            buffer: self,
-            offset,
-            size,
-        }
     }
 
     pub fn get_untyped(&self) -> &UntypedBuffer {
         &self.inner
     }
 
-    pub fn copy_from_host<U: IntoSlice<T>>(
-        &self,
-        command_buffer: &mut CommandBuffer,
-        data: &U,
+    pub fn copy_from_host<'cmd, 'data, U: IntoSlice<T>>(
+        self: &Arc<Self>,
+        command_buffer: &mut CommandBuffer<'cmd>,
+        data: &'data U,
         data_size: vk::DeviceSize,
     ) where
         T: 'static,
+        'data: 'cmd,
     {
         let staging_buffer = Buffer::new(
             command_buffer.context().clone(),
@@ -200,7 +194,7 @@ impl<T> Buffer<T> {
         );
         staging_buffer.copy_data(data);
 
-        self.copy_from(0, command_buffer, &staging_buffer.get_slice(0, data_size));
+        self.copy_from(0, command_buffer, staging_buffer.into(), 0..data_size);
     }
 
     pub fn get_resource(&self) -> &BufferResource {

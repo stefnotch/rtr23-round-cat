@@ -159,7 +159,7 @@ impl GeometryPass {
                 unsafe {
                     self.context.device.cmd_bind_index_buffer(
                         command_buffer,
-                        *primitive.mesh.index_buffer,
+                        **primitive.mesh.index_buffer,
                         0,
                         vk::IndexType::UINT32,
                     )

@@ -1,4 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
@@ -9,7 +11,10 @@ use crate::scene::{RaytracingGeometry, RaytracingScene};
 use crate::transform::Transform;
 use crate::vulkan::acceleration_structure::AccelerationStructure;
 use crate::vulkan::buffer::Buffer;
-use crate::vulkan::command_buffer::commands::EndCommandBuffer;
+use crate::vulkan::command_buffer::{
+    AccelerationStructureBuildGeometryInfoKHR, AccelerationStructureGeometryData,
+    CmdBuildAccelerationStructures, EndCommandBuffer,
+};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferAllocateInfo};
 use crate::vulkan::command_pool::CommandPool;
 use crate::vulkan::context::Context;
@@ -31,7 +36,9 @@ pub fn setup(
     queue: vk::Queue,
     command_pool: CommandPool,
 ) -> Scene {
-    let device = &context.device;
+    let device = &context.clone().device;
+    let mut all_instances = vec![]; // TODO: This is a hack
+
     let mut setup_command_buffer = CommandBuffer::new(
         command_pool,
         CommandBufferAllocateInfo {
@@ -40,7 +47,6 @@ pub fn setup(
         },
     );
 
-    let mut image_data_buffers = vec![];
     let default_sampler = {
         let sampler_info = vk::SamplerCreateInfo::builder().build();
         let sampler = unsafe { device.create_sampler(&sampler_info, None) }
@@ -69,7 +75,7 @@ pub fn setup(
 
         // default base color should be a 1x1 white image (255, 255, 255)
         let base_color = {
-            let mut image = Image::new(context.clone(), &image_info);
+            let image = Arc::new(Image::new(context.clone(), &image_info));
 
             let image_data_buffer: Buffer<u8> = Buffer::new(
                 context.clone(),
@@ -78,19 +84,18 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0xFFu8, 0xFF, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(&mut setup_command_buffer, &image_data_buffer);
-            image_data_buffers.push(image_data_buffer);
+            image.copy_from_buffer_for_texture(&mut setup_command_buffer, image_data_buffer.into());
 
             Arc::new(ImageView::new_default(
                 context.clone(),
-                Arc::new(image),
+                image,
                 vk::ImageAspectFlags::COLOR,
             ))
         };
 
         // default normal map should be a 1x1 purple image (128, 128, 255)
         let normal_map = {
-            let mut image = Image::new(context.clone(), &image_info);
+            let image = Arc::new(Image::new(context.clone(), &image_info));
 
             let image_data_buffer: Buffer<u8> = Buffer::new(
                 context.clone(),
@@ -99,12 +104,11 @@ pub fn setup(
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             image_data_buffer.copy_data(&vec![0x80u8, 0x80, 0xFF, 0xFF]);
-            image.copy_from_buffer_for_texture(&mut setup_command_buffer, &image_data_buffer);
-            image_data_buffers.push(image_data_buffer);
+            image.copy_from_buffer_for_texture(&mut setup_command_buffer, image_data_buffer.into());
 
             Arc::new(ImageView::new_default(
                 context.clone(),
-                Arc::new(image),
+                image,
                 vk::ImageAspectFlags::COLOR,
             ))
         };
@@ -134,7 +138,6 @@ pub fn setup(
                         &mut setup_command_buffer,
                         loaded_primitive.material.base_color_texture.as_ref(),
                         &mut texture_map,
-                        &mut image_data_buffers,
                         &mut sampler_map,
                         default_base_color_image_view.clone(),
                         default_sampler.clone(),
@@ -146,7 +149,6 @@ pub fn setup(
                         &mut setup_command_buffer,
                         loaded_primitive.material.normal_texture.as_ref(),
                         &mut texture_map,
-                        &mut image_data_buffers,
                         &mut sampler_map,
                         default_normal_map_image_view.clone(),
                         default_sampler.clone(),
@@ -161,7 +163,6 @@ pub fn setup(
                             .metallic_roughness_texture
                             .as_ref(),
                         &mut texture_map,
-                        &mut image_data_buffers,
                         &mut sampler_map,
                         default_base_color_image_view.clone(),
                         default_sampler.clone(),
@@ -193,16 +194,19 @@ pub fn setup(
                             WriteDescriptorSet::image_view_sampler(
                                 1,
                                 base_color_texture.image_view.clone(),
+                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                                 base_color_texture.sampler.clone(),
                             ),
                             WriteDescriptorSet::image_view_sampler(
                                 2,
                                 normal_texture.image_view.clone(),
+                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                                 normal_texture.sampler.clone(),
                             ),
                             WriteDescriptorSet::image_view_sampler(
                                 3,
                                 metallic_roughness_texture.image_view.clone(),
+                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                                 metallic_roughness_texture.sampler.clone(),
                             ),
                         ],
@@ -221,148 +225,69 @@ pub fn setup(
                     })
                 })
                 .clone();
+
             let mesh = model_map
                 .entry(loaded_primitive.mesh.id())
                 .or_insert_with(|| {
-                    let vertex_buffer = {
-                        let vertices = &loaded_primitive.mesh.vertices;
-                        let buffer = Buffer::new(
-                            context.clone(),
-                            vertices.get_vec_size(),
-                            vk::BufferUsageFlags::TRANSFER_DST
-                                | vk::BufferUsageFlags::VERTEX_BUFFER
-                                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
-                            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                        );
-                        buffer.copy_from_host(
-                            &mut setup_command_buffer,
-                            vertices,
-                            vertices.get_vec_size(),
-                        );
-                        buffer
-                    };
-
-                    let index_buffer = {
-                        let indices = &loaded_primitive.mesh.indices;
-                        let buffer = Buffer::new(
-                            context.clone(),
-                            indices.get_vec_size(),
-                            vk::BufferUsageFlags::TRANSFER_DST
-                                | vk::BufferUsageFlags::INDEX_BUFFER
-                                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
-                            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                        );
-                        buffer.copy_from_host(
-                            &mut setup_command_buffer,
-                            indices,
-                            indices.get_vec_size(),
-                        );
-                        buffer
-                    };
-
-                    Arc::new(Mesh {
-                        index_buffer,
-                        vertex_buffer,
-                        num_indices: loaded_primitive.mesh.indices.len() as u32,
-                        num_vertices: loaded_primitive.mesh.vertices.len() as u32,
-                    })
+                    create_mesh(
+                        context.clone(),
+                        &mut setup_command_buffer,
+                        loaded_primitive.mesh.clone(),
+                    )
                 })
                 .clone();
 
             let raytracing_geometry = raytracing_geometry_map
                 .entry(loaded_primitive.mesh.id())
                 .or_insert_with(|| {
-                    let memory_barrier = vk::BufferMemoryBarrier2KHR::builder()
-                        .src_stage_mask(vk::PipelineStageFlags2KHR::TRANSFER)
-                        .src_access_mask(vk::AccessFlags2KHR::TRANSFER_WRITE)
-                        .dst_stage_mask(
-                            vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR,
-                        )
-                        .dst_access_mask(
-                            vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_READ_KHR
-                                | vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR,
-                        )
-                        .buffer(*mesh.vertex_buffer)
-                        .size(vk::WHOLE_SIZE)
-                        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                        .build();
-                    unsafe {
-                        context.synchronisation2_loader.cmd_pipeline_barrier2(
-                            *setup_command_buffer,
-                            &vk::DependencyInfo::builder()
-                                .buffer_memory_barriers(std::slice::from_ref(&memory_barrier)),
-                        );
-                    };
-
-                    let vertex_address = mesh.vertex_buffer.get_device_address();
-                    let index_address = mesh.index_buffer.get_device_address();
                     let triangle_count = mesh.num_indices / 3;
 
-                    let geometry_triangles_data =
-                        vk::AccelerationStructureGeometryTrianglesDataKHR {
-                            vertex_format: vk::Format::R32G32B32_SFLOAT,
-                            vertex_data: vk::DeviceOrHostAddressConstKHR {
-                                device_address: vertex_address,
-                            },
-                            vertex_stride: std::mem::size_of::<crate::scene::Vertex>() as u64,
-                            max_vertex: mesh.num_vertices - 1,
-                            index_type: vk::IndexType::UINT32,
-                            index_data: vk::DeviceOrHostAddressConstKHR {
-                                device_address: index_address,
-                            },
-                            // Null means identity transform
-                            transform_data: Default::default(),
-                            ..Default::default()
-                        };
-
-                    let geometry_data = vk::AccelerationStructureGeometryKHR {
-                        geometry_type: vk::GeometryTypeKHR::TRIANGLES,
-                        geometry: vk::AccelerationStructureGeometryDataKHR {
-                            triangles: geometry_triangles_data,
-                        },
+                    let geometry_data = AccelerationStructureGeometryData::Triangles {
+                        vertex_format: vk::Format::R32G32B32_SFLOAT,
+                        vertex_data: mesh.vertex_buffer.clone(),
+                        vertex_stride: std::mem::size_of::<crate::scene::Vertex>() as u64,
+                        max_vertex: mesh.num_vertices - 1,
+                        index_type: vk::IndexType::UINT32,
+                        index_data: mesh.index_buffer.clone(),
+                        transform_data: None,
                         flags: vk::GeometryFlagsKHR::OPAQUE,
-                        ..Default::default()
                     };
-                    let geometry_build_info =
-                        vk::AccelerationStructureBuildGeometryInfoKHR::builder()
-                            .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
-                            .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
-                            .geometries(std::slice::from_ref(&geometry_data));
+                    let mut geometry_build_info = AccelerationStructureBuildGeometryInfoKHR {
+                        ty: vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL,
+                        flags: vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE,
+                        mode: vk::BuildAccelerationStructureModeKHR::BUILD,
+                        dst_acceleration_structure: None,
+                        src_acceleration_structure: None,
+                        geometry: Cow::Owned(vec![geometry_data]),
+                        scratch_data: None,
+                    };
 
                     let build_sizes_info = unsafe {
+                        let (g, _a) = geometry_build_info.as_unsafe_vk();
                         context
                             .context_raytracing
                             .acceleration_structure
                             .get_acceleration_structure_build_sizes(
                                 vk::AccelerationStructureBuildTypeKHR::DEVICE,
-                                &geometry_build_info,
+                                &g,
                                 std::slice::from_ref(&triangle_count),
                             )
                     };
-                    let blas = AccelerationStructure::new(
+                    let blas = Arc::new(AccelerationStructure::new(
                         context.clone(),
                         vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL,
                         build_sizes_info,
-                    );
+                    ));
 
-                    let scratch_buffer: Buffer<u8> = Buffer::new(
+                    let scratch_buffer = Arc::new(Buffer::new(
                         context.clone(),
                         build_sizes_info.build_scratch_size,
                         vk::BufferUsageFlags::STORAGE_BUFFER
                             | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                         vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                    );
-
-                    let geometry_build_info = geometry_build_info
-                        .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
-                        .dst_acceleration_structure(blas.inner)
-                        .scratch_data(vk::DeviceOrHostAddressKHR {
-                            device_address: scratch_buffer.get_device_address(),
-                        });
-                    setup_command_buffer.add_resource(scratch_buffer);
+                    ));
+                    geometry_build_info.dst_acceleration_structure = Some(blas.clone());
+                    geometry_build_info.scratch_data = Some(scratch_buffer);
 
                     let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
                         primitive_count: triangle_count,
@@ -370,20 +295,12 @@ pub fn setup(
                         first_vertex: 0,
                         transform_offset: 0,
                     };
-                    let build_range_infos = std::slice::from_ref(&build_range_info);
 
-                    unsafe {
-                        context
-                            .context_raytracing
-                            .acceleration_structure
-                            .cmd_build_acceleration_structures(
-                                *setup_command_buffer,
-                                std::slice::from_ref(&geometry_build_info),
-                                std::slice::from_ref(&build_range_infos),
-                            )
-                    };
+                    setup_command_buffer.add_cmd(CmdBuildAccelerationStructures {
+                        build_infos: vec![(geometry_build_info, vec![build_range_info])],
+                    });
 
-                    Arc::new(RaytracingGeometry { blas })
+                    RaytracingGeometry { blas }
                 })
                 .clone();
             let primitive = Primitive {
@@ -416,92 +333,70 @@ pub fn setup(
                 instances.push(instance);
             }
         }
+        all_instances.push(instances);
+        let instances = all_instances.last().unwrap();
 
-        let instances_buffer: Buffer<vk::AccelerationStructureInstanceKHR> = Buffer::new(
-            context.clone(),
-            instances.get_vec_size(),
-            vk::BufferUsageFlags::TRANSFER_DST
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
+        let instances_buffer: Arc<Buffer<vk::AccelerationStructureInstanceKHR>> =
+            Arc::new(Buffer::new(
+                context.clone(),
+                instances.get_vec_size(),
+                vk::BufferUsageFlags::TRANSFER_DST
+                    | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                    | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            ));
         instances_buffer.copy_from_host(
             &mut setup_command_buffer,
-            &instances,
+            instances,
             instances.get_vec_size(),
         );
         // Wait for copy to finish before building acceleration structure
-        {
-            let memory_barrier = vk::BufferMemoryBarrier2KHR::builder()
-                .src_stage_mask(vk::PipelineStageFlags2KHR::TRANSFER)
-                .src_access_mask(vk::AccessFlags2KHR::TRANSFER_WRITE)
-                .dst_stage_mask(vk::PipelineStageFlags2KHR::ACCELERATION_STRUCTURE_BUILD_KHR)
-                .dst_access_mask(vk::AccessFlags2KHR::ACCELERATION_STRUCTURE_WRITE_KHR)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(*instances_buffer)
-                .size(vk::WHOLE_SIZE);
-            unsafe {
-                context.synchronisation2_loader.cmd_pipeline_barrier2(
-                    *setup_command_buffer,
-                    &vk::DependencyInfo::builder()
-                        .buffer_memory_barriers(std::slice::from_ref(&memory_barrier)),
-                );
+
+        let acceleration_structure_geometry =
+            AccelerationStructureGeometryData::<(), ()>::Instances {
+                is_array_of_pointers: false,
+                data: instances_buffer,
+                flags: vk::GeometryFlagsKHR::OPAQUE,
             };
-        }
 
-        let acceleration_structure_geometry = vk::AccelerationStructureGeometryKHR {
-            geometry_type: vk::GeometryTypeKHR::INSTANCES,
-            geometry: vk::AccelerationStructureGeometryDataKHR {
-                instances: vk::AccelerationStructureGeometryInstancesDataKHR {
-                    data: vk::DeviceOrHostAddressConstKHR {
-                        device_address: instances_buffer.get_device_address(),
-                    },
-                    array_of_pointers: vk::FALSE,
-                    ..Default::default()
-                },
-            },
-            flags: vk::GeometryFlagsKHR::OPAQUE,
-            ..Default::default()
+        let mut geometry_build_info = AccelerationStructureBuildGeometryInfoKHR {
+            ty: vk::AccelerationStructureTypeKHR::TOP_LEVEL,
+            flags: vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE,
+            mode: vk::BuildAccelerationStructureModeKHR::BUILD,
+            dst_acceleration_structure: None,
+            src_acceleration_structure: None,
+            geometry: Cow::Owned(vec![acceleration_structure_geometry]),
+            scratch_data: None,
         };
-        setup_command_buffer.add_resource(instances_buffer);
 
-        let geometry_build_info = vk::AccelerationStructureBuildGeometryInfoKHR::builder()
-            .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL)
-            .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
-            .geometries(std::slice::from_ref(&acceleration_structure_geometry))
-            .mode(vk::BuildAccelerationStructureModeKHR::BUILD);
         let instances_count = instances.len() as u32;
         let build_size_info = unsafe {
+            let (g, _a) = geometry_build_info.as_unsafe_vk();
             context
                 .context_raytracing
                 .acceleration_structure
                 .get_acceleration_structure_build_sizes(
                     vk::AccelerationStructureBuildTypeKHR::DEVICE,
-                    &geometry_build_info,
+                    &g,
                     std::slice::from_ref(&instances_count),
                 )
         };
 
-        let tlas = AccelerationStructure::new(
+        let tlas = Arc::new(AccelerationStructure::new(
             context.clone(),
             vk::AccelerationStructureTypeKHR::TOP_LEVEL,
             build_size_info,
-        );
+        ));
 
-        let scratch_buffer: Buffer<u8> = Buffer::new(
+        let scratch_buffer = Arc::new(Buffer::new(
             context.clone(),
             build_size_info.build_scratch_size,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
+        ));
 
-        let geometry_build_info = geometry_build_info
-            .dst_acceleration_structure(tlas.inner)
-            .scratch_data(vk::DeviceOrHostAddressKHR {
-                device_address: scratch_buffer.get_device_address(),
-            });
-        setup_command_buffer.add_resource(scratch_buffer);
+        geometry_build_info.dst_acceleration_structure = Some(tlas.clone());
+        geometry_build_info.scratch_data = Some(scratch_buffer);
 
         let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
             primitive_count: instances.len() as u32,
@@ -509,29 +404,18 @@ pub fn setup(
             first_vertex: 0,
             transform_offset: 0,
         };
-        let build_range_infos = std::slice::from_ref(&build_range_info);
 
-        unsafe {
-            context
-                .context_raytracing
-                .acceleration_structure
-                .cmd_build_acceleration_structures(
-                    *setup_command_buffer,
-                    std::slice::from_ref(&geometry_build_info),
-                    std::slice::from_ref(&build_range_infos),
-                )
-        };
+        setup_command_buffer.add_cmd(CmdBuildAccelerationStructures {
+            build_infos: vec![(geometry_build_info, vec![build_range_info])],
+        });
 
-        RaytracingScene {
-            tlas: Arc::new(tlas),
-        }
+        RaytracingScene { tlas: tlas }
     };
 
     setup_command_buffer.add_cmd(EndCommandBuffer {});
 
     // submit
     setup_command_buffer.submit(context, queue);
-
     unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
 
     Scene {
@@ -540,12 +424,60 @@ pub fn setup(
     }
 }
 
-fn load_texture(
+fn create_mesh(
     context: Arc<Context>,
-    setup_command_buffer: &mut CommandBuffer,
+    mut setup_command_buffer: &mut CommandBuffer,
+    mesh: Arc<loader::LoadedMesh>,
+) -> Arc<Mesh> {
+    let vertex_buffer = {
+        let buffer = Arc::new(Buffer::new(
+            context.clone(),
+            mesh.vertices.get_vec_size(),
+            vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::VERTEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        ));
+        buffer.copy_from_host(
+            &mut setup_command_buffer,
+            &mesh.vertices,
+            mesh.vertices.get_vec_size(),
+        );
+        buffer
+    };
+
+    let index_buffer = {
+        let buffer = Arc::new(Buffer::new(
+            context.clone(),
+            mesh.indices.get_vec_size(),
+            vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        ));
+        buffer.copy_from_host(
+            &mut setup_command_buffer,
+            &mesh.indices,
+            mesh.indices.get_vec_size(),
+        );
+        buffer
+    };
+
+    Arc::new(Mesh {
+        index_buffer,
+        vertex_buffer,
+        num_indices: mesh.indices.len() as u32,
+        num_vertices: mesh.vertices.len() as u32,
+    })
+}
+
+fn load_texture<'a>(
+    context: Arc<Context>,
+    setup_command_buffer: &mut CommandBuffer<'a>,
     loaded_texture: Option<&LoadedTexture>,
     texture_map: &mut HashMap<loader::AssetId, Arc<ImageView>>,
-    image_data_buffers: &mut Vec<Buffer<u8>>,
     sampler_map: &mut HashMap<loader::AssetId, Arc<Sampler>>,
     default_base_color_image_view: Arc<ImageView>,
     default_sampler: Arc<Sampler>,
@@ -560,7 +492,6 @@ fn load_texture(
                         v.image.clone(),
                         context.clone(),
                         setup_command_buffer,
-                        image_data_buffers,
                         create_mipmapping,
                     )
                 })
@@ -627,7 +558,6 @@ fn create_image(
     loaded_image: Arc<LoadedImage>,
     context: Arc<Context>,
     setup_command_buffer: &mut CommandBuffer,
-    image_data_buffers: &mut Vec<Buffer<u8>>,
     create_mipmapping: bool,
 ) -> Arc<ImageView> {
     fn convert_format(format: (loader::ImageFormat, loader::ColorSpace)) -> vk::Format {
@@ -699,7 +629,7 @@ fn create_image(
         )
         .initial_layout(vk::ImageLayout::UNDEFINED)
         .build();
-    let mut image = Image::new(context.clone(), &image_info);
+    let image = Arc::new(Image::new(context.clone(), &image_info));
 
     let image_data_buffer: Buffer<u8> = Buffer::new(
         context.clone(),
@@ -708,12 +638,11 @@ fn create_image(
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
     );
     image_data_buffer.copy_data(&loaded_image.data.bytes);
-    image.copy_from_buffer_for_texture(setup_command_buffer, &image_data_buffer);
-    image_data_buffers.push(image_data_buffer);
+    image.copy_from_buffer_for_texture(setup_command_buffer, image_data_buffer.into());
 
     Arc::new(ImageView::new_default(
         context.clone(),
-        Arc::new(image),
+        image,
         vk::ImageAspectFlags::COLOR,
     ))
 }

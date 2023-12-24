@@ -144,12 +144,13 @@ impl WriteDescriptorSet {
     pub fn image_view_sampler(
         binding: u32,
         image_view: Arc<ImageView>,
+        layout: vk::ImageLayout,
         sampler: Arc<Sampler>,
     ) -> WriteDescriptorSet {
         let info = vk::DescriptorImageInfo::builder()
             .sampler(sampler.inner)
             .image_view(image_view.inner)
-            .image_layout(image_view.image.layout)
+            .image_layout(layout)
             .build();
 
         WriteDescriptorSet {

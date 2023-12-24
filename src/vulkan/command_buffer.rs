@@ -1,4 +1,7 @@
-pub mod commands;
+mod commands;
+mod sync_commands;
+pub use commands::*;
+pub use sync_commands::*;
 
 use std::sync::Arc;
 
@@ -10,7 +13,7 @@ use super::{command_pool::CommandPool, context::Context, sync_manager::SyncManag
 pub struct CommandBuffer<'a> {
     command_pool: CommandPool,
     allocate_info: CommandBufferAllocateInfo,
-    commands: Vec<Box<dyn CommandBufferCmd<'a>>>,
+    commands: Vec<Box<dyn CommandBufferCmd<'a> + 'a>>,
 }
 
 pub struct CommandBufferAllocateInfo {

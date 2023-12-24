@@ -24,11 +24,12 @@ pub struct Model {
 pub struct Primitive {
     pub material: Arc<Material>,
     pub mesh: Arc<Mesh>,
-    pub raytracing_geometry: Arc<RaytracingGeometry>,
+    pub raytracing_geometry: RaytracingGeometry,
 }
 
+#[derive(Clone)]
 pub struct RaytracingGeometry {
-    pub blas: AccelerationStructure,
+    pub blas: Arc<AccelerationStructure>,
 }
 
 pub struct RaytracingScene {
