@@ -3,11 +3,61 @@ mod sync_commands;
 pub use commands::*;
 pub use sync_commands::*;
 
-use std::sync::Arc;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    sync::Arc,
+};
 
 use ash::vk::{self};
 
 use super::{command_pool::CommandPool, context::Context, sync_manager::SyncManagerLock};
+
+struct ResourceHolder {
+    resources: RefCell<AppendOnlyVec<Box<dyn std::any::Any>>>,
+}
+
+struct AppendOnlyVec<T> {
+    data: Vec<T>,
+}
+impl<T> AppendOnlyVec<T> {
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
+    pub fn push<'a>(&'a mut self, value: T) -> &'a mut T {
+        self.data.push(value);
+        self.data.last_mut().unwrap()
+    }
+}
+
+impl ResourceHolder {
+    pub fn new() -> Self {
+        Self {
+            resources: RefCell::new(AppendOnlyVec::new()),
+        }
+    }
+
+    pub fn add_resource<'a, T: 'static + Drop>(&'a self, resource: T) -> RefMut<'a, T> {
+        let resource = Box::new(resource);
+
+        RefMut::map(self.resources.borrow_mut(), move |resources| {
+            resources.push(resource).downcast_mut().unwrap()
+        })
+    }
+}
+
+#[test]
+fn testo() {
+    let holder = ResourceHolder::new();
+    let res = vec![1, 2, 3];
+    let res = holder.add_resource(res);
+    println!("{:?}", res);
+    let res_2 = holder.add_resource(vec![1, 2, 3]);
+    println!("{:?}", res_2);
+    let res_3 = holder.add_resource(vec![1, 2, 3]);
+    println!("{:?}", res_3);
+    println!("{:?} {:?} {:?}", res[0], res_2[2], res_3[1]);
+}
 
 #[must_use]
 pub struct CommandBuffer<'a> {
