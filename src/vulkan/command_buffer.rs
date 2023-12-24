@@ -5,7 +5,8 @@ pub use sync_commands::*;
 
 use std::{
     cell::{Ref, RefCell, RefMut},
-    sync::Arc,
+    collections::HashMap,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 use ash::vk::{self};
@@ -13,35 +14,27 @@ use ash::vk::{self};
 use super::{command_pool::CommandPool, context::Context, sync_manager::SyncManagerLock};
 
 struct ResourceHolder {
-    resources: RefCell<AppendOnlyVec<Box<dyn std::any::Any>>>,
-}
-
-struct AppendOnlyVec<T> {
-    data: Vec<T>,
-}
-impl<T> AppendOnlyVec<T> {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
-    }
-
-    pub fn push<'a>(&'a mut self, value: T) -> &'a mut T {
-        self.data.push(value);
-        self.data.last_mut().unwrap()
-    }
+    resources: RefCell<HashMap<u64, Box<dyn std::any::Any>>>,
+    counter: AtomicU64,
 }
 
 impl ResourceHolder {
     pub fn new() -> Self {
         Self {
-            resources: RefCell::new(AppendOnlyVec::new()),
+            resources: RefCell::new(HashMap::new()),
+            counter: AtomicU64::new(0),
         }
     }
 
-    pub fn add_resource<'a, T: 'static + Drop>(&'a self, resource: T) -> RefMut<'a, T> {
+    pub fn add_resource<'a, T: 'static + Drop>(&'a self, resource: T) -> Ref<'a, T> {
         let resource = Box::new(resource);
+        let id = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.resources.borrow_mut().insert(id, resource);
 
-        RefMut::map(self.resources.borrow_mut(), move |resources| {
-            resources.push(resource).downcast_mut().unwrap()
+        Ref::map(self.resources.borrow(), move |resources| {
+            resources.get(&id).unwrap().downcast_ref().unwrap()
         })
     }
 }
