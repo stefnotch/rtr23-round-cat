@@ -6,6 +6,7 @@ use ash::vk::{self, ImageUsageFlags};
 use crevice::std140::AsStd140;
 use ultraviolet::Mat4;
 
+use crate::bow::Bow;
 use crate::loader::LoadedTexture;
 use crate::scene::{RaytracingGeometry, RaytracingScene};
 use crate::transform::Transform;
@@ -37,7 +38,6 @@ pub fn setup(
     command_pool: CommandPool,
 ) -> Scene {
     let device = &context.clone().device;
-    let mut all_instances = vec![]; // TODO: This is a hack
 
     let mut setup_command_buffer = CommandBuffer::new(
         command_pool,
@@ -229,11 +229,8 @@ pub fn setup(
             let mesh = model_map
                 .entry(loaded_primitive.mesh.id())
                 .or_insert_with(|| {
-                    create_mesh(
-                        context.clone(),
-                        &mut setup_command_buffer,
-                        loaded_primitive.mesh.clone(),
-                    )
+                    let mesh = loaded_primitive.mesh.clone();
+                    create_mesh(context.clone(), &mut setup_command_buffer, mesh)
                 })
                 .clone();
 
@@ -333,13 +330,13 @@ pub fn setup(
                 instances.push(instance);
             }
         }
-        all_instances.push(instances);
-        let instances = all_instances.last().unwrap();
 
+        let instances_vec_size = instances.get_vec_size();
+        let instances_count = instances.len() as u32;
         let instances_buffer: Arc<Buffer<vk::AccelerationStructureInstanceKHR>> =
             Arc::new(Buffer::new(
                 context.clone(),
-                instances.get_vec_size(),
+                instances_vec_size,
                 vk::BufferUsageFlags::TRANSFER_DST
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
                     | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR,
@@ -347,8 +344,8 @@ pub fn setup(
             ));
         instances_buffer.copy_from_host(
             &mut setup_command_buffer,
-            instances,
-            instances.get_vec_size(),
+            Bow::Owned(instances),
+            instances_vec_size,
         );
         // Wait for copy to finish before building acceleration structure
 
@@ -369,7 +366,6 @@ pub fn setup(
             scratch_data: None,
         };
 
-        let instances_count = instances.len() as u32;
         let build_size_info = unsafe {
             let (g, _a) = geometry_build_info.as_unsafe_vk();
             context
@@ -399,7 +395,7 @@ pub fn setup(
         geometry_build_info.scratch_data = Some(scratch_buffer);
 
         let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR {
-            primitive_count: instances.len() as u32,
+            primitive_count: instances_count,
             primitive_offset: 0,
             first_vertex: 0,
             transform_offset: 0,
@@ -424,11 +420,15 @@ pub fn setup(
     }
 }
 
-fn create_mesh(
+fn create_mesh<'a, 'cmd>(
     context: Arc<Context>,
-    mut setup_command_buffer: &mut CommandBuffer,
+    mut setup_command_buffer: &mut CommandBuffer<'cmd>,
     mesh: Arc<loader::LoadedMesh>,
-) -> Arc<Mesh> {
+) -> Arc<Mesh>
+where
+    'a: 'cmd,
+{
+    let mesh = setup_command_buffer.add_referenced_resource(mesh);
     let vertex_buffer = {
         let buffer = Arc::new(Buffer::new(
             context.clone(),
@@ -441,7 +441,7 @@ fn create_mesh(
         ));
         buffer.copy_from_host(
             &mut setup_command_buffer,
-            &mesh.vertices,
+            Bow::Borrowed(&mesh.vertices),
             mesh.vertices.get_vec_size(),
         );
         buffer
@@ -459,7 +459,7 @@ fn create_mesh(
         ));
         buffer.copy_from_host(
             &mut setup_command_buffer,
-            &mesh.indices,
+            Bow::Borrowed(&mesh.indices),
             mesh.indices.get_vec_size(),
         );
         buffer

@@ -7,6 +7,12 @@ pub enum Bow<'a, T> {
     Owned(T),
 }
 
+impl<'a, T> Bow<'a, T> {
+    pub fn as_ref(&self) -> &T {
+        self.deref()
+    }
+}
+
 impl<'a, T> From<&'a T> for Bow<'a, T> {
     fn from(value: &'a T) -> Self {
         Self::Borrowed(value)
