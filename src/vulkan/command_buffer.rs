@@ -14,7 +14,6 @@ pub struct CommandBuffer<'a> {
     command_pool: CommandPool,
     allocate_info: CommandBufferAllocateInfo,
     commands: Vec<Box<dyn CommandBufferCmd<'a> + 'a>>,
-    referenced_resources: Vec<Arc<dyn std::any::Any + 'static>>,
 }
 
 pub struct CommandBufferAllocateInfo {
@@ -36,7 +35,6 @@ impl<'a> CommandBuffer<'a> {
             command_pool,
             allocate_info,
             commands: Vec::new(),
-            referenced_resources: Vec::new(),
         }
     }
 
@@ -46,15 +44,6 @@ impl<'a> CommandBuffer<'a> {
 
     pub fn add_cmd<C: CommandBufferCmd<'a> + 'a>(&mut self, cmd: C) {
         self.commands.push(Box::new(cmd));
-    }
-
-    pub fn add_referenced_resource<R: 'static>(&mut self, resource: Arc<R>) -> &R {
-        self.referenced_resources.push(resource);
-        self.referenced_resources
-            .last()
-            .unwrap()
-            .downcast_ref()
-            .unwrap()
     }
 
     pub fn submit(
