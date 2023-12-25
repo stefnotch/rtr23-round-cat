@@ -67,6 +67,7 @@ impl BufferAccessInfo {
 #[derive(Clone)]
 pub struct ImageAccess {
     pub image: Arc<Image>,
+    pub layout: vk::ImageLayout,
     pub access: ImageAccessInfo,
 }
 
@@ -74,7 +75,6 @@ pub struct ImageAccess {
 pub struct ImageAccessInfo {
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
-    pub layout: vk::ImageLayout,
     pub subresource_range: vk::ImageSubresourceRange,
 }
 
@@ -88,17 +88,21 @@ impl ImageAccess {
     ) -> Self {
         Self {
             image,
+            layout,
             access: ImageAccessInfo {
                 access,
                 stage,
-                layout,
                 subresource_range,
             },
         }
     }
 }
 impl ImageAccessInfo {
-    pub fn is_write(&self, old_layout: Option<vk::ImageLayout>) -> bool {
-        is_write(self.access) || Some(self.layout) != old_layout
+    pub fn is_write(
+        &self,
+        new_layout: vk::ImageLayout,
+        old_layout: Option<vk::ImageLayout>,
+    ) -> bool {
+        is_write(self.access) || Some(new_layout) != old_layout
     }
 }

@@ -4,26 +4,13 @@ mod sync_commands;
 pub use commands::*;
 pub use sync_commands::*;
 
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-    sync::{atomic::AtomicU64, Arc},
-};
+use std::sync::Arc;
 
 use ash::vk::{self};
 
 use self::cmd_args::CommandBufferCmdArgs;
 
-use super::{
-    buffer::UntypedBuffer,
-    command_pool::CommandPool,
-    context::Context,
-    image::Image,
-    sync_manager::{
-        resource_access::{BufferAccess, ImageAccess},
-        SyncManagerLock,
-    },
-};
+use super::{command_pool::CommandPool, context::Context};
 
 #[must_use]
 pub struct CommandBuffer<'a> {

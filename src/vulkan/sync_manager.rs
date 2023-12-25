@@ -46,6 +46,14 @@ impl SyncManager {
     pub fn lock(&self) -> SyncManagerLock {
         SyncManagerLock::new(self)
     }
+
+    /// Call this after waiting for the device to be idle.
+    pub fn clear_all(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        for (_, access) in inner.buffers.iter_mut() {
+            *access = ResourceRWAccess::OnlyReads(vec![]);
+        }
+    }
 }
 
 pub struct SyncManagerLock<'a> {
@@ -67,6 +75,7 @@ impl<'a> SyncManagerLock<'a> {
     ) -> CmdPipelineBarrier {
         // TODO: Optimise this by constructing a smol graph of dependencies and only adding barriers where necessary.
         // e.g. If we know that "A -> B", and then in a shader we read both "A" and "B", then we only need a barrier for "B".
+        // TODO: Assert that the image_accesses don't overlap. (e.g. reading from the same image with different layouts. Aka writing to the same image multiple times.)
 
         let buffer_memory_barriers = buffer_accesses
             .into_iter()
@@ -75,39 +84,49 @@ impl<'a> SyncManagerLock<'a> {
                     .inner
                     .add_buffer_access(buffer.resource.key, access.clone());
 
-                wait_for.into_iter().map(move |old| BufferMemoryBarrier {
-                    src_stage_mask: old.stage,
-                    src_access_mask: old.access,
-                    dst_stage_mask: access.stage,
-                    dst_access_mask: access.access,
-                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    buffer: buffer.clone(),
-                    offset: access.offset,
-                    size: access.size,
-                })
+                wait_for
+                    .into_iter()
+                    // If there's no access, then there's no need for a barrier.
+                    .filter(|old| old.access != vk::AccessFlags2::NONE)
+                    .map(move |old| BufferMemoryBarrier {
+                        src_stage_mask: old.stage,
+                        src_access_mask: old.access,
+                        dst_stage_mask: access.stage,
+                        dst_access_mask: access.access,
+                        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        buffer: buffer.clone(),
+                        offset: access.offset,
+                        size: access.size,
+                    })
             })
             .collect();
 
         let image_memory_barriers = image_accesses
             .into_iter()
-            .flat_map(|ImageAccess { image, access }| {
-                let wait_for = self
-                    .inner
-                    .add_image_access(image.resource.key, access.clone());
-                wait_for.into_iter().map(move |old| ImageMemoryBarrier {
-                    src_stage_mask: old.stage,
-                    src_access_mask: old.access,
-                    dst_stage_mask: access.stage,
-                    dst_access_mask: access.access,
-                    old_layout: old.layout,
-                    new_layout: access.layout,
-                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    image: image.clone(),
-                    subresource_range: access.subresource_range,
-                })
-            })
+            .flat_map(
+                |ImageAccess {
+                     image,
+                     layout,
+                     access,
+                 }| {
+                    let (old_layout, wait_for) =
+                        self.inner
+                            .add_image_access(image.resource.key, layout, access.clone());
+                    wait_for.into_iter().map(move |old| ImageMemoryBarrier {
+                        src_stage_mask: old.stage,
+                        src_access_mask: old.access,
+                        dst_stage_mask: access.stage,
+                        dst_access_mask: access.access,
+                        old_layout,
+                        new_layout: layout,
+                        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        image: image.clone(),
+                        subresource_range: access.subresource_range,
+                    })
+                },
+            )
             .collect();
 
         CmdPipelineBarrier {
@@ -148,6 +167,7 @@ impl Drop for ImageResource {
 struct SyncManagerInternal {
     buffers: HashMap<BufferResourceKey, ResourceRWAccess<BufferAccessInfo>>,
     images: HashMap<ImageResourceKey, ResourceRWAccess<ImageAccessInfo>>,
+    image_layouts: HashMap<ImageResourceKey, vk::ImageLayout>,
 
     buffer_key_counter: u64,
     image_key_counter: u64,
@@ -158,6 +178,7 @@ impl SyncManagerInternal {
         Self {
             buffers: HashMap::new(),
             images: HashMap::new(),
+            image_layouts: HashMap::new(),
             buffer_key_counter: 0,
             image_key_counter: 0,
         }
@@ -181,6 +202,7 @@ impl SyncManagerInternal {
 
     fn remove_image(&mut self, key: ImageResourceKey) {
         self.images.remove(&key);
+        self.image_layouts.remove(&key);
     }
 
     fn resource_write_access<T: VulkanResourceAccess>(
@@ -237,16 +259,20 @@ impl SyncManagerInternal {
     fn add_image_access(
         &mut self,
         key: ImageResourceKey,
+        layout: vk::ImageLayout,
         access: ImageAccessInfo,
-    ) -> Vec<ImageAccessInfo> {
-        let old_layout = self.images.get(&key).and_then(|access| match access {
-            ResourceRWAccess::WriteThenRead(last_write, _) => Some(last_write.layout),
-            ResourceRWAccess::OnlyReads(_) => None,
-        });
-        if access.is_write(old_layout) {
-            Self::resource_write_access(&mut self.images, key, access)
+    ) -> (vk::ImageLayout, Vec<ImageAccessInfo>) {
+        let old_layout = self.image_layouts.get(&key).map(|v| *v);
+        if access.is_write(layout, old_layout) {
+            (
+                layout,
+                Self::resource_write_access(&mut self.images, key, access),
+            )
         } else {
-            Self::resource_read_access(&mut self.images, key, access)
+            (
+                layout,
+                Self::resource_read_access(&mut self.images, key, access),
+            )
         }
     }
 }

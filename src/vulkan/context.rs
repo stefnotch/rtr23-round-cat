@@ -125,6 +125,11 @@ impl Context {
             device_memory_properties,
         }
     }
+
+    pub fn wait_idle(&self) {
+        unsafe { self.device.device_wait_idle() }.expect("Could not wait for device idle");
+        self.sync_manager.clear_all();
+    }
 }
 
 impl Drop for Context {
