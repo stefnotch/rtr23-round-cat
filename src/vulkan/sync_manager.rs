@@ -60,11 +60,11 @@ impl<'a> SyncManagerLock<'a> {
     }
 
     #[must_use]
-    pub fn add_accesses<'resources>(
+    pub fn add_accesses(
         &mut self,
-        buffer_accesses: Vec<BufferAccess<'resources>>,
-        image_accesses: Vec<ImageAccess<'resources>>,
-    ) -> CmdPipelineBarrier<'resources> {
+        buffer_accesses: Vec<BufferAccess>,
+        image_accesses: Vec<ImageAccess>,
+    ) -> CmdPipelineBarrier {
         // TODO: Optimise this by constructing a smol graph of dependencies and only adding barriers where necessary.
         // e.g. If we know that "A -> B", and then in a shader we read both "A" and "B", then we only need a barrier for "B".
 
@@ -74,6 +74,7 @@ impl<'a> SyncManagerLock<'a> {
                 let wait_for = self
                     .inner
                     .add_buffer_access(buffer.resource.key, access.clone());
+
                 wait_for.into_iter().map(move |old| BufferMemoryBarrier {
                     src_stage_mask: old.stage,
                     src_access_mask: old.access,
@@ -81,7 +82,7 @@ impl<'a> SyncManagerLock<'a> {
                     dst_access_mask: access.access,
                     src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                     dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    buffer,
+                    buffer: buffer.clone(),
                     offset: access.offset,
                     size: access.size,
                 })
@@ -103,7 +104,7 @@ impl<'a> SyncManagerLock<'a> {
                     new_layout: access.layout,
                     src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                     dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                    image,
+                    image: image.clone(),
                     subresource_range: access.subresource_range,
                 })
             })

@@ -31,11 +31,11 @@ impl<'cmd> CommandBufferCmd<'cmd> for CmdFullBarrier {
     }
 }
 
-pub struct CmdPipelineBarrier<'resources> {
+pub struct CmdPipelineBarrier {
     pub dependency_flags: vk::DependencyFlags,
     pub memory_barriers: Vec<MemoryBarrier>,
-    pub buffer_memory_barriers: Vec<BufferMemoryBarrier<'resources>>,
-    pub image_memory_barriers: Vec<ImageMemoryBarrier<'resources>>,
+    pub buffer_memory_barriers: Vec<BufferMemoryBarrier>,
+    pub image_memory_barriers: Vec<ImageMemoryBarrier>,
 }
 
 #[derive(Clone)]
@@ -46,19 +46,19 @@ pub struct MemoryBarrier {
     pub dst_access_mask: vk::AccessFlags2,
 }
 #[derive(Clone)]
-pub struct BufferMemoryBarrier<'a> {
+pub struct BufferMemoryBarrier {
     pub src_stage_mask: vk::PipelineStageFlags2,
     pub src_access_mask: vk::AccessFlags2,
     pub dst_stage_mask: vk::PipelineStageFlags2,
     pub dst_access_mask: vk::AccessFlags2,
     pub src_queue_family_index: u32,
     pub dst_queue_family_index: u32,
-    pub buffer: &'a UntypedBuffer,
+    pub buffer: Arc<UntypedBuffer>,
     pub offset: vk::DeviceSize,
     pub size: vk::DeviceSize,
 }
 #[derive(Clone)]
-pub struct ImageMemoryBarrier<'a> {
+pub struct ImageMemoryBarrier {
     pub src_stage_mask: vk::PipelineStageFlags2,
     pub src_access_mask: vk::AccessFlags2,
     pub dst_stage_mask: vk::PipelineStageFlags2,
@@ -67,11 +67,11 @@ pub struct ImageMemoryBarrier<'a> {
     pub new_layout: vk::ImageLayout,
     pub src_queue_family_index: u32,
     pub dst_queue_family_index: u32,
-    pub image: &'a Image,
+    pub image: Arc<Image>,
     pub subresource_range: vk::ImageSubresourceRange,
 }
 
-impl<'resources> CmdPipelineBarrier<'resources> {
+impl CmdPipelineBarrier {
     pub fn execute(self, command_buffer: vk::CommandBuffer, context: &Context) {
         let memory_barriers: Vec<_> = self
             .memory_barriers
@@ -135,10 +135,7 @@ impl<'resources> CmdPipelineBarrier<'resources> {
     }
 }
 
-impl<'cmd, 'resources> CommandBufferCmd<'cmd> for CmdPipelineBarrier<'resources>
-where
-    'resources: 'cmd,
-{
+impl<'cmd> CommandBufferCmd<'cmd> for CmdPipelineBarrier {
     fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
         (*self).execute(args.command_buffer, &args.context);
     }
@@ -151,21 +148,19 @@ pub struct CmdLayoutTransition {
 }
 
 impl<'cmd> CommandBufferCmd<'cmd> for CmdLayoutTransition {
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
-        args.sync_manager
-            .add_accesses(
-                vec![],
-                vec![ImageAccess::new(
-                    &self.image,
-                    vk::PipelineStageFlags2::ALL_COMMANDS,
-                    vk::AccessFlags2::MEMORY_READ
-                        | vk::AccessFlags2::MEMORY_WRITE
-                        | vk::AccessFlags2::SHADER_WRITE
-                        | vk::AccessFlags2::SHADER_READ,
-                    self.new_layout,
-                    self.subresource_range,
-                )],
-            )
-            .execute(args.command_buffer, &args.context);
+    fn execute(self: Box<Self>, mut args: CommandBufferCmdArgs) {
+        args.add_accesses(
+            vec![],
+            vec![ImageAccess::new(
+                self.image,
+                vk::PipelineStageFlags2::ALL_COMMANDS,
+                vk::AccessFlags2::MEMORY_READ
+                    | vk::AccessFlags2::MEMORY_WRITE
+                    | vk::AccessFlags2::SHADER_WRITE
+                    | vk::AccessFlags2::SHADER_READ,
+                self.new_layout,
+                self.subresource_range,
+            )],
+        );
     }
 }

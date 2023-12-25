@@ -52,25 +52,23 @@ impl<'cmd, 'a, T> CommandBufferCmd<'cmd> for CmdCopyBuffer<'a, T>
 where
     'a: 'cmd,
 {
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
-        args.sync_manager
-            .add_accesses(
-                [
-                    BufferAccess::entire_buffer(
-                        self.src_buffer.get_untyped(),
-                        vk::PipelineStageFlags2::TRANSFER,
-                        vk::AccessFlags2::TRANSFER_READ,
-                    ),
-                    BufferAccess::entire_buffer(
-                        self.dst_buffer.get_untyped(),
-                        vk::PipelineStageFlags2::TRANSFER,
-                        vk::AccessFlags2::TRANSFER_WRITE,
-                    ),
-                ]
-                .to_vec(),
-                vec![],
-            )
-            .execute(args.command_buffer, &args.context);
+    fn execute(self: Box<Self>, mut args: CommandBufferCmdArgs) {
+        args.add_accesses(
+            [
+                BufferAccess::entire_buffer(
+                    self.src_buffer.get_untyped().clone(),
+                    vk::PipelineStageFlags2::TRANSFER,
+                    vk::AccessFlags2::TRANSFER_READ,
+                ),
+                BufferAccess::entire_buffer(
+                    self.dst_buffer.get_untyped().clone(),
+                    vk::PipelineStageFlags2::TRANSFER,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                ),
+            ]
+            .to_vec(),
+            vec![],
+        );
         unsafe {
             args.context.device.cmd_copy_buffer(
                 args.command_buffer,
@@ -93,7 +91,7 @@ impl<'cmd, 'a, T> CommandBufferCmd<'cmd> for CmdCopyBufferToImage<'a, T>
 where
     'a: 'cmd,
 {
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
+    fn execute(self: Box<Self>, mut args: CommandBufferCmdArgs) {
         let aspect_flags = self
             .regions
             .iter()
@@ -103,22 +101,20 @@ where
 
         // Notice how we're writing to an image with a "self.dst_image_layout" layout.
         // The pipeline barrier will add the required layout transition.
-        args.sync_manager
-            .add_accesses(
-                vec![BufferAccess::entire_buffer(
-                    self.src_buffer.get_untyped(),
-                    vk::PipelineStageFlags2::TRANSFER,
-                    vk::AccessFlags2::TRANSFER_READ,
-                )],
-                vec![ImageAccess::new(
-                    &self.dst_image,
-                    vk::PipelineStageFlags2::TRANSFER,
-                    vk::AccessFlags2::TRANSFER_WRITE,
-                    self.dst_image_layout,
-                    self.dst_image.full_subresource_range(aspect_flags),
-                )],
-            )
-            .execute(args.command_buffer, &args.context);
+        args.add_accesses(
+            vec![BufferAccess::entire_buffer(
+                self.src_buffer.get_untyped().clone(),
+                vk::PipelineStageFlags2::TRANSFER,
+                vk::AccessFlags2::TRANSFER_READ,
+            )],
+            vec![ImageAccess::new(
+                self.dst_image.clone(),
+                vk::PipelineStageFlags2::TRANSFER,
+                vk::AccessFlags2::TRANSFER_WRITE,
+                self.dst_image_layout,
+                self.dst_image.full_subresource_range(aspect_flags),
+            )],
+        );
         unsafe {
             args.context.device.cmd_copy_buffer_to_image(
                 args.command_buffer,
@@ -142,7 +138,7 @@ impl<'cmd, 'a> CommandBufferCmd<'cmd> for CmdBlitImage<'a>
 where
     'a: 'cmd,
 {
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
+    fn execute(self: Box<Self>, mut args: CommandBufferCmdArgs) {
         let src_aspect_flags = self
             .regions
             .iter()
@@ -157,44 +153,42 @@ where
                 acc | region.dst_subresource.aspect_mask
             });
 
-        args.sync_manager
-            .add_accesses(
-                vec![],
-                self.regions
-                    .iter()
-                    .flat_map(|region| {
-                        [
-                            ImageAccess::new(
-                                &self.src_image,
-                                vk::PipelineStageFlags2::TRANSFER,
-                                vk::AccessFlags2::TRANSFER_READ,
-                                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                                vk::ImageSubresourceRange {
-                                    aspect_mask: src_aspect_flags,
-                                    base_mip_level: region.src_subresource.mip_level,
-                                    level_count: 1, // TODO: Theoretically, we could join multiple mip levels into one barrier
-                                    base_array_layer: region.src_subresource.base_array_layer,
-                                    layer_count: region.src_subresource.layer_count,
-                                },
-                            ),
-                            ImageAccess::new(
-                                &self.dst_image,
-                                vk::PipelineStageFlags2::TRANSFER,
-                                vk::AccessFlags2::TRANSFER_WRITE,
-                                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                                vk::ImageSubresourceRange {
-                                    aspect_mask: dst_aspect_flags,
-                                    base_mip_level: region.dst_subresource.mip_level,
-                                    level_count: 1, // TODO: Theoretically, we could join multiple mip levels into one barrier
-                                    base_array_layer: region.dst_subresource.base_array_layer,
-                                    layer_count: region.dst_subresource.layer_count,
-                                },
-                            ),
-                        ]
-                    })
-                    .collect(),
-            )
-            .execute(args.command_buffer, &args.context);
+        args.add_accesses(
+            vec![],
+            self.regions
+                .iter()
+                .flat_map(|region| {
+                    [
+                        ImageAccess::new(
+                            self.src_image.clone(),
+                            vk::PipelineStageFlags2::TRANSFER,
+                            vk::AccessFlags2::TRANSFER_READ,
+                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                            vk::ImageSubresourceRange {
+                                aspect_mask: src_aspect_flags,
+                                base_mip_level: region.src_subresource.mip_level,
+                                level_count: 1, // TODO: Theoretically, we could join multiple mip levels into one barrier
+                                base_array_layer: region.src_subresource.base_array_layer,
+                                layer_count: region.src_subresource.layer_count,
+                            },
+                        ),
+                        ImageAccess::new(
+                            self.dst_image.clone(),
+                            vk::PipelineStageFlags2::TRANSFER,
+                            vk::AccessFlags2::TRANSFER_WRITE,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::ImageSubresourceRange {
+                                aspect_mask: dst_aspect_flags,
+                                base_mip_level: region.dst_subresource.mip_level,
+                                level_count: 1, // TODO: Theoretically, we could join multiple mip levels into one barrier
+                                base_array_layer: region.dst_subresource.base_array_layer,
+                                layer_count: region.dst_subresource.layer_count,
+                            },
+                        ),
+                    ]
+                })
+                .collect(),
+        );
         unsafe {
             args.context.device.cmd_blit_image(
                 args.command_buffer,
@@ -420,7 +414,7 @@ impl<'cmd, 'a, V, I> CommandBufferCmd<'cmd> for CmdBuildAccelerationStructures<'
 where
     'a: 'cmd,
 {
-    fn execute(self: Box<Self>, args: CommandBufferCmdArgs) {
+    fn execute(self: Box<Self>, mut args: CommandBufferCmdArgs) {
         let (build_infos, _geometries): (Vec<_>, Vec<_>) = self
             .build_infos
             .iter()
@@ -439,21 +433,21 @@ where
                 let mut accesses = vec![];
                 if let Some(src) = &info.src_acceleration_structure {
                     accesses.push(BufferAccess::entire_buffer(
-                        src.buffer.get_untyped(),
+                        src.buffer.get_untyped().clone(),
                         vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                         vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                     ));
                 }
                 if let Some(dst) = &info.dst_acceleration_structure {
                     accesses.push(BufferAccess::entire_buffer(
-                        dst.buffer.get_untyped(),
+                        dst.buffer.get_untyped().clone(),
                         vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                         vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
                     ));
                 }
                 if let Some(scratch_buffer) = &info.scratch_data {
                     accesses.push(BufferAccess::entire_buffer(
-                        &scratch_buffer.get_untyped(),
+                        scratch_buffer.get_untyped().clone(),
                         vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                         vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
                             | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
@@ -468,18 +462,18 @@ where
                             ..
                         } => {
                             accesses.push(BufferAccess::entire_buffer(
-                                vertex_data.get_untyped(),
+                                vertex_data.get_untyped().clone(),
                                 vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                                 vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                             ));
                             accesses.push(BufferAccess::entire_buffer(
-                                index_data.get_untyped(),
+                                index_data.get_untyped().clone(),
                                 vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                                 vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                             ));
                             if let Some(transform_data) = transform_data {
                                 accesses.push(BufferAccess::entire_buffer(
-                                    &transform_data,
+                                    transform_data.clone(),
                                     vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                                     vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                                 ));
@@ -487,14 +481,14 @@ where
                         }
                         AccelerationStructureGeometryData::Aabbs { data, .. } => {
                             accesses.push(BufferAccess::entire_buffer(
-                                data.get_untyped(),
+                                data.get_untyped().clone(),
                                 vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                                 vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                             ));
                         }
                         AccelerationStructureGeometryData::Instances { data, .. } => {
                             accesses.push(BufferAccess::entire_buffer(
-                                data.get_untyped(),
+                                data.get_untyped().clone(),
                                 vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
                                 vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
                             ));
@@ -505,9 +499,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        args.sync_manager
-            .add_accesses(buffer_accesses, vec![])
-            .execute(args.command_buffer, &args.context);
+        args.add_accesses(buffer_accesses, vec![]);
 
         unsafe {
             args.context

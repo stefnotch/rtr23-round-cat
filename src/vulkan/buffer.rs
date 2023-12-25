@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::{marker::PhantomData, ops::Deref, sync::Arc};
+use std::sync::Arc;
+use std::{marker::PhantomData, ops::Deref};
 
 use ash::{self, vk};
 
@@ -52,8 +53,14 @@ impl UntypedBuffer {
     }
 }
 
+/*
+Design note
+Buffers could work like "FullBuffer (mostly internal) and Buffer<T> (has a Arc<FullBuffer>, and an offset + size)
+In our case, the FullBuffer is the UntypedBuffer.
+(invariant: Buffer<T> ranges never overlap. The API lets you split and join adjacent buffers) */
+
 pub struct Buffer<T: ?Sized> {
-    inner: UntypedBuffer,
+    inner: Arc<UntypedBuffer>,
     _marker: PhantomData<T>,
 }
 
@@ -98,14 +105,14 @@ impl<T> Buffer<T> {
         unsafe { device.bind_buffer_memory(buffer, memory, 0) }
             .expect("Could not bind buffer memory for buffer");
 
-        let untyped = UntypedBuffer {
+        let untyped = Arc::new(UntypedBuffer {
             inner: buffer,
             usage,
             memory,
             size: buffer_memory_requirements.size,
             resource,
             context,
-        };
+        });
         Buffer {
             inner: untyped,
             _marker: PhantomData,
@@ -149,7 +156,7 @@ impl<T> Buffer<T> {
         dst_offset: vk::DeviceSize,
         command_buffer: &mut CommandBuffer,
         other: Arc<Buffer<T>>,
-        src_range: std::ops::Range<vk::DeviceSize>,
+        other_range: std::ops::Range<vk::DeviceSize>,
     ) where
         T: 'static,
     {
@@ -163,17 +170,17 @@ impl<T> Buffer<T> {
             .contains(vk::BufferUsageFlags::TRANSFER_DST));
 
         command_buffer.add_cmd(CmdCopyBuffer {
-            src_buffer: self.clone(),
-            dst_buffer: other,
+            src_buffer: other,
+            dst_buffer: self.clone(),
             regions: Cow::Owned(vec![vk::BufferCopy {
                 dst_offset,
-                src_offset: src_range.start,
-                size: src_range.end - src_range.start,
+                src_offset: other_range.start,
+                size: other_range.end - other_range.start,
             }]),
         });
     }
 
-    pub fn get_untyped(&self) -> &UntypedBuffer {
+    pub fn get_untyped(&self) -> &Arc<UntypedBuffer> {
         &self.inner
     }
 

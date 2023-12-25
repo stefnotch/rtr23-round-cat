@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ash::vk;
 
 use crate::vulkan::{buffer::UntypedBuffer, image::Image};
@@ -14,8 +16,8 @@ fn is_write(access: vk::AccessFlags2) -> bool {
 }
 
 #[derive(Clone)]
-pub struct BufferAccess<'a> {
-    pub buffer: &'a UntypedBuffer,
+pub struct BufferAccess {
+    pub buffer: Arc<UntypedBuffer>,
     pub access: BufferAccessInfo,
 }
 
@@ -27,8 +29,8 @@ pub struct BufferAccessInfo {
     pub size: vk::DeviceSize,
 }
 
-impl<'a> BufferAccess<'a> {
-    pub fn wait_all(buffer: &'a UntypedBuffer) -> Self {
+impl BufferAccess {
+    pub fn wait_all(buffer: Arc<UntypedBuffer>) -> Self {
         Self {
             buffer,
             access: BufferAccessInfo {
@@ -41,7 +43,7 @@ impl<'a> BufferAccess<'a> {
     }
 
     pub fn entire_buffer(
-        buffer: &'a UntypedBuffer,
+        buffer: Arc<UntypedBuffer>,
         stage: vk::PipelineStageFlags2,
         access_flags: vk::AccessFlags2,
     ) -> Self {
@@ -63,8 +65,8 @@ impl BufferAccessInfo {
 }
 
 #[derive(Clone)]
-pub struct ImageAccess<'a> {
-    pub image: &'a Image,
+pub struct ImageAccess {
+    pub image: Arc<Image>,
     pub access: ImageAccessInfo,
 }
 
@@ -76,9 +78,9 @@ pub struct ImageAccessInfo {
     pub subresource_range: vk::ImageSubresourceRange,
 }
 
-impl<'a> ImageAccess<'a> {
+impl ImageAccess {
     pub fn new(
-        image: &'a Image,
+        image: Arc<Image>,
         stage: vk::PipelineStageFlags2,
         access: vk::AccessFlags2,
         layout: vk::ImageLayout,
