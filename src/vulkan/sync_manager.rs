@@ -263,6 +263,7 @@ impl SyncManagerInternal {
         access: ImageAccessInfo,
     ) -> (vk::ImageLayout, Vec<ImageAccessInfo>) {
         let old_layout = self.image_layouts.get(&key).map(|v| *v);
+        self.image_layouts.insert(key, layout);
         if access.is_write(layout, old_layout) {
             (
                 layout,
