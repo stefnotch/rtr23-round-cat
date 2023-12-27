@@ -16,6 +16,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 anyhow = "1.0"
 thiserror = "1.0"
+discrete_range_map = { git = "https://github.com/ripytide/discrete_range_map.git" }
 
 # I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
 [target.'cfg(windows)'.dependencies]

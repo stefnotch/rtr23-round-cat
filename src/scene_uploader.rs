@@ -409,8 +409,8 @@ pub fn setup(
     setup_command_buffer.add_cmd(EndCommandBuffer {});
 
     // submit
-    setup_command_buffer.submit(context, queue);
-    unsafe { device.device_wait_idle() }.expect("Could not wait for queue");
+    setup_command_buffer.submit(context.clone(), queue);
+    context.wait_idle();
 
     Scene {
         models,

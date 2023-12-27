@@ -1,11 +1,14 @@
+mod range_map;
 pub mod resource_access;
 
 use std::{
     collections::HashMap,
+    ops::{Range, RangeInclusive},
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use ash::vk;
+use discrete_range_map::{DiscreteRangeMap, InclusiveInterval};
 
 use self::resource_access::{BufferAccess, BufferAccessInfo, ImageAccess, ImageAccessInfo};
 
@@ -34,8 +37,11 @@ impl SyncManager {
     }
 
     #[must_use]
-    pub fn get_image(&self) -> ImageResource {
+    pub fn get_image(&self, mip_levels: u32) -> ImageResource {
         let mut inner = self.inner.lock().unwrap();
+
+        todo!("Implement mip level tracking");
+
         ImageResource {
             sync_manager: self.clone(),
             key: inner.get_image(),
@@ -51,8 +57,9 @@ impl SyncManager {
     pub fn clear_all(&self) {
         let mut inner = self.inner.lock().unwrap();
         for (_, access) in inner.buffers.iter_mut() {
-            *access = ResourceRWAccess::OnlyReads(vec![]);
+            *access = ResourceRWAccess::new_only_reads(vec![]);
         }
+        todo!("Implement image layout tracking");
     }
 }
 
@@ -165,6 +172,7 @@ impl Drop for ImageResource {
 // Internals //
 
 struct SyncManagerInternal {
+    // TODO: Use a https://crates.io/crates/rangemap for granular buffer/image access tracking.
     buffers: HashMap<BufferResourceKey, ResourceRWAccess<BufferAccessInfo>>,
     images: HashMap<ImageResourceKey, ResourceRWAccess<ImageAccessInfo>>,
     image_layouts: HashMap<ImageResourceKey, vk::ImageLayout>,
@@ -212,11 +220,14 @@ impl SyncManagerInternal {
     ) -> Vec<T> {
         let old = resources.insert(key, ResourceRWAccess::new_write(access));
         match old {
-            Some(ResourceRWAccess::WriteThenRead(last_write, reads)) if reads.is_empty() => {
-                vec![last_write]
+            Some(ResourceRWAccess {
+                write: Some(write),
+                reads,
+            }) if reads.is_empty() => {
+                vec![write.clone()]
             }
-            Some(ResourceRWAccess::WriteThenRead(.., reads)) => reads,
-            Some(ResourceRWAccess::OnlyReads(reads)) => reads,
+            Some(ResourceRWAccess { reads, .. }) => reads,
+
             None => vec![],
         }
     }
@@ -227,18 +238,13 @@ impl SyncManagerInternal {
     ) -> Vec<T> {
         use std::collections::hash_map::Entry;
         match resources.entry(key) {
-            Entry::Occupied(value) => match value.into_mut() {
-                ResourceRWAccess::WriteThenRead(last_write, reads) => {
-                    reads.push(access);
-                    vec![last_write.clone()]
-                }
-                ResourceRWAccess::OnlyReads(reads) => {
-                    reads.push(access);
-                    vec![]
-                }
-            },
+            Entry::Occupied(value) => {
+                let ResourceRWAccess { write, reads } = value.into_mut();
+                reads.push(access);
+                write.clone().map(|w| vec![w]).unwrap_or_default()
+            }
             Entry::Vacant(value) => {
-                value.insert(ResourceRWAccess::OnlyReads(vec![access]));
+                value.insert(ResourceRWAccess::new_only_reads(vec![access]));
                 vec![]
             }
         }
@@ -262,6 +268,15 @@ impl SyncManagerInternal {
         layout: vk::ImageLayout,
         access: ImageAccessInfo,
     ) -> (vk::ImageLayout, Vec<ImageAccessInfo>) {
+        assert!(
+            access.subresource_range.base_array_layer == 0,
+            "Array or 3D images are not supported"
+        );
+        assert!(
+            access.subresource_range.layer_count == 1,
+            "Array or 3D images are not supported"
+        );
+
         let old_layout = self.image_layouts.get(&key).map(|v| *v);
         self.image_layouts.insert(key, layout);
         if access.is_write(layout, old_layout) {
@@ -297,13 +312,21 @@ struct BufferResourceKey(u64);
 struct ImageResourceKey(u64);
 
 /// Stores the last write, and all *subsequent* reads.
-enum ResourceRWAccess<T> {
-    OnlyReads(Vec<T>),
-    WriteThenRead(T, Vec<T>),
+struct ResourceRWAccess<T> {
+    /// The last write to the resource.
+    write: Option<T>,
+    /// All subsequent reads from the resource.
+    reads: Vec<T>,
 }
 
 impl<T> ResourceRWAccess<T> {
     fn new_write(last_write: T) -> Self {
-        Self::WriteThenRead(last_write, Vec::new())
+        Self {
+            write: Some(last_write),
+            reads: vec![],
+        }
+    }
+    fn new_only_reads(reads: Vec<T>) -> Self {
+        Self { write: None, reads }
     }
 }

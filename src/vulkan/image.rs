@@ -27,11 +27,15 @@ pub struct Image {
 impl Image {
     pub fn new(context: Arc<Context>, create_info: &vk::ImageCreateInfo) -> Image {
         let device = &context.device;
-        let resource = context.sync_manager.get_image();
+        assert!(
+            create_info.array_layers == 1,
+            "Array or 3D images are not supported"
+        );
 
         let format = create_info.format;
         let extent = create_info.extent;
         let mip_levels = create_info.mip_levels;
+        let resource = context.sync_manager.get_image(mip_levels);
 
         let image =
             unsafe { device.create_image(create_info, None) }.expect("Could not create image");

@@ -145,9 +145,8 @@ impl SwapchainContainer {
     }
 
     pub fn recreate(&mut self, window_size: PhysicalSize<u32>) {
+        self.context.wait_idle();
         let device = &self.context.device;
-
-        unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
 
         let capabilities = unsafe {
             self.context

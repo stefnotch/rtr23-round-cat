@@ -21,7 +21,7 @@ pub struct BufferAccess {
     pub access: BufferAccessInfo,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd)]
 pub struct BufferAccessInfo {
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
