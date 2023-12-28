@@ -57,7 +57,7 @@ pub struct BufferMemoryBarrier {
     pub offset: vk::DeviceSize,
     pub size: vk::DeviceSize,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ImageMemoryBarrier {
     pub src_stage_mask: vk::PipelineStageFlags2,
     pub src_access_mask: vk::AccessFlags2,

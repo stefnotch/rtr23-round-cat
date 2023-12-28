@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use discrete_range_map::{InclusiveInterval, InclusiveRange};
+use discrete_range_map::{inclusive_interval, InclusiveInterval, InclusiveRange};
 
 /// Optimized version of `RangeMapLike` for the case where the range is fully covered by the value.
 pub struct OptRangeMap<InnerMap>
@@ -36,7 +36,7 @@ where
     type Range = InnerMap::Range;
     type Value = InnerMap::Value;
 
-    fn new_with_max_range(max_range: Self::Range) -> Self {
+    fn new(max_range: Self::Range) -> Self {
         Self {
             max_range,
             inner: FullRangeOpt::All(None),
@@ -52,11 +52,10 @@ where
         key: &Self::Range,
     ) -> impl Iterator<Item = (Self::Range, &Self::Value)> + '_ {
         self.assert_valid_range(key);
-        if is_empty_range(key) {
-            return Box::new(std::iter::empty()) as Box<dyn Iterator<Item = _> + '_>;
-        }
         match &self.inner {
-            FullRangeOpt::All(None) => Box::new(std::iter::empty()),
+            FullRangeOpt::All(None) => {
+                Box::new(std::iter::empty()) as Box<dyn Iterator<Item = _> + '_>
+            }
             FullRangeOpt::All(Some(value)) => Box::new(std::iter::once((self.max_range, value))),
             FullRangeOpt::Granular(inner) => Box::new(inner.overlapping(key)),
         }
@@ -68,9 +67,6 @@ where
         value: Self::Value,
     ) -> Vec<(Self::Range, Self::Value)> {
         self.assert_valid_range(&key);
-        if is_empty_range(&key) {
-            return vec![];
-        }
         if self.is_max_range(&key) {
             let old = self
                 .overlapping(&key)
@@ -81,15 +77,11 @@ where
         }
         match &mut self.inner {
             FullRangeOpt::All(old) => {
-                let mut inner: InnerMap = InnerMap::new_with_max_range(self.max_range.clone());
-                if let Some(old_value) = &old {
+                let mut inner = InnerMap::new(self.max_range.clone());
+                if let Some(old_value) = old {
                     inner.overwrite(self.max_range.clone(), old_value.clone());
                 }
-                inner.overwrite(key, value);
-                let result = old
-                    .take()
-                    .map(|v| vec![(key, v.clone())])
-                    .unwrap_or_default();
+                let result = inner.overwrite(key, value);
                 self.inner = FullRangeOpt::Granular(inner);
                 result
             }
@@ -99,9 +91,6 @@ where
 
     fn cut(&mut self, key: Self::Range) -> Vec<(Self::Range, Self::Value)> {
         self.assert_valid_range(&key);
-        if is_empty_range(&key) {
-            return vec![];
-        }
         let is_max_range = self.is_max_range(&key);
         match &mut self.inner {
             FullRangeOpt::All(v) => {
@@ -109,7 +98,7 @@ where
                 if is_max_range {
                     self.inner = FullRangeOpt::All(None);
                 } else {
-                    let mut inner = InnerMap::new_with_max_range(self.max_range.clone());
+                    let mut inner = InnerMap::new(self.max_range.clone());
                     if let Some(v) = &old {
                         inner.overwrite(self.max_range.clone(), v.clone());
                         inner.cut(key);
@@ -144,7 +133,7 @@ where
     type Range = K;
     type Value = V;
 
-    fn new_with_max_range(max_range: Self::Range) -> Self {
+    fn new(max_range: Self::Range) -> Self {
         Self {
             inner: discrete_range_map::DiscreteRangeMap::new(),
             max_range,
@@ -188,15 +177,6 @@ pub struct SmallArrayRangeMap<V> {
 }
 
 impl<V> SmallArrayRangeMap<V> {
-    pub fn new(size: usize) -> Self
-    where
-        V: Copy,
-    {
-        Self {
-            values: vec![None; size],
-        }
-    }
-
     fn overwrite_internal(
         &mut self,
         key: InclusiveInterval<usize>,
@@ -206,9 +186,6 @@ impl<V> SmallArrayRangeMap<V> {
         V: Copy + PartialEq,
     {
         self.assert_valid_range(&key);
-        if is_empty_range(&key) {
-            return vec![];
-        }
         let overwritten = self
             .overlapping(&key)
             .map(|(k, v)| (k, v.clone()))
@@ -228,10 +205,12 @@ where
     type Range = InclusiveInterval<usize>;
     type Value = V;
 
-    fn new_with_max_range(max_range: Self::Range) -> Self {
+    fn new(max_range: Self::Range) -> Self {
         assert!(max_range.is_valid());
         assert!(max_range.start() == 0);
-        Self::new(max_range.end() + 1)
+        Self {
+            values: vec![None; max_range.end() + 1],
+        }
     }
 
     fn max_range(&self) -> Self::Range {
@@ -256,9 +235,10 @@ where
                 if &Some(next) == prev {
                     Some(None)
                 } else {
-                    *start = index;
+                    let range = inclusive_interval::ii(*start, index);
+                    *start = index + 1;
                     *prev = Some(next);
-                    Some(Some((InclusiveInterval::from((*start)..=index), next)))
+                    Some(Some((range, next)))
                 }
             })
             .flatten()
@@ -279,19 +259,13 @@ where
     }
 }
 
-fn is_empty_range<R: discrete_range_map::RangeType<P>, P: discrete_range_map::PointType>(
-    range: &R,
-) -> bool {
-    range.start() > range.end()
-}
-
 /// A map from ranges to values.
 pub trait RangeMapLike {
     type Point: discrete_range_map::PointType;
     type Range: discrete_range_map::RangeType<Self::Point> + std::fmt::Debug;
     type Value: Clone;
 
-    fn new_with_max_range(max_range: Self::Range) -> Self;
+    fn new(max_range: Self::Range) -> Self;
 
     fn max_range(&self) -> Self::Range;
 
@@ -307,6 +281,7 @@ pub trait RangeMapLike {
     }
 
     /// Returns all values that overlap with the given key.
+    /// Can return ranges that are larger than the key.
     fn overlapping(
         &self,
         key: &Self::Range,

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::BitOr, sync::Arc};
+use std::{borrow::Cow, fmt, ops::BitOr, sync::Arc};
 
 use crate::find_memorytype_index;
 use crate::vulkan::buffer::Buffer;
@@ -22,6 +22,17 @@ pub struct Image {
     pub mip_levels: u32,
     pub(super) resource: ImageResource,
     context: Arc<Context>,
+}
+impl fmt::Debug for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Image")
+            .field("inner", &self.inner)
+            .field("format", &self.format)
+            .field("extent", &self.extent)
+            .field("mip_levels", &self.mip_levels)
+            .field("resource", &self.resource)
+            .finish()
+    }
 }
 
 impl Image {
@@ -80,13 +91,6 @@ impl Image {
 
         // prepare copying base image to level 0
         // we use a full subresource range to transition the imagelayout of all mipmapping levels to TRANSFER_DST_OPTIMAL
-        // TODO: This is probably not necessary
-        command_buffer.add_cmd(CmdLayoutTransition {
-            image: self.clone(),
-            new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            subresource_range: self.full_subresource_range(vk::ImageAspectFlags::COLOR),
-        });
-
         let buffer_image_copy = vk::BufferImageCopy {
             buffer_offset: 0,
             buffer_row_length: 0,
@@ -127,7 +131,6 @@ impl Image {
             let dst_size = Self::extent_to_offset(Self::mip_level(self.extent, level).unwrap());
 
             // transition image layout src level from TRANSFER_DST_OPTIMAL to TRANSFER_SRC_OPTIMAL
-            // TODO: Remove some of these manual transitions
             command_buffer.add_cmd(CmdLayoutTransition {
                 image: self.clone(),
                 new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -163,29 +166,16 @@ impl Image {
                 regions: Cow::Owned(vec![blit]),
                 filter: vk::Filter::LINEAR,
             });
-
-            // transition image layout of previous mipmapping level from TRANSFER_SRC_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
-            command_buffer.add_cmd(CmdLayoutTransition {
-                image: self.clone(),
-                new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                subresource_range: ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: level - 1,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                },
-            });
         }
 
-        // transition image layout of last mipmapping level from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+        // transition image layout of all levels from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
         command_buffer.add_cmd(CmdLayoutTransition {
             image: self.clone(),
             new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             subresource_range: ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: num_levels - 1,
-                level_count: 1,
+                base_mip_level: 0,
+                level_count: num_levels,
                 base_array_layer: 0,
                 layer_count: 1,
             },

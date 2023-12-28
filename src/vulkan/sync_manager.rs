@@ -3,6 +3,7 @@ pub mod resource_access;
 
 use std::{
     collections::HashMap,
+    fmt,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -175,6 +176,22 @@ pub struct ImageResource {
     key: ImageResourceKey,
 }
 
+impl fmt::Debug for BufferResource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BufferResource")
+            .field("key", &self.key)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ImageResource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ImageResource")
+            .field("key", &self.key)
+            .finish()
+    }
+}
+
 impl Drop for BufferResource {
     fn drop(&mut self) {
         let mut inner = self.sync_manager.inner.lock().unwrap();
@@ -334,15 +351,12 @@ impl SyncManagerInternal {
     )> {
         let max_range = inclusive_interval::ie(0, mip_level_count);
         assert!(
-            access.subresource_range.base_array_layer == 0,
-            "Array or 3D images are not supported"
-        );
-        assert!(
-            access.subresource_range.layer_count == 1,
+            access.subresource_range.base_array_layer == 0
+                && access.subresource_range.layer_count == 1,
             "Array or 3D images are not supported"
         );
         let layout_entry = self.image_layouts.entry(key).or_insert_with(|| {
-            let mut layouts = OptRangeMap::new_with_max_range(max_range);
+            let mut layouts = OptRangeMap::new(max_range);
             layouts.overwrite(max_range, vk::ImageLayout::UNDEFINED);
             layouts
         });
@@ -355,6 +369,20 @@ impl SyncManagerInternal {
         assert!(old_layouts.iter().all(|(k, _)| k.is_valid()
             && access.range().contains(k.start())
             && access.range().contains(k.end())));
+        assert!(old_layouts
+            .iter()
+            .any(|(k, _)| k.start() == access.range().start()));
+        assert!(old_layouts
+            .iter()
+            .any(|(k, _)| k.end() == access.range().end()));
+
+        // // print old and new layouts and the ranges
+        // println!("old layouts:");
+        // for (k, v) in old_layouts.iter() {
+        //     println!("range: {:?}, layout: {:?}", k, v);
+        // }
+        // println!("new layout: {:?}", layout);
+        // println!("new range: {:?}", access.range());
 
         let entry = self
             .images
@@ -364,7 +392,6 @@ impl SyncManagerInternal {
         old_layouts
             .into_iter()
             .map(|(range, old_layout)| {
-                let range = limit_range_to(&range, &access.range());
                 (
                     range,
                     old_layout,
@@ -398,19 +425,6 @@ impl SyncManagerInternal {
     }
 }
 
-fn limit_range_to<T>(
-    range: &InclusiveInterval<T>,
-    max_range: &InclusiveInterval<T>,
-) -> InclusiveInterval<T>
-where
-    T: discrete_range_map::PointType,
-{
-    return range.clone();
-    let start = std::cmp::max(range.start(), max_range.start());
-    let end = std::cmp::min(range.end(), max_range.end());
-    inclusive_interval::ii(start, end)
-}
-
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 struct BufferResourceKey(u64);
 
@@ -438,8 +452,8 @@ where
 {
     fn new(max_range: K) -> Self {
         Self {
-            write: OptRangeMap::new_with_max_range(max_range),
-            reads: OptRangeMap::new_with_max_range(max_range),
+            write: OptRangeMap::new(max_range),
+            reads: OptRangeMap::new(max_range),
         }
     }
 
@@ -447,7 +461,7 @@ where
         let old_writes = self.write.overwrite(range, value);
         let old_reads = self.reads.cut(range);
 
-        let mut range_map = RangeMap::new_with_max_range(range.clone());
+        let mut range_map = RangeMap::new(range.clone());
         for (key, value) in old_writes {
             range_map.overwrite(key, value);
         }
