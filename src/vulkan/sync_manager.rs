@@ -8,9 +8,12 @@ use std::{
 };
 
 use ash::vk;
-use discrete_range_map::{DiscreteRangeMap, InclusiveInterval};
+use discrete_range_map::{inclusive_interval, DiscreteRangeMap, InclusiveInterval};
 
-use self::resource_access::{BufferAccess, BufferAccessInfo, ImageAccess, ImageAccessInfo};
+use self::{
+    range_map::{OptRangeMap, RangeMap, RangeMapLike, SmallArrayRangeMap},
+    resource_access::{BufferAccess, BufferAccessInfo, ImageAccess, ImageAccessInfo, MipLevel},
+};
 
 use super::command_buffer::{BufferMemoryBarrier, CmdPipelineBarrier, ImageMemoryBarrier};
 
@@ -37,10 +40,8 @@ impl SyncManager {
     }
 
     #[must_use]
-    pub fn get_image(&self, mip_levels: u32) -> ImageResource {
+    pub fn get_image(&self) -> ImageResource {
         let mut inner = self.inner.lock().unwrap();
-
-        todo!("Implement mip level tracking");
 
         ImageResource {
             sync_manager: self.clone(),
@@ -56,10 +57,7 @@ impl SyncManager {
     /// Call this after waiting for the device to be idle.
     pub fn clear_all(&self) {
         let mut inner = self.inner.lock().unwrap();
-        for (_, access) in inner.buffers.iter_mut() {
-            *access = ResourceRWAccess::new_only_reads(vec![]);
-        }
-        todo!("Implement image layout tracking");
+        inner.clear_all();
     }
 }
 
@@ -89,15 +87,22 @@ impl<'a> SyncManagerLock<'a> {
             .flat_map(|BufferAccess { buffer, access }| {
                 let wait_for = self
                     .inner
-                    .add_buffer_access(buffer.resource.key, access.clone());
-
-                wait_for
+                    .add_buffer_access(buffer.resource.key, buffer.size, access.clone())
                     .into_iter()
                     // If there's no access, then there's no need for a barrier.
-                    .filter(|old| old.access != vk::AccessFlags2::NONE)
-                    .map(move |old| BufferMemoryBarrier {
-                        src_stage_mask: old.stage,
-                        src_access_mask: old.access,
+                    .filter(|old| old.access() != vk::AccessFlags2::NONE)
+                    // Combine all the old accesses into one barrier.
+                    .fold(
+                        ResourceAccessInfo::empty(),
+                        ResourceAccessInfo::into_combined,
+                    );
+
+                if wait_for.access() == vk::AccessFlags2::NONE {
+                    None
+                } else {
+                    Some(BufferMemoryBarrier {
+                        src_stage_mask: wait_for.stage(),
+                        src_access_mask: wait_for.access(),
                         dst_stage_mask: access.stage,
                         dst_access_mask: access.access,
                         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -106,6 +111,7 @@ impl<'a> SyncManagerLock<'a> {
                         offset: access.offset,
                         size: access.size,
                     })
+                }
             })
             .collect();
 
@@ -117,20 +123,35 @@ impl<'a> SyncManagerLock<'a> {
                      layout,
                      access,
                  }| {
-                    let (old_layout, wait_for) =
-                        self.inner
-                            .add_image_access(image.resource.key, layout, access.clone());
-                    wait_for.into_iter().map(move |old| ImageMemoryBarrier {
-                        src_stage_mask: old.stage,
-                        src_access_mask: old.access,
-                        dst_stage_mask: access.stage,
-                        dst_access_mask: access.access,
-                        old_layout,
-                        new_layout: layout,
-                        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                        image: image.clone(),
-                        subresource_range: access.subresource_range,
+                    let wait_for = self.inner.add_image_access(
+                        image.resource.key,
+                        image.mip_levels as MipLevel,
+                        layout,
+                        access.clone(),
+                    );
+                    wait_for.into_iter().map(move |(range, old_layout, old)| {
+                        let combined_accesses = old.into_iter().fold(
+                            ResourceAccessInfo::empty(),
+                            ResourceAccessInfo::into_combined,
+                        );
+                        ImageMemoryBarrier {
+                            src_stage_mask: combined_accesses.stage(),
+                            src_access_mask: combined_accesses.access(),
+                            dst_stage_mask: access.stage,
+                            dst_access_mask: access.access,
+                            old_layout,
+                            new_layout: layout,
+                            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                            image: image.clone(),
+                            subresource_range: vk::ImageSubresourceRange {
+                                aspect_mask: access.subresource_range.aspect_mask,
+                                base_mip_level: range.start() as _,
+                                level_count: (range.end() - range.start()) as _,
+                                base_array_layer: access.subresource_range.base_array_layer,
+                                layer_count: access.subresource_range.layer_count,
+                            },
+                        }
                     })
                 },
             )
@@ -171,12 +192,69 @@ impl Drop for ImageResource {
 
 // Internals //
 
-struct SyncManagerInternal {
-    // TODO: Use a https://crates.io/crates/rangemap for granular buffer/image access tracking.
-    buffers: HashMap<BufferResourceKey, ResourceRWAccess<BufferAccessInfo>>,
-    images: HashMap<ImageResourceKey, ResourceRWAccess<ImageAccessInfo>>,
-    image_layouts: HashMap<ImageResourceKey, vk::ImageLayout>,
+#[derive(Clone)]
+enum ResourceAccessInfo {
+    Read {
+        stage: vk::PipelineStageFlags2,
+        access: vk::AccessFlags2,
+    },
+    Write {
+        stage: vk::PipelineStageFlags2,
+        access: vk::AccessFlags2,
+    },
+}
 
+impl ResourceAccessInfo {
+    fn stage(&self) -> vk::PipelineStageFlags2 {
+        match self {
+            Self::Read { stage, .. } | Self::Write { stage, .. } => *stage,
+        }
+    }
+
+    fn access(&self) -> vk::AccessFlags2 {
+        match self {
+            Self::Read { access, .. } | Self::Write { access, .. } => *access,
+        }
+    }
+
+    fn combine(&self, other: &Self) -> Self {
+        let combined_stage = self.stage() | other.stage();
+        let combined_access = self.access() | other.access();
+        match (self, other) {
+            (Self::Read { .. }, Self::Read { .. }) => Self::Read {
+                stage: combined_stage,
+                access: combined_access,
+            },
+            _ => Self::Write {
+                stage: combined_stage,
+                access: combined_access,
+            },
+        }
+    }
+
+    fn into_combined(self, other: Self) -> Self {
+        self.combine(&other)
+    }
+
+    fn empty() -> Self {
+        ResourceAccessInfo::Read {
+            stage: vk::PipelineStageFlags2::NONE,
+            access: vk::AccessFlags2::NONE,
+        }
+    }
+}
+
+struct SyncManagerInternal {
+    buffers: HashMap<
+        BufferResourceKey,
+        ResourceRW<vk::DeviceSize, InclusiveInterval<vk::DeviceSize>, ResourceAccessInfo>,
+    >,
+    images: HashMap<
+        ImageResourceKey,
+        ResourceRW<MipLevel, InclusiveInterval<MipLevel>, ResourceAccessInfo>,
+    >,
+    /// Invariant: All slots in the range map are filled.
+    image_layouts: HashMap<ImageResourceKey, OptRangeMap<SmallArrayRangeMap<vk::ImageLayout>>>,
     buffer_key_counter: u64,
     image_key_counter: u64,
 }
@@ -213,61 +291,49 @@ impl SyncManagerInternal {
         self.image_layouts.remove(&key);
     }
 
-    fn resource_write_access<T: VulkanResourceAccess>(
-        resources: &mut HashMap<T::Key, ResourceRWAccess<T>>,
-        key: T::Key,
-        access: T,
-    ) -> Vec<T> {
-        let old = resources.insert(key, ResourceRWAccess::new_write(access));
-        match old {
-            Some(ResourceRWAccess {
-                write: Some(write),
-                reads,
-            }) if reads.is_empty() => {
-                vec![write.clone()]
-            }
-            Some(ResourceRWAccess { reads, .. }) => reads,
-
-            None => vec![],
-        }
-    }
-    fn resource_read_access<T: VulkanResourceAccess>(
-        resources: &mut HashMap<T::Key, ResourceRWAccess<T>>,
-        key: T::Key,
-        access: T,
-    ) -> Vec<T> {
-        use std::collections::hash_map::Entry;
-        match resources.entry(key) {
-            Entry::Occupied(value) => {
-                let ResourceRWAccess { write, reads } = value.into_mut();
-                reads.push(access);
-                write.clone().map(|w| vec![w]).unwrap_or_default()
-            }
-            Entry::Vacant(value) => {
-                value.insert(ResourceRWAccess::new_only_reads(vec![access]));
-                vec![]
-            }
-        }
-    }
-
     fn add_buffer_access(
         &mut self,
         key: BufferResourceKey,
+        max_size: vk::DeviceSize,
         access: BufferAccessInfo,
-    ) -> Vec<BufferAccessInfo> {
+    ) -> Vec<ResourceAccessInfo> {
+        let entry = self
+            .buffers
+            .entry(key)
+            .or_insert_with(|| ResourceRW::new(InclusiveInterval::from(0..=max_size)));
+
         if access.is_write() {
-            Self::resource_write_access(&mut self.buffers, key, access)
+            entry.add_write(
+                access.range(),
+                ResourceAccessInfo::Write {
+                    stage: access.stage,
+                    access: access.access,
+                },
+            )
         } else {
-            Self::resource_read_access(&mut self.buffers, key, access)
+            entry.add_read(
+                access.range(),
+                ResourceAccessInfo::Read {
+                    stage: access.stage,
+                    access: access.access,
+                },
+                ResourceAccessInfo::into_combined,
+            )
         }
     }
 
     fn add_image_access(
         &mut self,
         key: ImageResourceKey,
+        mip_level_count: MipLevel,
         layout: vk::ImageLayout,
         access: ImageAccessInfo,
-    ) -> (vk::ImageLayout, Vec<ImageAccessInfo>) {
+    ) -> Vec<(
+        InclusiveInterval<MipLevel>,
+        vk::ImageLayout,
+        Vec<ResourceAccessInfo>,
+    )> {
+        let max_range = InclusiveInterval::from(0..=mip_level_count);
         assert!(
             access.subresource_range.base_array_layer == 0,
             "Array or 3D images are not supported"
@@ -276,33 +342,52 @@ impl SyncManagerInternal {
             access.subresource_range.layer_count == 1,
             "Array or 3D images are not supported"
         );
+        let layout_entry = self.image_layouts.entry(key).or_insert_with(|| {
+            let mut layouts = OptRangeMap::new(max_range);
+            layouts.overwrite(max_range, vk::ImageLayout::UNDEFINED);
+            layouts
+        });
+        let old_layouts = layout_entry.overwrite(access.range(), layout);
 
-        let old_layout = self.image_layouts.get(&key).map(|v| *v);
-        self.image_layouts.insert(key, layout);
-        if access.is_write(layout, old_layout) {
-            (
-                layout,
-                Self::resource_write_access(&mut self.images, key, access),
-            )
-        } else {
-            (
-                layout,
-                Self::resource_read_access(&mut self.images, key, access),
-            )
-        }
+        let entry = self
+            .images
+            .entry(key)
+            .or_insert_with(|| ResourceRW::new(max_range));
+
+        old_layouts
+            .into_iter()
+            .map(|(range, old_layout)| {
+                (
+                    range.clone(),
+                    old_layout,
+                    if access.is_write(layout, Some(old_layout)) {
+                        entry.add_write(
+                            range.clone(),
+                            ResourceAccessInfo::Write {
+                                stage: access.stage,
+                                access: access.access,
+                            },
+                        )
+                    } else {
+                        entry.add_read(
+                            range.clone(),
+                            ResourceAccessInfo::Read {
+                                stage: access.stage,
+                                access: access.access,
+                            },
+                            ResourceAccessInfo::into_combined,
+                        )
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
     }
-}
 
-trait VulkanResourceAccess: Clone {
-    type Key: std::hash::Hash + Eq + Copy;
-}
-
-impl VulkanResourceAccess for BufferAccessInfo {
-    type Key = BufferResourceKey;
-}
-
-impl VulkanResourceAccess for ImageAccessInfo {
-    type Key = ImageResourceKey;
+    fn clear_all(&mut self) {
+        // Clear the accesses, but not the layouts.
+        self.buffers.clear();
+        self.images.clear();
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
@@ -312,21 +397,53 @@ struct BufferResourceKey(u64);
 struct ImageResourceKey(u64);
 
 /// Stores the last write, and all *subsequent* reads.
-struct ResourceRWAccess<T> {
+struct ResourceRW<I, K, V>
+where
+    I: discrete_range_map::PointType,
+    K: discrete_range_map::RangeType<I>,
+    V: Clone,
+{
     /// The last write to the resource.
-    write: Option<T>,
+    write: OptRangeMap<RangeMap<I, K, V>>,
     /// All subsequent reads from the resource.
-    reads: Vec<T>,
+    reads: OptRangeMap<RangeMap<I, K, V>>,
 }
 
-impl<T> ResourceRWAccess<T> {
-    fn new_write(last_write: T) -> Self {
+impl<I, K, V> ResourceRW<I, K, V>
+where
+    I: discrete_range_map::PointType,
+    K: discrete_range_map::RangeType<I>,
+    V: Clone,
+{
+    fn new(max_range: K) -> Self {
         Self {
-            write: Some(last_write),
-            reads: vec![],
+            write: OptRangeMap::new_with_max_range(max_range),
+            reads: OptRangeMap::new_with_max_range(max_range),
         }
     }
-    fn new_only_reads(reads: Vec<T>) -> Self {
-        Self { write: None, reads }
+
+    fn add_write(&mut self, range: K, value: V) -> Vec<V> {
+        let old_writes = self.write.overwrite(range, value);
+        let old_reads = self.reads.cut(range);
+
+        let mut range_map = RangeMap::new_with_max_range(range.clone());
+        for (key, value) in old_writes {
+            range_map.overwrite(key, value);
+        }
+        for (key, value) in old_reads {
+            range_map.overwrite(key, value);
+        }
+        range_map.get_all(&range).map(|(_, v)| v.clone()).collect()
+    }
+
+    fn add_read(&mut self, range: K, value: V, combine_values: impl Fn(V, V) -> V) -> Vec<V> {
+        let old_writes = self.write.get_all(&range).map(|(_, v)| v.clone()).collect();
+        let reads = self.reads.cut(range);
+
+        for (k, v) in reads {
+            let new_value = combine_values(v, value.clone());
+            self.reads.overwrite(k, new_value);
+        }
+        old_writes
     }
 }

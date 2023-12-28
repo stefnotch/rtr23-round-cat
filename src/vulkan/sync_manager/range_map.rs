@@ -3,53 +3,58 @@ use std::ops::RangeInclusive;
 use discrete_range_map::{InclusiveInterval, InclusiveRange};
 
 /// Optimized version of `RangeMapLike` for the case where the range is fully covered by the value.
-pub struct OptRangeMap<InnerMap, Value, Range> {
-    max_range: Range,
-    inner: FullRangeOpt<InnerMap, Value>,
+pub struct OptRangeMap<InnerMap>
+where
+    InnerMap: RangeMapLike,
+{
+    max_range: InnerMap::Range,
+    inner: FullRangeOpt<InnerMap>,
 }
 
-enum FullRangeOpt<InnerMap, Value> {
-    All(Option<Value>),
+enum FullRangeOpt<InnerMap>
+where
+    InnerMap: RangeMapLike,
+{
+    All(Option<InnerMap::Value>),
     Granular(InnerMap),
 }
 
-impl<InnerMap, I, K, V> OptRangeMap<InnerMap, V, K>
+impl<InnerMap> OptRangeMap<InnerMap>
 where
-    InnerMap: RangeMapLike<Point = I, RangeKey = K, Value = V>,
-    I: discrete_range_map::PointType,
-    K: InclusiveRange<I>,
+    InnerMap: RangeMapLike,
 {
-    pub fn new(max_range: K) -> Self {
+    pub fn new(max_range: InnerMap::Range) -> Self {
         Self {
             max_range,
             inner: FullRangeOpt::All(None),
         }
     }
 
-    pub fn new_from(inner: InnerMap, max_range: K) -> Self {
+    pub fn new_from(inner: InnerMap, max_range: InnerMap::Range) -> Self {
         Self {
             max_range,
             inner: FullRangeOpt::Granular(inner),
         }
     }
 
-    pub fn is_max_range(&self, range: &K) -> bool {
+    pub fn is_max_range(&self, range: &InnerMap::Range) -> bool {
         range.contains(self.max_range.start()) && range.contains(self.max_range.end())
     }
 }
 
-impl<InnerMap, I, K, V> RangeMapLike for OptRangeMap<InnerMap, V, K>
+impl<InnerMap> RangeMapLike for OptRangeMap<InnerMap>
 where
-    InnerMap: RangeMapLike<Point = I, RangeKey = K, Value = V> + Default,
-    I: discrete_range_map::PointType,
-    K: discrete_range_map::RangeType<I>,
-    V: Clone,
+    InnerMap: RangeMapLike,
 {
-    type Point = I;
-    type RangeKey = K;
-    type Value = V;
+    type Point = InnerMap::Point;
+    type Range = InnerMap::Range;
+    type Value = InnerMap::Value;
 
-    fn get_all(&self, key: &Self::RangeKey) -> impl Iterator<Item = Self::Value> + '_ {
+    fn new_with_max_range(max_range: Self::Range) -> Self {
+        Self::new(max_range)
+    }
+
+    fn get_all(&self, key: &Self::Range) -> impl Iterator<Item = (Self::Range, &Self::Value)> + '_ {
         if !key.is_valid() {
             panic!("Invalid range");
         }
@@ -58,12 +63,16 @@ where
         }
         match &self.inner {
             FullRangeOpt::All(None) => Box::new(std::iter::empty()),
-            FullRangeOpt::All(Some(value)) => Box::new(std::iter::once(value.clone())),
+            FullRangeOpt::All(Some(value)) => Box::new(std::iter::once((*key, value))),
             FullRangeOpt::Granular(inner) => Box::new(inner.get_all(key)),
         }
     }
 
-    fn overwrite(&mut self, key: Self::RangeKey, value: Self::Value) -> Vec<Self::Value> {
+    fn overwrite(
+        &mut self,
+        key: Self::Range,
+        value: Self::Value,
+    ) -> Vec<(Self::Range, Self::Value)> {
         if !key.is_valid() {
             panic!("Invalid range");
         }
@@ -71,14 +80,17 @@ where
             return vec![];
         }
         if self.is_max_range(&key) {
-            let old = self.get_all(&key).collect();
+            let old = self.get_all(&key).map(|(k, v)| (k, v.clone())).collect();
             self.inner = FullRangeOpt::All(Some(value));
             return old;
         }
         match &mut self.inner {
             FullRangeOpt::All(v) => {
-                let old = v.take().map(|v| vec![v]).unwrap_or_default();
-                let mut inner = InnerMap::default();
+                let old = v
+                    .take()
+                    .map(|v| vec![(self.max_range, v)])
+                    .unwrap_or_default();
+                let mut inner = InnerMap::new_with_max_range(self.max_range.clone());
                 inner.overwrite(key, value);
                 self.inner = FullRangeOpt::Granular(inner);
                 old
@@ -87,7 +99,7 @@ where
         }
     }
 
-    fn cut(&mut self, key: Self::RangeKey) -> Vec<Self::Value> {
+    fn cut(&mut self, key: Self::Range) -> Vec<(Self::Range, Self::Value)> {
         if !key.is_valid() {
             panic!("Invalid range");
         }
@@ -97,11 +109,16 @@ where
         let is_max_range = self.is_max_range(&key);
         match &mut self.inner {
             FullRangeOpt::All(v) => {
-                let old = v.take().map(|v| vec![v]).unwrap_or_default();
+                let old = v
+                    .take()
+                    .map(|v| vec![(self.max_range, v)])
+                    .unwrap_or_default();
                 if is_max_range {
                     self.inner = FullRangeOpt::All(None);
                 } else {
-                    self.inner = FullRangeOpt::Granular(InnerMap::default());
+                    self.inner = FullRangeOpt::Granular(InnerMap::new_with_max_range(
+                        self.max_range.clone(),
+                    ));
                 }
                 old
             }
@@ -135,29 +152,30 @@ where
     K: discrete_range_map::RangeType<I>,
 {
     type Point = I;
-    type RangeKey = K;
+    type Range = K;
     type Value = V;
 
-    fn get_all(&self, key: &Self::RangeKey) -> impl Iterator<Item = Self::Value> + '_ {
-        self.inner.overlapping(*key).map(|(_, v)| v.clone())
+    fn new_with_max_range(_max_range: Self::Range) -> Self {
+        Self::new()
     }
 
-    fn overwrite(&mut self, key: Self::RangeKey, value: Self::Value) -> Vec<Self::Value> {
-        self.inner
-            .insert_overwrite(key, value)
-            .map(|(_, v)| v)
-            .collect()
+    fn get_all(&self, key: &Self::Range) -> impl Iterator<Item = (Self::Range, &Self::Value)> + '_ {
+        self.inner.overlapping(*key).map(|(k, v)| (*k, v))
     }
 
-    fn cut(&mut self, key: Self::RangeKey) -> Vec<Self::Value> {
-        self.inner.cut(key).map(|(_, v)| v).collect()
-    }
-
-    fn insert_if_empty(
+    fn overwrite(
         &mut self,
-        key: Self::RangeKey,
+        key: Self::Range,
         value: Self::Value,
-    ) -> Result<(), Self::Value> {
+    ) -> Vec<(Self::Range, Self::Value)> {
+        self.inner.insert_overwrite(key, value).collect()
+    }
+
+    fn cut(&mut self, key: Self::Range) -> Vec<(Self::Range, Self::Value)> {
+        self.inner.cut(key).collect()
+    }
+
+    fn insert_if_empty(&mut self, key: Self::Range, value: Self::Value) -> Result<(), Self::Value> {
         self.inner.insert_strict(key, value).map_err(|v| v.value)
     }
 }
@@ -168,80 +186,93 @@ impl<I, K, V> Default for RangeMap<I, K, V> {
     }
 }
 
-pub struct SmallArrayRangeMap<V, const size: usize> {
-    values: Box<[V]>,
+pub struct SmallArrayRangeMap<V> {
+    values: Vec<Option<V>>,
 }
 
-impl<V, const size: usize> SmallArrayRangeMap<V, size> {
-    pub fn new(value: V) -> Self
+impl<V> SmallArrayRangeMap<V> {
+    pub fn new(size: usize) -> Self
     where
         V: Copy,
     {
         Self {
-            values: Box::new([value; size]),
+            values: vec![None; size],
         }
     }
-}
 
-impl<V, const size: usize> RangeMapLike for SmallArrayRangeMap<V, size>
-where
-    V: Copy + PartialEq,
-{
-    type Point = usize;
-    type RangeKey = InclusiveInterval<usize>;
-    type Value = V;
-
-    fn get_all(&self, key: &Self::RangeKey) -> impl Iterator<Item = Self::Value> + '_ {
-        if !key.is_valid() {
-            panic!("Invalid range");
-        }
-        // Filter subsequent duplicates
-        self.values[RangeInclusive::from(*key)]
-            .iter()
-            .scan(None, |prev, next| {
-                if &Some(next) == prev {
-                    Some(None)
-                } else {
-                    *prev = Some(next);
-                    Some(Some(next))
-                }
-            })
-            .filter_map(|x| x.copied())
-    }
-
-    fn overwrite(&mut self, key: Self::RangeKey, value: Self::Value) -> Vec<Self::Value> {
+    fn overwrite_internal(
+        &mut self,
+        key: InclusiveInterval<usize>,
+        value: Option<V>,
+    ) -> Vec<(InclusiveInterval<usize>, V)>
+    where
+        V: Copy + PartialEq,
+    {
         if !key.is_valid() {
             panic!("Invalid range");
         }
         if is_empty_range(&key) {
             return vec![];
         }
-        let overwritten = self.get_all(&key).collect::<Vec<_>>();
+        let overwritten = self
+            .get_all(&key)
+            .map(|(k, v)| (k, v.clone()))
+            .collect::<Vec<_>>();
         for i in RangeInclusive::from(key) {
             self.values[i] = value;
         }
         overwritten
     }
-
-    fn insert_if_empty(
-        &mut self,
-        _key: Self::RangeKey,
-        _value: Self::Value,
-    ) -> Result<(), Self::Value> {
-        panic!("Not implemented")
-    }
-
-    fn cut(&mut self, _key: Self::RangeKey) -> Vec<Self::Value> {
-        panic!("Not implemented")
-    }
 }
 
-impl<V, const size: usize> Default for SmallArrayRangeMap<V, size>
+impl<V> RangeMapLike for SmallArrayRangeMap<V>
 where
-    V: Copy + Default,
+    V: Copy + PartialEq,
 {
-    fn default() -> Self {
-        Self::new(V::default())
+    type Point = usize;
+    type Range = InclusiveInterval<usize>;
+    type Value = V;
+
+    fn new_with_max_range(max_range: Self::Range) -> Self {
+        assert!(max_range.is_valid());
+        assert!(max_range.start() == 0);
+        Self::new(max_range.end())
+    }
+
+    fn get_all(&self, key: &Self::Range) -> impl Iterator<Item = (Self::Range, &Self::Value)> + '_ {
+        if !key.is_valid() {
+            panic!("Invalid range");
+        }
+        // Filter subsequent duplicates
+        self.values[RangeInclusive::from(*key)]
+            .iter()
+            .flatten()
+            .enumerate()
+            .scan((key.start(), None), |(start, prev), (index, next)| {
+                if &Some(next) == prev {
+                    Some(None)
+                } else {
+                    *start = index;
+                    *prev = Some(next);
+                    Some(Some((
+                        InclusiveInterval::from((*start)..=(index + 1)),
+                        next,
+                    )))
+                }
+            })
+            .flatten()
+    }
+
+    fn overwrite(
+        &mut self,
+        key: Self::Range,
+        value: Self::Value,
+    ) -> Vec<(Self::Range, Self::Value)> {
+        self.overwrite_internal(key, Some(value))
+    }
+
+    fn cut(&mut self, key: Self::Range) -> Vec<(Self::Range, Self::Value)> {
+        self.overwrite_internal(key, None)
     }
 }
 
@@ -254,22 +285,24 @@ fn is_empty_range<R: discrete_range_map::RangeType<P>, P: discrete_range_map::Po
 /// A map from ranges to values.
 pub trait RangeMapLike {
     type Point: discrete_range_map::PointType;
-    type RangeKey: discrete_range_map::RangeType<Self::Point>;
+    type Range: discrete_range_map::RangeType<Self::Point>;
     type Value: Clone;
 
+    fn new_with_max_range(max_range: Self::Range) -> Self;
+
     /// Returns all values that overlap with the given key.
-    fn get_all(&self, key: &Self::RangeKey) -> impl Iterator<Item = Self::Value> + '_;
+    fn get_all(&self, key: &Self::Range) -> impl Iterator<Item = (Self::Range, &Self::Value)> + '_;
 
     /// Overwrites the values in the range, and returns all values that were overwritten.
-    fn overwrite(&mut self, key: Self::RangeKey, value: Self::Value) -> Vec<Self::Value>;
+    fn overwrite(
+        &mut self,
+        key: Self::Range,
+        value: Self::Value,
+    ) -> Vec<(Self::Range, Self::Value)>;
 
     /// Inserts the given value at the given key, if there is no value at that key.
     /// Otherwise, returns the user supplied value.
-    fn insert_if_empty(
-        &mut self,
-        key: Self::RangeKey,
-        value: Self::Value,
-    ) -> Result<(), Self::Value> {
+    fn insert_if_empty(&mut self, key: Self::Range, value: Self::Value) -> Result<(), Self::Value> {
         if self.get_all(&key).next().is_none() {
             self.overwrite(key, value);
             Ok(())
@@ -280,5 +313,5 @@ pub trait RangeMapLike {
 
     /// Removes all values in the range, and returns them.
     /// Will split values that overlap with the range.
-    fn cut(&mut self, key: Self::RangeKey) -> Vec<Self::Value>;
+    fn cut(&mut self, key: Self::Range) -> Vec<(Self::Range, Self::Value)>;
 }
