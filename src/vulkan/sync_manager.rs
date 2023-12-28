@@ -3,12 +3,11 @@ pub mod resource_access;
 
 use std::{
     collections::HashMap,
-    ops::{Range, RangeInclusive},
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use ash::vk;
-use discrete_range_map::{inclusive_interval, DiscreteRangeMap, InclusiveInterval};
+use discrete_range_map::{inclusive_interval, InclusiveInterval, InclusiveRange};
 
 use self::{
     range_map::{OptRangeMap, RangeMap, RangeMapLike, SmallArrayRangeMap},
@@ -147,7 +146,7 @@ impl<'a> SyncManagerLock<'a> {
                             subresource_range: vk::ImageSubresourceRange {
                                 aspect_mask: access.subresource_range.aspect_mask,
                                 base_mip_level: range.start() as _,
-                                level_count: (range.end() - range.start()) as _,
+                                level_count: (range.end() + 1 - range.start()) as _,
                                 base_array_layer: access.subresource_range.base_array_layer,
                                 layer_count: access.subresource_range.layer_count,
                             },
@@ -300,7 +299,7 @@ impl SyncManagerInternal {
         let entry = self
             .buffers
             .entry(key)
-            .or_insert_with(|| ResourceRW::new(InclusiveInterval::from(0..=max_size)));
+            .or_insert_with(|| ResourceRW::new(inclusive_interval::ie(0, max_size)));
 
         if access.is_write() {
             entry.add_write(
@@ -333,7 +332,7 @@ impl SyncManagerInternal {
         vk::ImageLayout,
         Vec<ResourceAccessInfo>,
     )> {
-        let max_range = InclusiveInterval::from(0..=mip_level_count);
+        let max_range = inclusive_interval::ie(0, mip_level_count);
         assert!(
             access.subresource_range.base_array_layer == 0,
             "Array or 3D images are not supported"
@@ -343,11 +342,19 @@ impl SyncManagerInternal {
             "Array or 3D images are not supported"
         );
         let layout_entry = self.image_layouts.entry(key).or_insert_with(|| {
-            let mut layouts = OptRangeMap::new(max_range);
+            let mut layouts = OptRangeMap::new_with_max_range(max_range);
             layouts.overwrite(max_range, vk::ImageLayout::UNDEFINED);
             layouts
         });
+
         let old_layouts = layout_entry.overwrite(access.range(), layout);
+        assert!(
+            old_layouts.len() > 0,
+            "All slots in the range map should be filled"
+        );
+        assert!(old_layouts.iter().all(|(k, _)| k.is_valid()
+            && access.range().contains(k.start())
+            && access.range().contains(k.end())));
 
         let entry = self
             .images
@@ -357,12 +364,13 @@ impl SyncManagerInternal {
         old_layouts
             .into_iter()
             .map(|(range, old_layout)| {
+                let range = limit_range_to(&range, &access.range());
                 (
-                    range.clone(),
+                    range,
                     old_layout,
                     if access.is_write(layout, Some(old_layout)) {
                         entry.add_write(
-                            range.clone(),
+                            range,
                             ResourceAccessInfo::Write {
                                 stage: access.stage,
                                 access: access.access,
@@ -370,7 +378,7 @@ impl SyncManagerInternal {
                         )
                     } else {
                         entry.add_read(
-                            range.clone(),
+                            range,
                             ResourceAccessInfo::Read {
                                 stage: access.stage,
                                 access: access.access,
@@ -390,17 +398,30 @@ impl SyncManagerInternal {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+fn limit_range_to<T>(
+    range: &InclusiveInterval<T>,
+    max_range: &InclusiveInterval<T>,
+) -> InclusiveInterval<T>
+where
+    T: discrete_range_map::PointType,
+{
+    return range.clone();
+    let start = std::cmp::max(range.start(), max_range.start());
+    let end = std::cmp::min(range.end(), max_range.end());
+    inclusive_interval::ii(start, end)
+}
+
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 struct BufferResourceKey(u64);
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 struct ImageResourceKey(u64);
 
 /// Stores the last write, and all *subsequent* reads.
 struct ResourceRW<I, K, V>
 where
     I: discrete_range_map::PointType,
-    K: discrete_range_map::RangeType<I>,
+    K: discrete_range_map::RangeType<I> + std::fmt::Debug,
     V: Clone,
 {
     /// The last write to the resource.
@@ -412,7 +433,7 @@ where
 impl<I, K, V> ResourceRW<I, K, V>
 where
     I: discrete_range_map::PointType,
-    K: discrete_range_map::RangeType<I>,
+    K: discrete_range_map::RangeType<I> + std::fmt::Debug,
     V: Clone,
 {
     fn new(max_range: K) -> Self {
@@ -433,17 +454,21 @@ where
         for (key, value) in old_reads {
             range_map.overwrite(key, value);
         }
-        range_map.get_all(&range).map(|(_, v)| v.clone()).collect()
+        range_map
+            .overlapping(&range)
+            .map(|(_, v)| v.clone())
+            .collect()
     }
 
     fn add_read(&mut self, range: K, value: V, combine_values: impl Fn(V, V) -> V) -> Vec<V> {
-        let old_writes = self.write.get_all(&range).map(|(_, v)| v.clone()).collect();
         let reads = self.reads.cut(range);
-
         for (k, v) in reads {
             let new_value = combine_values(v, value.clone());
             self.reads.overwrite(k, new_value);
         }
-        old_writes
+        self.write
+            .overlapping(&range)
+            .map(|(_, v)| v.clone())
+            .collect()
     }
 }

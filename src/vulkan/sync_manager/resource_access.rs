@@ -27,6 +27,7 @@ pub struct BufferAccessInfo {
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
     pub offset: vk::DeviceSize,
+    // TODO: Maybe disallow vk::WHOLE_SIZE?
     pub size: vk::DeviceSize,
 }
 
@@ -65,7 +66,11 @@ impl BufferAccessInfo {
     }
 
     pub fn range(&self) -> InclusiveInterval<vk::DeviceSize> {
-        inclusive_interval::ie(self.offset, self.offset + self.size)
+        if self.size == vk::WHOLE_SIZE {
+            return inclusive_interval::ie(self.offset, vk::WHOLE_SIZE);
+        } else {
+            inclusive_interval::ie(self.offset, self.offset + self.size)
+        }
     }
 }
 
