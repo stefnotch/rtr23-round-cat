@@ -1,13 +1,10 @@
-use std::{ffi::CStr, io::Cursor, sync::Arc};
+use std::sync::Arc;
 
-use ash::{
-    util::read_spv,
-    vk::{self},
-};
+use ash::vk::{self};
 use crevice::std140::AsStd140;
 
-use crate::vulkan::context::Context;
 use crate::vulkan::swapchain::SwapchainContainer;
+use crate::{include_shader, vulkan::context::Context};
 use crate::{
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, shader_types,
@@ -67,6 +64,7 @@ impl GeometryPass {
         swapchain_index: SwapchainIndex,
         viewport: vk::Viewport,
     ) {
+        crate::utility::cmd_full_pipeline_barrier(&self.context, command_buffer);
         let clear_values = [
             vk::ClearValue {
                 color: vk::ClearColorValue {
@@ -161,7 +159,7 @@ impl GeometryPass {
                 unsafe {
                     self.context.device.cmd_bind_index_buffer(
                         command_buffer,
-                        *primitive.mesh.index_buffer,
+                        **primitive.mesh.index_buffer,
                         0,
                         vk::IndexType::UINT32,
                     )
@@ -283,42 +281,18 @@ fn create_pipeline(
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
-    let mut vert_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/g_buffer.vert.spv"))[..]);
-    let mut frag_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/g_buffer.frag.spv"))[..]);
+    let mut vertex_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::VERTEX,
+        "/g_buffer.vert.spv"
+    );
+    let mut fragment_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::FRAGMENT,
+        "/g_buffer.frag.spv"
+    );
 
-    let vert_shader_code =
-        read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
-    let frag_shader_code =
-        read_spv(&mut frag_spv_file).expect("Could not read frag shader spv file");
-
-    let vertex_shader_shader_module = {
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_shader_code);
-        unsafe { device.create_shader_module(&create_info, None) }
-            .expect("Could not create vertex shader module")
-    };
-
-    let fragment_shader_shader_module = {
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&frag_shader_code);
-        unsafe { device.create_shader_module(&create_info, None) }
-            .expect("Could not create fragment shader module")
-    };
-
-    let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
-
-    let shader_stages = [
-        vk::PipelineShaderStageCreateInfo::builder()
-            .module(vertex_shader_shader_module)
-            .name(shader_entry_name)
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::PipelineShaderStageCreateInfo::builder()
-            .module(fragment_shader_shader_module)
-            .name(shader_entry_name)
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-    ];
+    let shader_stages = [vertex_shader.build(), fragment_shader.build()];
 
     let (vertex_input_binding_descriptions, vertex_input_attribute_descriptions) = (
         Vertex::binding_descriptions(),
@@ -390,7 +364,10 @@ fn create_pipeline(
         .logic_op(vk::LogicOp::CLEAR)
         .attachments(&color_blend_attachment_states);
 
-    let descriptor_set_layouts = [set_layout_cache.camera(), set_layout_cache.material()];
+    let descriptor_set_layouts = [
+        set_layout_cache.camera().inner,
+        set_layout_cache.material().inner,
+    ];
 
     let push_constants_ranges = vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::VERTEX,
@@ -430,9 +407,6 @@ fn create_pipeline(
         )
     }
     .expect("Could not create graphics pipeline");
-
-    unsafe { device.destroy_shader_module(vertex_shader_shader_module, None) };
-    unsafe { device.destroy_shader_module(fragment_shader_shader_module, None) };
 
     (pipeline[0], layout)
 }
@@ -488,10 +462,10 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
 
     let depth_stencil_attachment = vk::AttachmentDescription {
         flags: vk::AttachmentDescriptionFlags::empty(),
-        format: vk::Format::D32_SFLOAT,
+        format: GBuffer::DEPTH_FORMAT,
         samples: vk::SampleCountFlags::TYPE_1,
         load_op: vk::AttachmentLoadOp::CLEAR,
-        store_op: vk::AttachmentStoreOp::DONT_CARE,
+        store_op: vk::AttachmentStoreOp::STORE,
         stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
         stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
         initial_layout: vk::ImageLayout::UNDEFINED,
@@ -543,14 +517,30 @@ fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
         depth_stencil_attachment,
     ];
 
-    let dependencies = [vk::SubpassDependency {
-        src_subpass: vk::SUBPASS_EXTERNAL,
-        src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
-            | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-        dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        ..Default::default()
-    }];
+    let dependencies = [
+        vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            dst_subpass: 0,
+            src_stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            dst_stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            src_access_mask: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            dst_access_mask: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
+                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ,
+            dependency_flags: vk::DependencyFlags::empty(),
+        },
+        vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            dst_subpass: 0,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            src_access_mask: vk::AccessFlags::empty(),
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+                | vk::AccessFlags::COLOR_ATTACHMENT_READ,
+            dependency_flags: vk::DependencyFlags::empty(),
+        },
+    ];
 
     let create_info = vk::RenderPassCreateInfo::builder()
         .attachments(&attachments)

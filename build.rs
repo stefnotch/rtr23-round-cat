@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, fs};
@@ -34,6 +35,10 @@ fn compile_shaders(paths: fs::ReadDir, parent_path: PathBuf, out_dir: String) {
             continue;
         }
 
+        if let Some("glsl") = shader_path.extension().and_then(OsStr::to_str) {
+            continue;
+        }
+
         let mut input_path = PathBuf::new();
         input_path.push("assets");
         input_path.push("shaders");
@@ -47,9 +52,12 @@ fn compile_shaders(paths: fs::ReadDir, parent_path: PathBuf, out_dir: String) {
         output_path.push(&parent_path);
         output_path.push(&output_file_name);
 
+        fs::create_dir_all(PathBuf::from(&out_dir).join(&parent_path)).unwrap();
+
         let shader_file_name = shader_file_name.to_string_lossy();
         // glslc can't automatically create directories, so we're just going to pick a flat structure
         let shader_compile_result = Command::new("glslc")
+            .arg("--target-spv=spv1.6")
             .arg(&input_path)
             .arg("-o")
             .arg(&output_path)

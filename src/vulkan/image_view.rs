@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use ash::vk;
 use crate::vulkan::context::Context;
 use crate::vulkan::image::Image;
+use ash::vk;
 
 pub struct ImageView {
     pub inner: vk::ImageView,
 
     pub image: Arc<Image>,
     context: Arc<Context>,
+    aspect_mask: vk::ImageAspectFlags,
 }
 
 impl ImageView {
@@ -26,13 +27,7 @@ impl ImageView {
                 b: vk::ComponentSwizzle::IDENTITY,
                 a: vk::ComponentSwizzle::IDENTITY,
             })
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask,
-                base_mip_level: 0,
-                level_count: image.mip_levels,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
+            .subresource_range(image.full_subresource_range(aspect_mask))
             .image(image.inner);
 
         let imageview = unsafe { context.device.create_image_view(&create_info, None) }
@@ -42,7 +37,12 @@ impl ImageView {
             inner: imageview,
             image,
             context,
+            aspect_mask,
         }
+    }
+
+    pub fn subresource_range(&self) -> vk::ImageSubresourceRange {
+        self.image.full_subresource_range(self.aspect_mask)
     }
 }
 

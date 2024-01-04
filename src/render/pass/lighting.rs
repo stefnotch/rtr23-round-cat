@@ -1,21 +1,16 @@
-use std::{ffi::CStr, io::Cursor, sync::Arc};
+use std::sync::Arc;
 
-use ash::{
-    util::read_spv,
-    vk::{
-        self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, ImageSubresourceRange,
-        PipelineStageFlags2,
-    },
-};
+use ash::vk::{self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, PipelineStageFlags2};
 
+use crate::vulkan::context::Context;
+use crate::vulkan::swapchain::SwapchainContainer;
 use crate::{
+    include_shader,
     render::{
         gbuffer::GBuffer, set_layout_cache::DescriptorSetLayoutCache, CameraDescriptorSet,
         SceneDescriptorSet, SwapchainIndex,
     },
 };
-use crate::vulkan::context::Context;
-use crate::vulkan::swapchain::SwapchainContainer;
 
 pub struct LightingPass {
     render_pass: vk::RenderPass,
@@ -60,12 +55,12 @@ impl LightingPass {
         viewport: vk::Viewport,
     ) {
         let image_memory_barriers: Vec<ImageMemoryBarrier2> = [
-            gbuffer.position_buffer.clone(),
-            gbuffer.albedo_buffer.clone(),
-            gbuffer.normals_buffer.clone(),
-            gbuffer.metallic_roughness_buffer.clone(),
+            &gbuffer.position_buffer,
+            &gbuffer.albedo_buffer,
+            &gbuffer.normals_buffer,
+            &gbuffer.metallic_roughness_buffer,
         ]
-        .iter()
+        .into_iter()
         .map(|image| vk::ImageMemoryBarrier2 {
             src_stage_mask: PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             src_access_mask: AccessFlags2::COLOR_ATTACHMENT_WRITE,
@@ -76,16 +71,28 @@ impl LightingPass {
             src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             image: image.image.inner,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            },
+            subresource_range: image.subresource_range(),
             ..ImageMemoryBarrier2::default()
         })
+        .chain(
+            [&gbuffer.shadow_buffer].map(|image| vk::ImageMemoryBarrier2 {
+                src_stage_mask: PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                src_access_mask: AccessFlags2::SHADER_WRITE,
+                dst_stage_mask: PipelineStageFlags2::FRAGMENT_SHADER,
+                dst_access_mask: AccessFlags2::SHADER_READ,
+                old_layout: ImageLayout::GENERAL,
+                new_layout: ImageLayout::GENERAL,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image: image.image.inner,
+                subresource_range: image.subresource_range(),
+                ..ImageMemoryBarrier2::default()
+            }),
+        )
         .collect();
+
+        // TODO: Add pipeline barrier to wait for the raytracing pass
+        crate::utility::cmd_full_pipeline_barrier(&self.context, command_buffer);
 
         let dependency_info =
             vk::DependencyInfo::builder().image_memory_barriers(&image_memory_barriers);
@@ -177,42 +184,18 @@ fn create_pipeline(
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     let device = &context.device;
 
-    let mut vert_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.vert.spv"))[..]);
-    let mut frag_spv_file =
-        Cursor::new(&include_bytes!(concat!(env!("OUT_DIR"), "/base.frag.spv"))[..]);
+    let mut vertex_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::VERTEX,
+        "/base.vert.spv"
+    );
+    let mut fragment_shader = include_shader!(
+        context.clone(),
+        vk::ShaderStageFlags::FRAGMENT,
+        "/base.frag.spv"
+    );
 
-    let vert_shader_code =
-        read_spv(&mut vert_spv_file).expect("Could not read vert shader spv file");
-    let frag_shader_code =
-        read_spv(&mut frag_spv_file).expect("Could not read frag shader spv file");
-
-    let vertex_shader_shader_module = {
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_shader_code);
-        unsafe { device.create_shader_module(&create_info, None) }
-            .expect("Could not create vertex shader module")
-    };
-
-    let fragment_shader_shader_module = {
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&frag_shader_code);
-        unsafe { device.create_shader_module(&create_info, None) }
-            .expect("Could not create fragment shader module")
-    };
-
-    let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
-
-    let shader_stages = [
-        vk::PipelineShaderStageCreateInfo::builder()
-            .module(vertex_shader_shader_module)
-            .name(shader_entry_name)
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::PipelineShaderStageCreateInfo::builder()
-            .module(fragment_shader_shader_module)
-            .name(shader_entry_name)
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-    ];
+    let shader_stages = [vertex_shader.build(), fragment_shader.build()];
 
     let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
 
@@ -278,9 +261,9 @@ fn create_pipeline(
         .attachments(&color_blend_attachment_states);
 
     let descriptor_set_layouts = [
-        gbuffer.descriptor_set_layout,
-        set_layout_cache.scene(),
-        set_layout_cache.camera(),
+        gbuffer.descriptor_set.layout.inner,
+        set_layout_cache.scene().inner,
+        set_layout_cache.camera().inner,
     ];
 
     let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
@@ -314,9 +297,6 @@ fn create_pipeline(
         )
     }
     .expect("Could not create graphics pipeline");
-
-    unsafe { device.destroy_shader_module(vertex_shader_shader_module, None) };
-    unsafe { device.destroy_shader_module(fragment_shader_shader_module, None) };
 
     (pipeline[0], layout)
 }

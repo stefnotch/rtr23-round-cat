@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 pub trait Asset {
     fn id(&self) -> AssetId;
@@ -12,18 +15,22 @@ impl AssetId {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct AssetIdGenerator {
-    next_id: u32,
+    next_id: Arc<AtomicU32>,
 }
 
 impl AssetIdGenerator {
     pub fn new() -> Self {
-        Self { next_id: 0 }
+        Self {
+            next_id: Default::default(),
+        }
     }
 
-    pub fn next(&mut self) -> AssetId {
-        let id = self.next_id;
-        self.next_id += 1;
+    pub fn next(&self) -> AssetId {
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         AssetId::new(id)
     }
 }

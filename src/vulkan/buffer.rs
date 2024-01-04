@@ -1,9 +1,15 @@
-use std::{marker::PhantomData, ops::Deref, sync::Arc};
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::{marker::PhantomData, ops::Deref};
 
 use ash::{self, vk};
 
-use crate::{find_memorytype_index};
+use crate::find_memorytype_index;
+use crate::vulkan::command_buffer::CmdCopyBuffer;
 use crate::vulkan::context::Context;
+
+use super::command_buffer::CommandBuffer;
+use super::sync_manager::BufferResource;
 
 pub trait IntoSlice<T> {
     fn as_sliced(&self) -> &[T];
@@ -27,14 +33,35 @@ impl<T> IntoSlice<T> for Vec<T> {
     }
 }
 
-pub struct Buffer<T> {
+pub struct UntypedBuffer {
     pub inner: vk::Buffer,
     pub usage: vk::BufferUsageFlags,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
-
-    _marker: PhantomData<T>,
+    pub(super) resource: BufferResource,
     context: Arc<Context>,
+}
+
+impl UntypedBuffer {
+    pub fn get_device_address(&self) -> vk::DeviceAddress {
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.inner);
+        unsafe {
+            self.context
+                .buffer_device_address
+                .get_buffer_device_address(&info)
+        }
+    }
+}
+
+/*
+Design note
+Buffers could work like "FullBuffer (mostly internal) and Buffer<T> (has a Arc<FullBuffer>, and an offset + size)
+In our case, the FullBuffer is the UntypedBuffer.
+(invariant: Buffer<T> ranges never overlap. The API lets you split and join adjacent buffers) */
+
+pub struct Buffer<T: ?Sized> {
+    inner: Arc<UntypedBuffer>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Buffer<T> {
@@ -45,6 +72,7 @@ impl<T> Buffer<T> {
         memory_property_flags: vk::MemoryPropertyFlags,
     ) -> Buffer<T> {
         let device = &context.device;
+        let resource = context.sync_manager.get_buffer();
 
         let create_info = vk::BufferCreateInfo::builder()
             .size(size)
@@ -63,9 +91,13 @@ impl<T> Buffer<T> {
         )
         .expect("Could not find memorytype for buffer");
 
+        let mut allocate_flags_info =
+            vk::MemoryAllocateFlagsInfo::builder().flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS); // TODO: Make configureable
+
         let allocate_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(buffer_memory_requirements.size)
-            .memory_type_index(buffer_memorytype_index);
+            .memory_type_index(buffer_memorytype_index)
+            .push_next(&mut allocate_flags_info);
 
         let memory = unsafe { device.allocate_memory(&allocate_info, None) }
             .expect("Could not allocate memory for buffer");
@@ -73,49 +105,111 @@ impl<T> Buffer<T> {
         unsafe { device.bind_buffer_memory(buffer, memory, 0) }
             .expect("Could not bind buffer memory for buffer");
 
-        Self {
+        let untyped = Arc::new(UntypedBuffer {
             inner: buffer,
             usage,
             memory,
             size: buffer_memory_requirements.size,
+            resource,
             context,
+        });
+        Buffer {
+            inner: untyped,
             _marker: PhantomData,
         }
     }
 }
 
 impl<T> Buffer<T> {
-    pub fn copy_data<U: IntoSlice<T>>(&self, data: &U) {
+    pub fn get_vk_buffer(&self) -> vk::Buffer {
+        self.inner.inner
+    }
+
+    fn get_device(&self) -> &ash::Device {
+        &self.inner.context.device
+    }
+
+    pub fn get_device_address(&self) -> vk::DeviceAddress {
+        self.inner.get_device_address()
+    }
+
+    pub fn copy_data<U: IntoSlice<T> + ?Sized>(&self, data: &U) {
         let data = data.as_sliced();
 
         let buffer_ptr = unsafe {
-            self.context
-                .device
-                .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
+            self.get_device().map_memory(
+                self.inner.memory,
+                0,
+                self.inner.size,
+                vk::MemoryMapFlags::empty(),
+            )
         }
         .expect("Could not map memory") as *mut T;
 
         unsafe { buffer_ptr.copy_from_nonoverlapping(data.as_ptr() as *const T, data.len()) };
 
-        unsafe { self.context.device.unmap_memory(self.memory) };
+        unsafe { self.get_device().unmap_memory(self.inner.memory) };
     }
 
-    pub fn copy_from(&self, command_buffer: vk::CommandBuffer, other: &Buffer<T>) {
-        assert!(other.usage.contains(vk::BufferUsageFlags::TRANSFER_SRC));
-        assert!(self.usage.contains(vk::BufferUsageFlags::TRANSFER_DST));
-        let buffer_copy_info = vk::BufferCopy::builder().size(self.size);
-        unsafe {
-            self.context.device.cmd_copy_buffer(
-                command_buffer,
-                other.inner,
-                self.inner,
-                &[buffer_copy_info.build()],
-            )
-        }
+    pub fn copy_from(
+        self: &Arc<Self>,
+        dst_offset: vk::DeviceSize,
+        command_buffer: &mut CommandBuffer,
+        other: Arc<Buffer<T>>,
+        other_range: std::ops::Range<vk::DeviceSize>,
+    ) where
+        T: 'static,
+    {
+        assert!(other
+            .inner
+            .usage
+            .contains(vk::BufferUsageFlags::TRANSFER_SRC));
+        assert!(self
+            .inner
+            .usage
+            .contains(vk::BufferUsageFlags::TRANSFER_DST));
+
+        command_buffer.add_cmd(CmdCopyBuffer {
+            src_buffer: other,
+            dst_buffer: self.clone(),
+            regions: Cow::Owned(vec![vk::BufferCopy {
+                dst_offset,
+                src_offset: other_range.start,
+                size: other_range.end - other_range.start,
+            }]),
+        });
+    }
+
+    pub fn get_untyped(&self) -> &Arc<UntypedBuffer> {
+        &self.inner
+    }
+
+    pub fn copy_from_host<'cmd, 'data, U: IntoSlice<T>>(
+        self: &Arc<Self>,
+        command_buffer: &mut CommandBuffer<'cmd>,
+        data: &'data U,
+        data_size: vk::DeviceSize,
+    ) where
+        T: 'static,
+    {
+        let staging_buffer = Buffer::new(
+            command_buffer.context().clone(),
+            data_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+        let data_ref: &U = &data;
+        staging_buffer.copy_data(data_ref);
+
+        self.copy_from(0, command_buffer, staging_buffer.into(), 0..data_size);
+    }
+
+    pub fn get_resource(&self) -> &BufferResource {
+        &self.inner.resource
     }
 }
 
-impl<T> Drop for Buffer<T> {
+impl Drop for UntypedBuffer {
     fn drop(&mut self) {
         let device = &self.context.device;
         unsafe { device.destroy_buffer(self.inner, None) };
@@ -127,6 +221,6 @@ impl<T> Deref for Buffer<T> {
     type Target = vk::Buffer;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.inner.inner
     }
 }

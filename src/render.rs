@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use ash::vk;
 use crevice::std140::AsStd140;
+use egui_winit_ash_integration::{AllocatorTrait, Integration};
 use ultraviolet::Vec3;
 
 use crate::vulkan::buffer::Buffer;
@@ -16,7 +17,10 @@ use crate::vulkan::swapchain::SwapchainContainer;
 use crate::{camera::Camera, scene::Scene};
 
 use self::{
-    pass::{geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass},
+    pass::{
+        geometry::GeometryPass, lighting::LightingPass, post_processing::PostProcessingPass,
+        shadow::ShadowPass,
+    },
     set_layout_cache::DescriptorSetLayoutCache,
 };
 
@@ -41,11 +45,13 @@ pub struct CameraDescriptorSet {
 
 pub struct MainRenderer {
     geometry_pass: GeometryPass,
+    shadow_pass: ShadowPass,
     lighting_pass: LightingPass,
     post_processing_pass: PostProcessingPass,
 
     scene_descriptor_set: SceneDescriptorSet,
     camera_descriptor_set: CameraDescriptorSet,
+    sun_direction: Vec3,
 }
 
 impl MainRenderer {
@@ -53,6 +59,7 @@ impl MainRenderer {
         context: Arc<Context>,
         descriptor_pool: vk::DescriptorPool,
         set_layout_cache: &DescriptorSetLayoutCache,
+        scene: &Scene,
         swapchain: &SwapchainContainer,
     ) -> Self {
         let scene_descriptor_set = {
@@ -67,7 +74,7 @@ impl MainRenderer {
                 context.clone(),
                 descriptor_pool,
                 set_layout_cache.scene(),
-                &[WriteDescriptorSet::buffer(0, &buffer)],
+                vec![WriteDescriptorSet::buffer(0, &buffer)],
             );
 
             SceneDescriptorSet {
@@ -88,7 +95,7 @@ impl MainRenderer {
                 context.clone(),
                 descriptor_pool,
                 set_layout_cache.camera(),
-                &[WriteDescriptorSet::buffer(0, &buffer)],
+                vec![WriteDescriptorSet::buffer(0, &buffer)],
             );
 
             CameraDescriptorSet {
@@ -103,6 +110,15 @@ impl MainRenderer {
             descriptor_pool,
             set_layout_cache,
         );
+
+        let shadow_pass = ShadowPass::new(
+            context.clone(),
+            geometry_pass.gbuffer(),
+            &set_layout_cache,
+            descriptor_pool,
+            scene.raytracing_scene.tlas.clone(),
+        );
+
         let lighting_pass = LightingPass::new(
             context.clone(),
             swapchain,
@@ -111,17 +127,41 @@ impl MainRenderer {
         );
         let post_processing_pass = PostProcessingPass::new();
 
+        let sun_direction = Vec3 {
+            x: 0.2,
+            y: -1.0,
+            z: 0.0,
+        };
+
         MainRenderer {
             geometry_pass,
+            shadow_pass,
             lighting_pass,
             post_processing_pass,
 
             scene_descriptor_set,
             camera_descriptor_set,
+            sun_direction,
         }
     }
 
-    pub fn render_ui(&self) {}
+    pub fn render_ui<A: AllocatorTrait>(&mut self, egui_integration: &mut Integration<A>) {
+        egui::Window::new("")
+            .resizable(true)
+            .scroll2([true, true])
+            .show(&egui_integration.context(), |ui| {
+                ui.label("Light Settings: ");
+                ui.label("Direction: ");
+                ui.horizontal(|ui| {
+                    ui.label("x:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.x).speed(0.1));
+                    ui.label("y:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.y).speed(0.1));
+                    ui.label("z:");
+                    ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.z).speed(0.1));
+                });
+            });
+    }
 
     pub fn render(
         &self,
@@ -141,6 +181,15 @@ impl MainRenderer {
             swapchain_index,
             viewport,
         );
+
+        self.shadow_pass.render(
+            self.geometry_pass.gbuffer(),
+            &self.scene_descriptor_set,
+            &self.camera_descriptor_set,
+            swapchain.extent,
+            command_buffer,
+        );
+
         self.lighting_pass.render(
             command_buffer,
             self.geometry_pass.gbuffer(),
@@ -156,11 +205,7 @@ impl MainRenderer {
     pub fn update_descriptor_sets(&self, camera: &Camera) {
         let scene = shader_types::Scene {
             directional_light: shader_types::DirectionalLight {
-                direction: Vec3 {
-                    x: 0.2,
-                    y: -1.0,
-                    z: 0.0,
-                },
+                direction: self.sun_direction.normalized(),
                 color: Vec3::new(1.0, 1.0, 1.0),
                 intensity: 3.0,
             },
@@ -169,6 +214,8 @@ impl MainRenderer {
         let camera = shader_types::Camera {
             view: camera.view_matrix(),
             proj: camera.projection_matrix(),
+            view_inv: camera.view_matrix().inversed(),
+            proj_inv: camera.projection_matrix().inversed(),
             position: camera.position,
         };
 
@@ -182,6 +229,8 @@ impl MainRenderer {
 
     pub fn resize(&mut self, swapchain: &SwapchainContainer) {
         self.geometry_pass.resize(swapchain);
+
+        self.shadow_pass.resize(self.geometry_pass.gbuffer());
         self.lighting_pass.resize(swapchain);
         self.post_processing_pass.resize();
     }

@@ -22,15 +22,15 @@ impl InputMap {
         }
     }
 
-    pub(crate) fn update_key_press(&mut self, key: VirtualKeyCode) {
+    pub fn update_key_press(&mut self, key: VirtualKeyCode) {
         self.state[key as usize] = true;
     }
 
-    pub(crate) fn update_key_release(&mut self, key: VirtualKeyCode) {
+    pub fn update_key_release(&mut self, key: VirtualKeyCode) {
         self.state[key as usize] = false;
     }
 
-    pub(crate) fn update_mouse_press(&mut self, button: MouseButton) {
+    pub fn update_mouse_press(&mut self, button: MouseButton) {
         match button {
             MouseButton::Left => self.mouse_state[0] = true,
             MouseButton::Right => self.mouse_state[1] = true,
@@ -38,7 +38,7 @@ impl InputMap {
         }
     }
 
-    pub(crate) fn update_mouse_release(&mut self, button: MouseButton) {
+    pub fn update_mouse_release(&mut self, button: MouseButton) {
         match button {
             MouseButton::Left => self.mouse_state[0] = false,
             MouseButton::Right => self.mouse_state[1] = false,
@@ -50,15 +50,15 @@ impl InputMap {
         self.mouse_delta = Vec2::zero();
     }
 
-    pub(crate) fn accumulate_mouse_delta(&mut self, delta: Vec2) {
+    pub fn accumulate_mouse_delta(&mut self, delta: Vec2) {
         self.mouse_delta += delta;
     }
 
-    pub(crate) fn start_capturing_mouse(&mut self, position: Vec2) {
+    pub fn start_capturing_mouse(&mut self, position: Vec2) {
         self.captured_mouse_position = Some(position);
     }
 
-    pub(crate) fn stop_capturing_mouse(&mut self) -> Option<Vec2> {
+    pub fn stop_capturing_mouse(&mut self) -> Option<Vec2> {
         self.captured_mouse_position.take()
     }
 

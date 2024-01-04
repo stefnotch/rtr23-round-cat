@@ -4,7 +4,6 @@ pub struct Time {
     delta: Duration,
     delta_seconds: f64,
     last_update: Instant,
-    start_time: Instant,
 }
 
 impl Time {
@@ -13,7 +12,6 @@ impl Time {
             delta: Duration::from_secs(0),
             delta_seconds: 0.0,
             last_update: Instant::now(),
-            start_time: Instant::now(),
         }
     }
 
@@ -31,9 +29,5 @@ impl Time {
 
         self.delta = delta_time;
         self.delta_seconds = delta_time.as_secs_f64();
-    }
-
-    pub fn time_since_startup(&self) -> Duration {
-        self.start_time.elapsed()
     }
 }

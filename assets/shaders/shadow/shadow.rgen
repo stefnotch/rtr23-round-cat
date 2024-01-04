@@ -1,0 +1,44 @@
+#version 460
+
+#include "common.glsl"
+
+layout(location = 0) rayPayloadEXT float shadowed;
+
+// this is supposed to get the world position from the depth buffer
+vec3 worldPosFromDepth(float depth, vec2 uv) {
+    vec4 clipSpacePosition = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 viewSpacePosition = camera.proj_inv * clipSpacePosition;
+
+    // Perspective division
+    viewSpacePosition /= viewSpacePosition.w;
+
+    vec4 worldSpacePosition = camera.view_inv * viewSpacePosition;
+
+    return worldSpacePosition.xyz;
+}
+
+void main()
+{
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
+
+  float depth = texture(depthBuffer, inUV).r;
+
+  vec3 origin = worldPosFromDepth(depth, inUV);
+  vec3 direction = -normalize(scene.directionalLight.direction);
+
+  uint rayFlags =  gl_RayFlagsOpaqueEXT ;
+	uint cullMask = 0xff;
+	float tmin = 0.1;
+	float tmax = 10000.0;
+
+  // See: https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GLSL_EXT_ray_tracing.txt
+  // void traceRayEXT(accelerationStructureEXT topLevel, uint rayFlags, uint cullMask,
+  //             uint sbtRecordOffset, uint sbtRecordStride, uint missIndex, vec3 origin,
+  //             float Tmin, vec3 direction, float Tmax, int payload);
+
+  shadowed = 0.0;
+  traceRayEXT(topLevelAS, rayFlags, cullMask, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
+
+  imageStore(shadowBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(shadowed, 0.0, 0.0, 0.0));
+}

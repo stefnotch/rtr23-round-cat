@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use crate::vulkan::context::Context;
 use ash::vk::{self, SwapchainCreateInfoKHR};
 use winit::dpi::PhysicalSize;
-use crate::vulkan::context::Context;
 
 pub struct SwapchainContainer {
     pub loader: ash::extensions::khr::Swapchain,
@@ -21,7 +21,11 @@ pub struct SwapchainContainer {
 }
 
 impl SwapchainContainer {
-    pub fn new(context: Arc<Context>, window_size: PhysicalSize<u32>) -> Self {
+    pub fn new(
+        context: Arc<Context>,
+        window_size: PhysicalSize<u32>,
+        present_mode: vk::PresentModeKHR,
+    ) -> Self {
         let capabilities = unsafe {
             context
                 .surface_loader
@@ -54,7 +58,7 @@ impl SwapchainContainer {
 
         let present_mode = present_modes
             .into_iter()
-            .find(|&pm| pm == vk::PresentModeKHR::MAILBOX)
+            .find(|&pm| pm == present_mode)
             .unwrap_or(vk::PresentModeKHR::FIFO);
 
         let swapchain_extent = {
@@ -141,9 +145,8 @@ impl SwapchainContainer {
     }
 
     pub fn recreate(&mut self, window_size: PhysicalSize<u32>) {
+        self.context.wait_idle();
         let device = &self.context.device;
-
-        unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
 
         let capabilities = unsafe {
             self.context
