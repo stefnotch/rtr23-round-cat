@@ -5,3 +5,7 @@
 ## Developer info
 
 Needs a stable Rust toolchain, and the Vulkan SDK.
+
+## Attribution
+
+"Escher Relativity" (https://skfb.ly/6R8nX) by Benoit Gagnier is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
