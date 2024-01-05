@@ -1,3 +1,4 @@
+mod animation;
 mod asset;
 mod material;
 mod mesh;

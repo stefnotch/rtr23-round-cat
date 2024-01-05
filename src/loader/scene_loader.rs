@@ -1,11 +1,12 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use gltf::{accessor::Iter, texture::Sampler, Semantic, Texture};
-use ultraviolet::{Vec2, Vec3};
+use ultraviolet::{Rotor3, Vec2, Vec3};
 
 use crate::{scene::Vertex, transform::Transform};
 
 use super::{
+    animation::Animation,
     texture::{
         AddressMode, BytesImageData, Filter, ImageFormat, LoadedImage, LoadedSampler,
         LoadedTexture, MipmapMode, SamplerInfo,
@@ -117,6 +118,8 @@ impl AssetLoader {
         for node in scene.nodes() {
             self.load_node(&mut loading_data, &node, Transform::default());
         }
+
+        loading_data.scene.camera_animations = load_animations(&gltf, &loading_data);
 
         Ok(loading_data.scene)
     }
@@ -420,6 +423,67 @@ impl AssetLoader {
             .or_insert_with(|| Arc::new(LoadedSampler { id, sampler_info }))
             .clone()
     }
+}
+
+fn load_animations(gltf: &gltf::Document, loading_data: &SceneLoadingData) -> Vec<Animation> {
+    let mut animations = vec![];
+    for animation in gltf.animations() {
+        let mut timestamps = vec![];
+        let mut translation_keyframes = vec![];
+        let mut rotation_keyframes = vec![];
+        for channel in animation.channels() {
+            let target = channel.target();
+            let node = target.node();
+            if node.camera().is_none() {
+                continue;
+            }
+
+            let reader = channel.reader(|buffer| Some(&loading_data.buffers[buffer.index()]));
+            timestamps = match reader.read_inputs() {
+                Some(gltf::accessor::Iter::Standard(times)) => times.collect::<Vec<_>>(),
+                Some(_) => {
+                    println!("Unexpected accessor type for animation timestamps");
+                    continue;
+                }
+                None => {
+                    println!("No timestamps for animations");
+                    continue;
+                }
+            };
+            match reader.read_outputs().unwrap() {
+                gltf::animation::util::ReadOutputs::Translations(v) => {
+                    translation_keyframes = v.map(Vec3::from).collect::<Vec<_>>();
+                }
+                gltf::animation::util::ReadOutputs::Rotations(v) => {
+                    rotation_keyframes = v
+                        .into_f32()
+                        .map(Rotor3::from_quaternion_array)
+                        .collect::<Vec<_>>();
+                }
+                gltf::animation::util::ReadOutputs::Scales(_) => {}
+                gltf::animation::util::ReadOutputs::MorphTargetWeights(_) => {}
+            };
+        }
+
+        if !timestamps.is_empty() {
+            if timestamps.len() != translation_keyframes.len()
+                || timestamps.len() != rotation_keyframes.len()
+            {
+                println!("Animation data is not consistent");
+                continue;
+            }
+
+            if rotation_keyframes.is_empty() {
+                rotation_keyframes = vec![Rotor3::identity(); timestamps.len()];
+            }
+            animations.push(Animation {
+                timestamps,
+                translations: translation_keyframes,
+                rotations: rotation_keyframes,
+            });
+        }
+    }
+    animations
 }
 
 impl From<gltf::texture::WrappingMode> for AddressMode {
