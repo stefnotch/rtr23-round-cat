@@ -7,6 +7,7 @@ mod scene;
 mod scene_loader;
 mod texture;
 
+pub use animation::*;
 pub use asset::*;
 pub use material::*;
 pub use mesh::*;

@@ -1,3 +1,4 @@
+pub mod animation_camera_controller;
 pub mod camera_controller;
 pub mod freecam_controller;
 

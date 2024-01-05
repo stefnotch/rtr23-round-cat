@@ -10,6 +10,7 @@ mod transform;
 mod utility;
 mod vulkan;
 
+use camera::animation_camera_controller::AnimationCameraController;
 use gpu_allocator::vulkan::*;
 use loader::AssetLoader;
 use render::{MainRenderer, SwapchainIndex};
@@ -46,11 +47,13 @@ struct CatDemo {
     input_map: InputMap,
     time: Time,
     freecam_controller: FreecamController,
+    animation_camera_controller: AnimationCameraController,
     camera: Camera,
+    is_playing_camera_animation: bool,
 
     // Low level Vulkan stuff
     descriptor_set_pool: vk::DescriptorPool,
-    descriptor_set_layout_cache: DescriptorSetLayoutCache,
+    _descriptor_set_layout_cache: DescriptorSetLayoutCache,
     command_pool: CommandPool,
 
     command_buffers: Vec<vk::CommandBuffer>,
@@ -86,7 +89,7 @@ impl CatDemo {
             .expect("Could not create window");
 
         let mut asset_loader = AssetLoader::new();
-        let loaded_scene = asset_loader
+        let mut loaded_scene = asset_loader
             .load_scene(&config.scene_path)
             .expect("Could not load scene");
         println!("Loaded scene : {:?}", loaded_scene.models.len());
@@ -97,6 +100,12 @@ impl CatDemo {
             freecam_controller.pitch = camera_position.pitch;
             freecam_controller.yaw = camera_position.yaw;
         }
+
+        let animation_camera_controller = if loaded_scene.camera_animations.is_empty() {
+            AnimationCameraController::new(Default::default())
+        } else {
+            AnimationCameraController::new(loaded_scene.camera_animations.swap_remove(0))
+        };
         let camera = Camera::new(
             window_width as f32 / window_height as f32,
             Default::default(),
@@ -219,7 +228,7 @@ impl CatDemo {
 
             command_pool,
             descriptor_set_pool: descriptor_pool,
-            descriptor_set_layout_cache,
+            _descriptor_set_layout_cache: descriptor_set_layout_cache,
 
             command_buffers,
             should_recreate_swapchain: false,
@@ -230,7 +239,9 @@ impl CatDemo {
 
             input_map,
             freecam_controller,
+            animation_camera_controller,
             camera,
+            is_playing_camera_animation: false,
             time,
 
             renderer,
@@ -369,7 +380,13 @@ impl CatDemo {
     fn update_camera(&mut self) {
         self.freecam_controller
             .update(&self.input_map, self.time.delta_seconds());
-        self.camera.update_camera(&self.freecam_controller);
+        self.animation_camera_controller.update(&self.time);
+
+        if self.is_playing_camera_animation {
+            self.camera.update_camera(&self.animation_camera_controller);
+        } else {
+            self.camera.update_camera(&self.freecam_controller);
+        }
     }
 
     fn draw_frame(&mut self) {
@@ -556,6 +573,11 @@ impl CatDemo {
                 ui.label("pitch:");
                 ui.drag_angle(&mut self.freecam_controller.pitch);
             });
+            ui.separator();
+            ui.checkbox(
+                &mut self.is_playing_camera_animation,
+                "Play Camera Animation",
+            );
         });
 
         self.renderer.render_ui(&mut self.egui_integration);
