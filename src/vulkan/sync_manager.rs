@@ -8,7 +8,7 @@ use std::{
 };
 
 use ash::vk;
-use discrete_range_map::{inclusive_interval, InclusiveInterval, InclusiveRange};
+use nodit::{interval, InclusiveInterval, Interval};
 
 use self::{
     range_map::{OptRangeMap, RangeMap, RangeMapLike, SmallArrayRangeMap},
@@ -263,12 +263,9 @@ impl ResourceAccessInfo {
 struct SyncManagerInternal {
     buffers: HashMap<
         BufferResourceKey,
-        ResourceRW<vk::DeviceSize, InclusiveInterval<vk::DeviceSize>, ResourceAccessInfo>,
+        ResourceRW<vk::DeviceSize, Interval<vk::DeviceSize>, ResourceAccessInfo>,
     >,
-    images: HashMap<
-        ImageResourceKey,
-        ResourceRW<MipLevel, InclusiveInterval<MipLevel>, ResourceAccessInfo>,
-    >,
+    images: HashMap<ImageResourceKey, ResourceRW<MipLevel, Interval<MipLevel>, ResourceAccessInfo>>,
     /// Invariant: All slots in the range map are filled.
     image_layouts: HashMap<ImageResourceKey, OptRangeMap<SmallArrayRangeMap<vk::ImageLayout>>>,
     buffer_key_counter: u64,
@@ -316,7 +313,7 @@ impl SyncManagerInternal {
         let entry = self
             .buffers
             .entry(key)
-            .or_insert_with(|| ResourceRW::new(inclusive_interval::ie(0, max_size)));
+            .or_insert_with(|| ResourceRW::new(interval::ie(0, max_size)));
 
         if access.is_write() {
             entry.add_write(
@@ -344,12 +341,8 @@ impl SyncManagerInternal {
         mip_level_count: MipLevel,
         layout: vk::ImageLayout,
         access: ImageAccessInfo,
-    ) -> Vec<(
-        InclusiveInterval<MipLevel>,
-        vk::ImageLayout,
-        Vec<ResourceAccessInfo>,
-    )> {
-        let max_range = inclusive_interval::ie(0, mip_level_count);
+    ) -> Vec<(Interval<MipLevel>, vk::ImageLayout, Vec<ResourceAccessInfo>)> {
+        let max_range = interval::ie(0, mip_level_count);
         assert!(
             access.subresource_range.base_array_layer == 0
                 && access.subresource_range.layer_count == 1,
@@ -434,8 +427,8 @@ struct ImageResourceKey(u64);
 /// Stores the last write, and all *subsequent* reads.
 struct ResourceRW<I, K, V>
 where
-    I: discrete_range_map::PointType,
-    K: discrete_range_map::RangeType<I> + std::fmt::Debug,
+    I: nodit::PointType,
+    K: nodit::IntervalType<I> + Copy + std::fmt::Debug,
     V: Clone,
 {
     /// The last write to the resource.
@@ -446,8 +439,8 @@ where
 
 impl<I, K, V> ResourceRW<I, K, V>
 where
-    I: discrete_range_map::PointType,
-    K: discrete_range_map::RangeType<I> + std::fmt::Debug,
+    I: nodit::PointType,
+    K: nodit::IntervalType<I> + Clone + std::fmt::Debug,
     V: Clone,
 {
     fn new(max_range: K) -> Self {

@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use discrete_range_map::{inclusive_interval, InclusiveInterval, InclusiveRange};
+use nodit::{interval, InclusiveInterval, Interval, NoditMap};
 
 /// Optimized version of `RangeMapLike` for the case where the range is fully covered by the value.
 pub struct OptRangeMap<InnerMap>
@@ -119,15 +119,15 @@ where
 }
 
 pub struct RangeMap<I, K, V> {
-    inner: discrete_range_map::DiscreteRangeMap<I, K, V>,
+    inner: NoditMap<I, K, V>,
     max_range: K,
 }
 
 impl<I, K, V> RangeMapLike for RangeMap<I, K, V>
 where
-    I: discrete_range_map::PointType,
+    I: nodit::PointType,
     V: Clone,
-    K: discrete_range_map::RangeType<I> + std::fmt::Debug,
+    K: nodit::IntervalType<I> + Copy + std::fmt::Debug,
 {
     type Point = I;
     type Range = K;
@@ -135,7 +135,7 @@ where
 
     fn new(max_range: Self::Range) -> Self {
         Self {
-            inner: discrete_range_map::DiscreteRangeMap::new(),
+            inner: NoditMap::new(),
             max_range,
         }
     }
@@ -179,9 +179,9 @@ pub struct SmallArrayRangeMap<V> {
 impl<V> SmallArrayRangeMap<V> {
     fn overwrite_internal(
         &mut self,
-        key: InclusiveInterval<usize>,
+        key: Interval<usize>,
         value: Option<V>,
-    ) -> Vec<(InclusiveInterval<usize>, V)>
+    ) -> Vec<(Interval<usize>, V)>
     where
         V: Copy + PartialEq,
     {
@@ -202,7 +202,7 @@ where
     V: Copy + PartialEq,
 {
     type Point = usize;
-    type Range = InclusiveInterval<usize>;
+    type Range = Interval<usize>;
     type Value = V;
 
     fn new(max_range: Self::Range) -> Self {
@@ -214,7 +214,7 @@ where
     }
 
     fn max_range(&self) -> Self::Range {
-        InclusiveInterval::from(0..self.values.len())
+        Interval::from(0..self.values.len())
     }
 
     fn overlapping(
@@ -235,7 +235,7 @@ where
                 if &Some(next) == prev {
                     Some(None)
                 } else {
-                    let range = inclusive_interval::ii(*start, index);
+                    let range = interval::ii(*start, index);
                     *start = index + 1;
                     *prev = Some(next);
                     Some(Some((range, next)))
@@ -261,8 +261,8 @@ where
 
 /// A map from ranges to values.
 pub trait RangeMapLike {
-    type Point: discrete_range_map::PointType;
-    type Range: discrete_range_map::RangeType<Self::Point> + std::fmt::Debug;
+    type Point: nodit::PointType;
+    type Range: nodit::InclusiveInterval<Self::Point> + Copy + std::fmt::Debug;
     type Value: Clone;
 
     fn new(max_range: Self::Range) -> Self;

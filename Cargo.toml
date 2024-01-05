@@ -16,7 +16,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 anyhow = "1.0"
 thiserror = "1.0"
-discrete_range_map = { git = "https://github.com/ripytide/discrete_range_map.git" }
+nodit = "0.7.1"
 
 # I gotta duplicate stuff, because the alternative https://github.com/rust-lang/cargo/issues/1197 is not implemented. 
 [target.'cfg(windows)'.dependencies]
@@ -27,5 +27,5 @@ egui-winit-ash-integration = { git = "https://github.com/YouSafe/egui-winit-ash-
 winit = { version = "0.28" }
 egui-winit-ash-integration = { git = "https://github.com/YouSafe/egui-winit-ash-integration.git", branch = "main", default-features = false, features = ["gpu-allocator-feature", "default"] }
 
-[profile.dev.package.gltf]
+[profile.dev]
 opt-level = 2

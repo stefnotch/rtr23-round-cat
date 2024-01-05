@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
-use discrete_range_map::{inclusive_interval, InclusiveInterval};
+use nodit::{interval, Interval};
 
 use crate::vulkan::{buffer::UntypedBuffer, image::Image};
 
@@ -65,11 +65,11 @@ impl BufferAccessInfo {
         is_write(self.access)
     }
 
-    pub fn range(&self) -> InclusiveInterval<vk::DeviceSize> {
+    pub fn range(&self) -> Interval<vk::DeviceSize> {
         if self.size == vk::WHOLE_SIZE {
-            return inclusive_interval::ie(self.offset, vk::WHOLE_SIZE);
+            return interval::ie(self.offset, vk::WHOLE_SIZE);
         } else {
-            inclusive_interval::ie(self.offset, self.offset + self.size)
+            interval::ie(self.offset, self.offset + self.size)
         }
     }
 }
@@ -117,8 +117,8 @@ impl ImageAccessInfo {
     ) -> bool {
         is_write(self.access) || Some(new_layout) != old_layout
     }
-    pub fn range(&self) -> InclusiveInterval<MipLevel> {
-        inclusive_interval::ie(
+    pub fn range(&self) -> Interval<MipLevel> {
+        interval::ie(
             self.subresource_range.base_mip_level as usize,
             self.subresource_range.base_mip_level as usize
                 + self.subresource_range.level_count as usize,

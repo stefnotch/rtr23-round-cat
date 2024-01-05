@@ -405,17 +405,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "discrete_range_map"
-version = "0.6.2"
-source = "git+https://github.com/ripytide/discrete_range_map.git#7ad1a3ed79da951bd663e90a938968414a1e290e"
-dependencies = [
- "btree_monstrousity",
- "either",
- "itertools",
- "serde",
-]
-
-[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -989,6 +978,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nodit"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0cddcb6c99ff86be76c5e67713576f4689d19928d18082c190ac7f0590efbc3"
+dependencies = [
+ "btree_monstrousity",
+ "either",
+ "itertools",
+ "serde",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1280,11 +1281,11 @@ dependencies = [
  "ash",
  "ash-window",
  "crevice",
- "discrete_range_map",
  "egui",
  "egui-winit-ash-integration",
  "gltf",
  "gpu-allocator",
+ "nodit",
  "raw-window-handle",
  "serde",
  "serde_json",
