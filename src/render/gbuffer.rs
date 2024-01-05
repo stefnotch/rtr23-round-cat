@@ -25,7 +25,7 @@ impl GBuffer {
     pub const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
     pub const ALBEDO_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
     pub const METALLIC_ROUGHNESS_FORMAT: vk::Format = vk::Format::R8G8_UNORM;
-    pub const DEPTH_FORMAT: vk::Format = vk::Format::D16_UNORM;
+    pub const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
     pub const SHADOW_FORMAT: vk::Format = vk::Format::R8_UNORM; // TODO: Check if good
 
     pub fn new(
