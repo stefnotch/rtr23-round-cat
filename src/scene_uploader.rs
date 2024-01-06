@@ -409,7 +409,9 @@ pub fn setup(
     setup_command_buffer.add_cmd(EndCommandBuffer {});
 
     // submit
-    setup_command_buffer.submit(context.clone(), queue);
+    let recorded = setup_command_buffer.record(context.clone());
+    recorded.submit(queue);
+
     context.wait_idle();
 
     Scene {
