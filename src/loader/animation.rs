@@ -21,6 +21,10 @@ impl Animation {
     ) -> AnimationKeyframe {
         let mut keyframe_index = None;
 
+        if self.timestamps.is_empty() {
+            return AnimationKeyframe(0);
+        }
+
         let start = if self.timestamps[last_keyframe.0] > timestamp {
             0
         } else {
