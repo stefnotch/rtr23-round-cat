@@ -263,11 +263,15 @@ impl AssetLoader {
                     .reader(|buffer| loading_data.buffers.get(buffer.index()).map(|v| &v.0[..]));
                 let positions = reader.read_positions().unwrap();
                 let normals = reader.read_normals().unwrap();
+
+                let mut uv_missing = false;
+
                 let tex_coords: Box<dyn Iterator<Item = _>> =
                     if let Some(read_tex_coords) = reader.read_tex_coords(0) {
                         Box::new(read_tex_coords.into_f32())
                     } else {
-                        Box::new(std::iter::repeat([0.0f32, 0.0f32]))
+                        uv_missing = true;
+                        Box::new(std::iter::repeat([0.5f32; 2]))
                     };
 
                 let mut tangents_missing = false;
@@ -317,7 +321,7 @@ impl AssetLoader {
                     f * (edge0 * delta_uv1.y - edge1 * delta_uv0.y)
                 }
 
-                if tangents_missing {
+                if tangents_missing && !uv_missing {
                     for triangle in indices.chunks_exact(3) {
                         let triangle = [
                             triangle[0] as usize,
@@ -338,6 +342,8 @@ impl AssetLoader {
                         vertices[triangle[1]].tangent = tangent.into_homogeneous_point().into();
                         vertices[triangle[2]].tangent = tangent.into_homogeneous_point().into();
                     }
+                } else if tangents_missing && uv_missing {
+                    println!("Can't manually calculate tangents without uvs");
                 }
 
                 Arc::new(LoadedMesh {
