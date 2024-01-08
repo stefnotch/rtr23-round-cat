@@ -10,13 +10,55 @@ use ash::vk::{self};
 
 use self::cmd_args::CommandBufferCmdArgs;
 
-use super::{command_pool::CommandPool, context::Context};
+use super::{buffer::UntypedBuffer, command_pool::CommandPool, context::Context, image::Image};
 
 #[must_use]
 pub struct CommandBuffer<'a> {
     command_pool: CommandPool,
     allocate_info: CommandBufferAllocateInfo,
     commands: Vec<Box<dyn CommandBufferCmd<'a> + 'a>>,
+}
+
+/// CommandBuffer has to be kept alive as long as the GPU is still executing it
+pub struct RecordedCommandBuffer {
+    command_buffer: vk::CommandBuffer,
+    command_pool: CommandPool,
+
+    // references to resources to prevent dropping them too early
+    _buffer_resources: Vec<Arc<UntypedBuffer>>,
+    _image_resources: Vec<Arc<Image>>,
+}
+
+impl RecordedCommandBuffer {
+    pub fn submit(
+        &self,
+        queue: vk::Queue,
+        //submits: &[vk::SubmitInfo],
+        //fence: vk::Fence,)
+    ) {
+        let submit_info =
+            vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&self.command_buffer));
+
+        unsafe {
+            self.command_pool.context().device.queue_submit(
+                queue,
+                std::slice::from_ref(&submit_info),
+                vk::Fence::null(),
+            )
+        }
+        .expect("Could not submit to queue");
+    }
+}
+
+impl Drop for RecordedCommandBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            self.command_pool.context().device.free_command_buffers(
+                *self.command_pool,
+                std::slice::from_ref(&self.command_buffer),
+            )
+        }
+    }
 }
 
 pub struct CommandBufferAllocateInfo {
@@ -49,13 +91,8 @@ impl<'a> CommandBuffer<'a> {
         self.commands.push(Box::new(cmd));
     }
 
-    pub fn submit(
-        self,
-        context: Arc<Context>,
-        queue: vk::Queue,
-        //submits: &[vk::SubmitInfo],
-        //fence: vk::Fence,
-    ) {
+    #[must_use]
+    pub fn record(self, context: Arc<Context>) -> RecordedCommandBuffer {
         let device = &context.device;
         let command_buffer = {
             let allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -82,19 +119,11 @@ impl<'a> CommandBuffer<'a> {
             ));
         }
 
-        let submit_info =
-            vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
-
-        unsafe {
-            device.queue_submit(queue, std::slice::from_ref(&submit_info), vk::Fence::null())
-        }
-        .expect("Could not submit to queue");
-
-        unsafe {
-            self.command_pool
-                .context()
-                .device
-                .free_command_buffers(*self.command_pool, std::slice::from_ref(&command_buffer))
+        RecordedCommandBuffer {
+            command_buffer,
+            command_pool: self.command_pool,
+            _buffer_resources: buffer_resources,
+            _image_resources: image_resources,
         }
     }
 }

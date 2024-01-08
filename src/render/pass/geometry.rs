@@ -64,7 +64,6 @@ impl GeometryPass {
         swapchain_index: SwapchainIndex,
         viewport: vk::Viewport,
     ) {
-        crate::utility::cmd_full_pipeline_barrier(&self.context, command_buffer);
         let clear_values = [
             vk::ClearValue {
                 color: vk::ClearColorValue {
