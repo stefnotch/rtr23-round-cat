@@ -3,13 +3,15 @@ mod pass;
 pub mod set_layout_cache;
 pub mod shader_types;
 
+use core::time;
 use std::sync::Arc;
 
 use ash::vk;
 use crevice::std140::AsStd140;
 use egui_winit_ash_integration::{AllocatorTrait, Integration};
-use ultraviolet::Vec3;
+use ultraviolet::{Bivec3, Rotor3, Vec3};
 
+use crate::time::Time;
 use crate::vulkan::buffer::Buffer;
 use crate::vulkan::context::Context;
 use crate::vulkan::descriptor_set::{DescriptorSet, WriteDescriptorSet};
@@ -161,6 +163,15 @@ impl MainRenderer {
                     ui.add(egui::widgets::DragValue::new(&mut self.sun_direction.z).speed(0.1));
                 });
             });
+    }
+
+    pub fn update_sun(&mut self, time: &Time) {
+        let rotor = Rotor3::from_angle_plane(
+            5.0f32.to_radians() * time.delta_seconds(),
+            Bivec3::from_normalized_axis(Vec3::new(1.0, 1.0, 1.0).normalized()),
+        );
+
+        self.sun_direction = rotor * self.sun_direction;
     }
 
     pub fn render(
