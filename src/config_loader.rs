@@ -18,7 +18,7 @@ impl Default for Config {
         Self {
             scene_path: "assets/scene/EscherPlace5.glb".to_string(),
             present_mode: PresentMode::Fifo,
-            is_demo_mode: false,
+            is_demo_mode: true,
             cached: CachedData::default(),
         }
     }
