@@ -87,6 +87,7 @@ impl CatDemo {
                 width: window_width,
                 height: window_height,
             })
+            .with_maximized(config.is_demo_mode)
             .build(event_loop)
             .expect("Could not create window");
 
