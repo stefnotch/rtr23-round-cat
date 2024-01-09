@@ -38,8 +38,10 @@ use crate::vulkan::swapchain::SwapchainContainer;
 
 // Rust will drop these fields in the order they are declared
 struct CatDemo {
-    egui_integration: ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>,
+    egui_integration:
+        Option<ManuallyDrop<egui_winit_ash_integration::Integration<Arc<Mutex<Allocator>>>>>,
     config_file_loader: config_loader::ConfigFileLoader,
+    is_demo_mode: bool,
 
     renderer: MainRenderer,
 
@@ -167,21 +169,27 @@ impl CatDemo {
 
         let allocator = Arc::new(Mutex::new(allocator));
 
-        let egui_integration = ManuallyDrop::new(egui_winit_ash_integration::Integration::new(
-            event_loop,
-            window.inner_size().width,
-            window.inner_size().height,
-            window.scale_factor(),
-            egui::FontDefinitions::default(),
-            egui::Style::default(),
-            device.clone(),
-            allocator.clone(),
-            context.queue_family_index,
-            context.queue,
-            swapchain.loader.clone(),
-            swapchain.inner,
-            swapchain.surface_format,
-        ));
+        let egui_integration = if config.is_demo_mode {
+            None
+        } else {
+            Some(ManuallyDrop::new(
+                egui_winit_ash_integration::Integration::new(
+                    event_loop,
+                    window.inner_size().width,
+                    window.inner_size().height,
+                    window.scale_factor(),
+                    egui::FontDefinitions::default(),
+                    egui::Style::default(),
+                    device.clone(),
+                    allocator.clone(),
+                    context.queue_family_index,
+                    context.queue,
+                    swapchain.loader.clone(),
+                    swapchain.inner,
+                    swapchain.surface_format,
+                ),
+            ))
+        };
 
         let descriptor_set_layout_cache = DescriptorSetLayoutCache::new(context.clone());
 
@@ -241,12 +249,13 @@ impl CatDemo {
             freecam_controller,
             animation_camera_controller,
             camera,
-            is_playing_camera_animation: false,
+            is_playing_camera_animation: config.is_demo_mode,
             time,
 
             renderer,
             scene,
             egui_integration,
+            is_demo_mode: config.is_demo_mode,
             config_file_loader,
             _allocator: allocator,
         }
@@ -259,7 +268,11 @@ impl CatDemo {
 
             match event {
                 Event::WindowEvent { event, .. } => {
-                    let response = self.egui_integration.handle_event(&event);
+                    let already_consumed = self
+                        .egui_integration
+                        .as_mut()
+                        .map(|v| v.handle_event(&event).consumed)
+                        .unwrap_or_default();
                     match event {
                         WindowEvent::CloseRequested => {
                             control_flow.set_exit();
@@ -279,7 +292,7 @@ impl CatDemo {
                                 },
                             ..
                         } => {
-                            if response.consumed {
+                            if already_consumed {
                                 return;
                             }
                             match (virtual_keycode, state) {
@@ -299,7 +312,7 @@ impl CatDemo {
                             };
                         }
                         WindowEvent::MouseInput { button, state, .. } => {
-                            if response.consumed {
+                            if already_consumed {
                                 return;
                             }
                             match state {
@@ -311,7 +324,7 @@ impl CatDemo {
 
                             match (button, state) {
                                 (MouseButton::Right, ElementState::Pressed) => {
-                                    if response.consumed {
+                                    if already_consumed {
                                         return;
                                     }
                                     self.input_map.start_capturing_mouse(mouse_position);
@@ -423,12 +436,14 @@ impl CatDemo {
 
         if self.should_recreate_swapchain {
             self.swapchain.recreate(window_size);
-            self.egui_integration.update_swapchain(
-                window_size.width,
-                window_size.height,
-                self.swapchain.inner,
-                self.swapchain.surface_format,
-            );
+            if let Some(egui_integration) = &mut self.egui_integration {
+                egui_integration.update_swapchain(
+                    window_size.width,
+                    window_size.height,
+                    self.swapchain.inner,
+                    self.swapchain.surface_format,
+                );
+            }
             self.renderer.resize(&self.swapchain);
             self.should_recreate_swapchain = false;
         }
@@ -484,8 +499,9 @@ impl CatDemo {
             viewport,
         );
 
-        self.draw_ui(&command_buffer, present_index as usize);
-
+        if !self.is_demo_mode {
+            self.draw_ui(&command_buffer, present_index as usize);
+        }
         unsafe { self.context.device.end_command_buffer(command_buffer) }
             .expect("Could not end command buffer");
 
@@ -531,14 +547,18 @@ impl CatDemo {
     }
 
     fn draw_ui(&mut self, command_buffer: &vk::CommandBuffer, swapchain_image_index: usize) {
-        self.egui_integration
+        let mut egui_integration = match &mut self.egui_integration {
+            Some(v) => v,
+            None => return,
+        };
+        egui_integration
             .context()
             .set_visuals(egui::style::Visuals::dark());
 
-        self.egui_integration.begin_frame(&self.window);
-        // self.renderer.render_ui(&mut self.egui_integration);
+        egui_integration.begin_frame(&self.window);
+        // self.renderer.render_ui(&mut egui_integration);
 
-        egui::SidePanel::left("my_side_panel").show(&self.egui_integration.context(), |ui| {
+        egui::SidePanel::left("my_side_panel").show(&egui_integration.context(), |ui| {
             ui.heading("Hello");
             ui.label("Hello egui!");
             ui.separator();
@@ -580,11 +600,11 @@ impl CatDemo {
             );
         });
 
-        self.renderer.render_ui(&mut self.egui_integration);
+        self.renderer.render_ui(&mut egui_integration);
 
-        let output = self.egui_integration.end_frame(&self.window);
-        let clipped_meshes = self.egui_integration.context().tessellate(output.shapes);
-        self.egui_integration.paint(
+        let output = egui_integration.end_frame(&self.window);
+        let clipped_meshes = egui_integration.context().tessellate(output.shapes);
+        egui_integration.paint(
             *command_buffer,
             swapchain_image_index,
             clipped_meshes,
@@ -603,8 +623,10 @@ impl Drop for CatDemo {
         let device = &self.context.device;
 
         unsafe { device.device_wait_idle() }.expect("Could not wait for device idle");
-        unsafe { self.egui_integration.destroy() };
-        unsafe { ManuallyDrop::drop(&mut self.egui_integration) };
+        if let Some(egui_integration) = &mut self.egui_integration {
+            unsafe { egui_integration.destroy() };
+            unsafe { ManuallyDrop::drop(egui_integration) };
+        }
 
         unsafe { device.destroy_semaphore(self.present_complete_semaphore, None) };
         unsafe { device.destroy_semaphore(self.rendering_complete_semaphore, None) };

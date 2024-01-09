@@ -9,14 +9,16 @@ use crate::vulkan::window_settings::PresentMode;
 pub struct Config {
     pub scene_path: String,
     pub present_mode: PresentMode,
+    pub is_demo_mode: bool,
     pub cached: CachedData,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            scene_path: "assets/scene-local/sponza/sponza.glb".to_string(),
+            scene_path: "assets/scene/EscherPlace5.glb".to_string(),
             present_mode: PresentMode::Fifo,
+            is_demo_mode: false,
             cached: CachedData::default(),
         }
     }
