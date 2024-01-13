@@ -227,6 +227,7 @@ impl CatDemo {
             &descriptor_set_layout_cache,
             &scene,
             &swapchain,
+            config.brightness,
         );
 
         let time = Time::new();

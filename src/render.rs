@@ -63,6 +63,7 @@ impl MainRenderer {
         set_layout_cache: &DescriptorSetLayoutCache,
         scene: &Scene,
         swapchain: &SwapchainContainer,
+        brightness: f32,
     ) -> Self {
         let scene_descriptor_set = {
             let buffer = Buffer::new(
@@ -126,6 +127,7 @@ impl MainRenderer {
             swapchain,
             geometry_pass.gbuffer(),
             set_layout_cache,
+            brightness,
         );
         let post_processing_pass = PostProcessingPass::new();
 

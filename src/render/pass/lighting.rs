@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use ash::vk::{self, AccessFlags2, ImageLayout, ImageMemoryBarrier2, PipelineStageFlags2};
+use crevice::std140::AsStd140;
 
+use crate::render::shader_types::{self, PostProcessing};
 use crate::vulkan::context::Context;
 use crate::vulkan::swapchain::SwapchainContainer;
 use crate::{
@@ -18,6 +20,8 @@ pub struct LightingPass {
     pipeline_layout: vk::PipelineLayout,
     framebuffers: Vec<vk::Framebuffer>,
 
+    post_processing: PostProcessing,
+
     context: Arc<Context>,
 }
 
@@ -27,6 +31,7 @@ impl LightingPass {
         swapchain: &SwapchainContainer,
         gbuffer: &GBuffer,
         set_layout_cache: &DescriptorSetLayoutCache,
+        brightness: f32,
     ) -> Self {
         let render_pass = create_render_pass(context.clone(), swapchain.format);
 
@@ -40,6 +45,9 @@ impl LightingPass {
             pipeline,
             pipeline_layout,
             framebuffers,
+
+            post_processing: PostProcessing { brightness },
+
             context,
         }
     }
@@ -142,6 +150,16 @@ impl LightingPass {
             scene_descriptor_set.descriptor_set.inner,
             camera_descriptor_set.descriptor_set.inner,
         ];
+
+        unsafe {
+            self.context.device.cmd_push_constants(
+                command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                0,
+                self.post_processing.as_std140().as_bytes(),
+            )
+        }
 
         unsafe {
             self.context.device.cmd_bind_descriptor_sets(
@@ -263,8 +281,15 @@ fn create_pipeline(
         set_layout_cache.camera().inner,
     ];
 
+    let push_constants_ranges: vk::PushConstantRange = vk::PushConstantRange {
+        stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        offset: 0,
+        size: std::mem::size_of::<shader_types::Std140PostProcessing>() as u32,
+    };
+
     let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&descriptor_set_layouts)
+        .push_constant_ranges(std::slice::from_ref(&push_constants_ranges))
         .build();
 
     let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
