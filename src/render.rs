@@ -3,7 +3,6 @@ mod pass;
 pub mod set_layout_cache;
 pub mod shader_types;
 
-use core::time;
 use std::sync::Arc;
 
 use ash::vk;

@@ -616,7 +616,9 @@ impl CatDemo {
     fn update(&mut self) {
         self.time.update();
         self.update_camera();
-        self.renderer.update_sun(&self.time);
+        if self.is_demo_mode {
+            self.renderer.update_sun(&self.time);
+        }
     }
 }
 
