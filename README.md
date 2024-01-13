@@ -1,6 +1,12 @@
-# Round Cat!
+# RTR Demo Project - Round Cat!
 
-![Picture of a cat. Definitely a cat.](./screenshot1.png)
+[Yousafe](https://github.com/YouSafe) and [I](https://github.com/stefnotch) wrote this for our realtime rendering course at university. Among other things, we implemented
+
+- Deferred rendering
+- Normal mapping
+- Raytraced shadows 
+
+![Screenshot with a dark scene and a few cats.](./screenshot1.png)
 
 ## Developer info
 
@@ -11,4 +17,4 @@ Needs a stable Rust toolchain, and the Vulkan SDK.
 
 ## Attribution
 
-"Escher Relativity" (https://skfb.ly/6R8nX) by Benoit Gagnier is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+The 3D model from the demo is "Escher Relativity" (https://skfb.ly/6R8nX) by Benoit Gagnier is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
