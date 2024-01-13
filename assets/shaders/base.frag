@@ -10,6 +10,10 @@ layout (location = 0) in vec2 v_uv;
 
 layout (location = 0) out vec4 fragColor;
 
+layout(push_constant) uniform PostProcessing {
+    float brightness;
+} post;
+
 struct PointLight {
     vec3 position;
     vec3 color;
@@ -173,5 +177,5 @@ void main() {
     // If shadow == 1.0 (true), then red
     //output_color = color * 0.1 + (vec3(1.0, 0.3, 0.3) * shadow);
 
-    fragColor = vec4(output_color, 1.0);
+    fragColor = vec4(output_color * post.brightness, 1.0);
 }

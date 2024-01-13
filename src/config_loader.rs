@@ -11,6 +11,7 @@ pub struct Config {
     pub present_mode: PresentMode,
     pub is_demo_mode: bool,
     pub cached: CachedData,
+    pub brightness: f32,
 }
 
 impl Default for Config {
@@ -20,6 +21,7 @@ impl Default for Config {
             present_mode: PresentMode::Fifo,
             is_demo_mode: true,
             cached: CachedData::default(),
+            brightness: 1.0,
         }
     }
 }

@@ -35,3 +35,8 @@ pub struct Camera {
     pub proj_inv: Mat4,
     pub position: Vec3,
 }
+
+#[derive(AsStd140)]
+pub struct PostProcessing {
+    pub brightness: f32,
+}
