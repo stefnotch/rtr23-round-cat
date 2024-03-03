@@ -146,11 +146,12 @@ void main() {
     vec3 position = texture(positionBuffer, v_uv).rgb;
     vec3 normal = texture(normalBuffer, v_uv).rgb;
     vec3 albedo = texture(albedoBuffer, v_uv).rgb;
-    vec2 metallicRoughness = texture(metallicRoughnessBuffer, v_uv).rg;
+
+    vec2 metallicRoughness = texture(metallicRoughnessBuffer, v_uv).bg;
     float shadow = texture(shadowBuffer, v_uv).r;
 
-    float metallic = metallicRoughness.r;
-    float roughness = metallicRoughness.g;
+    float metallic = metallicRoughness.x;
+    float roughness = metallicRoughness.y;
 
     // in world space
     vec3 n = normalize(normal);
